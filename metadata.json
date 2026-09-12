@@ -1,0 +1,6 @@
+{
+  "name": "Accounting, Billing & GST",
+  "description": "Small business accounting, invoicing, billing, and GST compliance software with multi-user synchronization and financial reporting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
