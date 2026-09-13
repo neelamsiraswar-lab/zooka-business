@@ -18,7 +18,10 @@ import {
   Building,
   CreditCard,
   Calendar,
+  Lock,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission, UserRole } from '../lib/permissions';
 
 interface ExpenseViewProps {
   expenses: Expense[];
@@ -48,6 +51,13 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
   onDeleteExpense,
   loading,
 }) => {
+  const { profile } = useAuth();
+  const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
+
+  const canCreate = hasPermission(currentUserRole, 'expenses:create');
+  const canEdit = hasPermission(currentUserRole, 'expenses:edit');
+  const canDelete = hasPermission(currentUserRole, 'expenses:delete');
+
   const dialog = useDialog();
   const [showModal, setShowModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -200,15 +210,22 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          id="record-expense-btn"
-          onClick={handleOpenNewModal}
-          className="px-4 py-2.5 bg-rose-500 hover:bg-rose-400 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-rose-500/20 flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Record Expense</span>
-        </button>
+        {canCreate ? (
+          <button
+            type="button"
+            id="record-expense-btn"
+            onClick={handleOpenNewModal}
+            className="px-4 py-2.5 bg-rose-500 hover:bg-rose-400 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-rose-500/20 flex-shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Record Expense</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800/80 text-slate-400 border border-slate-700/60 text-xs shrink-0">
+            <Lock className="w-3.5 h-3.5 text-amber-400" />
+            <span>Read-Only Mode</span>
+          </div>
+        )}
       </div>
 
       {/* Summary KPI Cards */}
@@ -394,18 +411,20 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                     <td className="py-3.5 px-4 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
                         {/* Edit Button */}
-                        <button
-                          type="button"
-                          id={`edit-expense-btn-${exp.id}`}
-                          onClick={() => handleOpenEditModal(exp)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer"
-                          title="Edit expense & ITC details"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            id={`edit-expense-btn-${exp.id}`}
+                            onClick={() => handleOpenEditModal(exp)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer"
+                            title="Edit expense & ITC details"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
 
                         {/* Delete Button */}
-                        {onDeleteExpense && (
+                        {onDeleteExpense && canDelete && (
                           <button
                             type="button"
                             id={`delete-expense-btn-${exp.id}`}
@@ -415,6 +434,10 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
+                        )}
+
+                        {!canEdit && !canDelete && (
+                          <span className="text-[11px] text-slate-500 italic">Read-only</span>
                         )}
                       </div>
                     </td>

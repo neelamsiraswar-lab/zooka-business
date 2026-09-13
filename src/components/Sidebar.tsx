@@ -20,8 +20,11 @@ import {
   ShoppingCart,
   CreditCard,
   FileCheck2,
+  Landmark,
+  Shield,
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
+import { canAccessTab, ROLE_CONFIG, UserRole } from '../lib/permissions';
 
 export type NavTab =
   | 'dashboard'
@@ -29,6 +32,7 @@ export type NavTab =
   | 'purchases'
   | 'payments'
   | 'cheques'
+  | 'banking'
   | 'accounting'
   | 'invoices'
   | 'expenses'
@@ -52,6 +56,7 @@ interface SidebarProps {
   purchasesCount?: number;
   paymentsCount?: number;
   chequesCount?: number;
+  bankStatementsCount?: number;
   journalEntriesCount?: number;
   invoicesCount?: number;
   expensesCount?: number;
@@ -83,6 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   purchasesCount = 0,
   paymentsCount = 0,
   chequesCount = 0,
+  bankStatementsCount = 0,
   invoicesCount = 0,
   expensesCount = 0,
   partiesCount = 0,
@@ -90,6 +96,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   journalEntriesCount = 0,
 }) => {
   const effectiveSalesCount = salesCount || invoicesCount;
+  const userRole: UserRole = (profile?.role as UserRole) || 'accountant';
+  const roleConfig = ROLE_CONFIG[userRole] || ROLE_CONFIG.accountant;
+
   const navItems: NavItemConfig[] = [
     {
       id: 'dashboard',
@@ -129,6 +138,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       subtitle: 'PDC, Books, Inward & Clearing',
       icon: FileCheck2,
       badge: chequesCount > 0 ? chequesCount : undefined,
+    },
+    {
+      id: 'banking',
+      label: 'Bank Reconciliation',
+      shortLabel: 'Banking',
+      subtitle: 'Statements & Auto BRS',
+      icon: Landmark,
+      badge: bankStatementsCount > 0 ? bankStatementsCount : undefined,
     },
     {
       id: 'accounting',
@@ -185,6 +202,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
+  const visibleNavItems = navItems.filter((item) => canAccessTab(userRole, item.id));
+
   // Nav list renderer shared between desktop & mobile
   const renderNavList = (collapsed: boolean) => (
     <div className="space-y-1.5 px-3">
@@ -193,7 +212,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           Navigation Menu
         </div>
       )}
-      {navItems.map((item) => {
+      {visibleNavItems.map((item) => {
         const Icon = item.icon;
         const isActive = activeTab === item.id || (activeTab === 'invoices' && item.id === 'sales');
 
@@ -341,8 +360,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="block text-xs font-semibold text-slate-200 truncate">
                   {user?.displayName || user?.email?.split('@')[0]}
                 </span>
-                <span className="text-[10px] text-emerald-400 uppercase tracking-wider">
-                  {profile?.role || 'Accountant'}
+                <span className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-semibold border ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
+                  {roleConfig.badge}
                 </span>
               </div>
             </div>
@@ -484,8 +503,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="block text-xs font-semibold text-slate-200 truncate leading-tight">
                     {user?.displayName || user?.email?.split('@')[0]}
                   </span>
-                  <span className="block text-[10px] text-emerald-400 uppercase tracking-wider leading-tight">
-                    {profile?.role || 'Accountant'}
+                  <span className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-semibold border leading-none ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
+                    {roleConfig.badge}
                   </span>
                 </div>
               )}

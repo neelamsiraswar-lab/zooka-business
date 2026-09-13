@@ -380,14 +380,14 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     };
 
     // 1. Initialize Standard Master Ledgers
-    ensureLedger('Cash in Hand', 'Current Assets', 25000, 0);
-    ensureLedger(company?.bankName || 'HDFC Bank Ltd', 'Current Assets', 150000, 0);
+    ensureLedger('Cash in Hand', 'Current Assets', 0, 0);
+    ensureLedger(company?.bankName || 'Bank Account', 'Current Assets', 0, 0);
     ensureLedger('Sales Account', 'Direct Incomes', 0, 0);
     ensureLedger('Purchase Account', 'Direct Expenses', 0, 0);
     ensureLedger('Input Tax Credit (ITC GST)', 'Current Assets', 0, 0);
     ensureLedger('Output GST Payable', 'Current Liabilities', 0, 0);
-    ensureLedger('Capital Account / Owner Equity', 'Capital & Equity', 0, 200000);
-    ensureLedger('Office Furniture & Equipment', 'Fixed Assets', 50000, 0);
+    ensureLedger('Capital Account / Owner Equity', 'Capital & Equity', 0, 0);
+    ensureLedger('Office Furniture & Equipment', 'Fixed Assets', 0, 0);
 
     // 2. Party Ledgers with opening balances
     parties.forEach((p) => {
@@ -499,7 +499,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       .filter((r) => r.groupName === 'Direct Expenses' || r.accountName.toLowerCase().includes('purchase'))
       .reduce((sum, r) => sum + (r.closingDebit - r.closingCredit), 0);
 
-    const openingStock = 50000; // Standard opening stock
+    const openingStock = 0;
     const closingStock = summary?.totalStockValuation || 0;
 
     const grossProfit = Math.max(0, (salesTotal + closingStock) - (openingStock + purchasesTotal));
@@ -681,7 +681,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     const cashCr = cashEntries
       .filter((e) => e.creditAccount.toLowerCase().includes('cash'))
       .reduce((sum, e) => sum + e.amount, 0);
-    const cashClosing = 25000 + cashDr - cashCr;
+    const cashClosing = cashDr - cashCr;
 
     const bankDr = bankEntries
       .filter((e) => e.debitAccount.toLowerCase().includes('bank'))
@@ -689,16 +689,16 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     const bankCr = bankEntries
       .filter((e) => e.creditAccount.toLowerCase().includes('bank'))
       .reduce((sum, e) => sum + e.amount, 0);
-    const bankClosing = 150000 + bankDr - bankCr;
+    const bankClosing = bankDr - bankCr;
 
     return {
       cashEntries,
       bankEntries,
-      cashOpening: 25000,
+      cashOpening: 0,
       cashDr,
       cashCr,
       cashClosing,
-      bankOpening: 150000,
+      bankOpening: 0,
       bankDr,
       bankCr,
       bankClosing,
@@ -865,9 +865,6 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                 Books in Sync
               </span>
             </div>
-            <p className="text-slate-400 text-sm max-w-2xl">
-              Complete automated general ledger, real-time Day Book (Roznamcha), balanced Trial Balance, Schedule III Financial Statements, and Journal Vouchers for Indian GST ERP.
-            </p>
           </div>
 
           {/* Quick Action Buttons */}
@@ -884,7 +881,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold flex items-center gap-2 transition shadow-lg shadow-emerald-600/30 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              + Journal Voucher (JV)
+              Journal Voucher (JV)
             </button>
             <button
               onClick={onRefresh}

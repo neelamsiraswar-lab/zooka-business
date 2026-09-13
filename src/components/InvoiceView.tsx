@@ -38,7 +38,10 @@ import {
   MapPin,
   LayoutTemplate,
   Clock,
+  Lock,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission, UserRole } from '../lib/permissions';
 
 interface InvoiceViewProps {
   invoices: Invoice[];
@@ -65,9 +68,23 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   mode = 'sales',
   onRecordVoucher,
 }) => {
+  const { profile } = useAuth();
+  const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
+
   const dialog = useDialog();
   const targetVoucherType: 'sales' | 'purchase' = mode === 'purchase' ? 'purchase' : 'sales';
   const isSales = targetVoucherType === 'sales';
+
+  const canCreate = isSales
+    ? hasPermission(currentUserRole, 'sales:create')
+    : hasPermission(currentUserRole, 'purchases:create');
+  const canEdit = isSales
+    ? hasPermission(currentUserRole, 'sales:edit')
+    : hasPermission(currentUserRole, 'purchases:edit');
+  const canDelete = isSales
+    ? hasPermission(currentUserRole, 'sales:delete')
+    : hasPermission(currentUserRole, 'purchases:delete');
+  const canRecordPayment = hasPermission(currentUserRole, 'payments:create');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null);
@@ -555,24 +572,31 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {isSales ? (
-            <button
-              onClick={() => openCreateModal('sales')}
-              id="create-sales-invoice-btn"
-              className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer transition"
-            >
-              <ArrowUpRight className="w-4 h-4 font-bold" />
-              <span>+ Create Sales Invoice</span>
-            </button>
+          {canCreate ? (
+            isSales ? (
+              <button
+                onClick={() => openCreateModal('sales')}
+                id="create-sales-invoice-btn"
+                className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer transition"
+              >
+                <ArrowUpRight className="w-4 h-4 font-bold" />
+                <span>+ Create Sales Invoice</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => openCreateModal('purchase')}
+                id="record-purchase-bill-btn"
+                className="px-4 py-2.5 bg-blue-500 hover:bg-blue-400 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/20 cursor-pointer transition"
+              >
+                <ArrowDownLeft className="w-4 h-4 font-bold" />
+                <span>+ Record Purchase Bill</span>
+              </button>
+            )
           ) : (
-            <button
-              onClick={() => openCreateModal('purchase')}
-              id="record-purchase-bill-btn"
-              className="px-4 py-2.5 bg-blue-500 hover:bg-blue-400 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/20 cursor-pointer transition"
-            >
-              <ArrowDownLeft className="w-4 h-4 font-bold" />
-              <span>+ Record Purchase Bill</span>
-            </button>
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800/80 text-slate-400 border border-slate-700/60 text-xs">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Read-Only Mode</span>
+            </div>
           )}
         </div>
       </div>
@@ -782,7 +806,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {onRecordVoucher && inv.paymentStatus !== 'paid' && (
+                        {onRecordVoucher && canRecordPayment && inv.paymentStatus !== 'paid' && (
                           <button
                             onClick={() =>
                               onRecordVoucher(
@@ -823,15 +847,17 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                           <Eye className="w-3.5 h-3.5 text-slate-400" />
                           <span className="hidden md:inline">View</span>
                         </button>
-                        <button
-                          onClick={() => openEditModal(inv)}
-                          title="Edit Voucher Details & Items"
-                          className="px-2.5 py-1 text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg text-xs transition cursor-pointer flex items-center gap-1"
-                        >
-                          <Edit2 className="w-3.5 h-3.5 text-amber-400" />
-                          <span className="hidden md:inline">Edit</span>
-                        </button>
-                        {onDeleteInvoice && (
+                        {canEdit && (
+                          <button
+                            onClick={() => openEditModal(inv)}
+                            title="Edit Voucher Details & Items"
+                            className="px-2.5 py-1 text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-lg text-xs transition cursor-pointer flex items-center gap-1"
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                            <span className="hidden md:inline">Edit</span>
+                          </button>
+                        )}
+                        {onDeleteInvoice && canDelete && (
                           <button
                             onClick={() => setDeletingInvoice(inv)}
                             title="Delete Voucher"

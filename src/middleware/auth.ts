@@ -34,12 +34,14 @@ export const requireAuth = async (
     let uid = 'dev-workspace-user';
     let email = 'accountant@tallycloud.local';
     let name = 'Senior Accountant';
+    let role: string | undefined = undefined;
 
     try {
       const parsed = JSON.parse(decodeURIComponent(escape(atob(raw))));
       if (parsed.uid) uid = parsed.uid;
       if (parsed.email) email = parsed.email;
-      if (parsed.name) name = parsed.name;
+      if (parsed.name || parsed.displayName) name = parsed.name || parsed.displayName;
+      if (parsed.role) role = parsed.role;
     } catch {
       // default to dev user
     }
@@ -48,7 +50,7 @@ export const requireAuth = async (
       uid,
       email,
       name,
-      picture: `https://api.dicebear.com/7.x/initials/svg?seed=${name}`,
+      picture: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
       aud: firebaseConfig.projectId || 'soy-bond-rx4wp',
       auth_time: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600 * 24,
@@ -56,7 +58,8 @@ export const requireAuth = async (
       iat: Math.floor(Date.now() / 1000),
       iss: `https://securetoken.google.com/${firebaseConfig.projectId || 'soy-bond-rx4wp'}`,
       sub: uid,
-    };
+      ...(role ? { role } : {}),
+    } as any;
     return next();
   }
 

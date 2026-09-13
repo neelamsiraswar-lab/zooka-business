@@ -309,3 +309,43 @@ export interface Cheque {
   remarks?: string;
   createdAt: string;
 }
+
+export interface BankTransaction {
+  id: string;
+  date: string; // YYYY-MM-DD
+  valueDate?: string;
+  narration: string;
+  refNumber?: string;
+  withdrawal: number; // Debit / Outflow
+  deposit: number; // Credit / Inflow
+  balance?: number;
+  reconciled: boolean;
+  matchedVoucherType?: 'receipt' | 'payment' | 'cheque' | 'expense' | 'journal' | null;
+  matchedVoucherId?: number | null;
+  matchedVoucherNumber?: string | null;
+  matchedPartyName?: string | null;
+  matchedAmount?: number | null;
+  matchConfidence?: number; // 0 - 100%
+  matchReason?: string;
+  reconciledAt?: string | null;
+  notes?: string | null;
+}
+
+export interface BankStatement {
+  id: number;
+  userId: number;
+  bankName: string;
+  accountNumber?: string;
+  fileName: string;
+  statementStartDate?: string;
+  statementEndDate?: string;
+  openingBalance: string;
+  closingBalance: string;
+  totalCredits: string;
+  totalDebits: string;
+  transactionsCount: number;
+  reconciledCount: number;
+  transactions: BankTransaction[];
+  status: 'active' | 'archived';
+  createdAt: string;
+}

@@ -12,6 +12,7 @@ import { CompanySettingsView } from './components/CompanySettingsView';
 import { ReceiptPaymentView } from './components/ReceiptPaymentView';
 import { AccountingView } from './components/AccountingView';
 import { ChequeManagementView } from './components/ChequeManagementView';
+import { BankReconciliationView } from './components/BankReconciliationView';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import {
@@ -26,15 +27,33 @@ import {
   JournalEntry,
   Cheque,
   ChequeBook,
+  BankStatement,
 } from './types';
-import { RefreshCw, AlertCircle, Menu } from 'lucide-react';
+import { RefreshCw, AlertCircle, Menu, ShieldAlert, Eye } from 'lucide-react';
+import {
+  canAccessTab,
+  hasPermission,
+  isReadOnlyRole,
+  UserRole,
+  ROLE_CONFIG,
+} from './lib/permissions';
 
 export default function App() {
   const { user, profile, token, loading: authLoading, logout, getToken } = useAuth();
   const dialog = useDialog();
 
+  const userRole: UserRole = (profile?.role as UserRole) || 'accountant';
+  const roleConfig = ROLE_CONFIG[userRole] || ROLE_CONFIG.accountant;
+
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Auto-redirect to dashboard if user switches to a role that cannot access the current active tab
+  useEffect(() => {
+    if (profile?.role && !canAccessTab(userRole, activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [profile?.role, activeTab, userRole]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -63,6 +82,7 @@ export default function App() {
   const [chequeBooks, setChequeBooks] = useState<ChequeBook[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [bankStatements, setBankStatements] = useState<BankStatement[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -117,6 +137,7 @@ export default function App() {
           if (Array.isArray(data.chequeBooks)) setChequeBooks(data.chequeBooks);
           if (Array.isArray(data.journalEntries)) setJournalEntries(data.journalEntries);
           if (Array.isArray(data.expenses)) setExpenses(data.expenses);
+          if (Array.isArray(data.bankStatements)) setBankStatements(data.bankStatements);
           if (Array.isArray(data.parties)) setParties(data.parties);
           if (Array.isArray(data.inventory)) setInventory(data.inventory);
           if (data.company) setCompany(data.company);
@@ -142,9 +163,10 @@ export default function App() {
         fetch('/api/inventory', { headers }).then(r => r.ok ? r.json() : null),
         fetch('/api/company', { headers }).then(r => r.ok ? r.json() : null),
         fetch('/api/activity', { headers }).then(r => r.ok ? r.json() : null),
+        fetch('/api/bank-statements', { headers }).then(r => r.ok ? r.json() : null),
       ]);
 
-      const [sumVal, invVal, payVal, chqVal, chqBkVal, jvVal, expVal, parVal, itmVal, comVal, actVal] = results;
+      const [sumVal, invVal, payVal, chqVal, chqBkVal, jvVal, expVal, parVal, itmVal, comVal, actVal, stmtVal] = results;
 
       if (sumVal.status === 'fulfilled' && sumVal.value) {
         setSummary((prev) => (JSON.stringify(prev) === JSON.stringify(sumVal.value) ? prev : sumVal.value));
@@ -178,6 +200,9 @@ export default function App() {
       }
       if (actVal.status === 'fulfilled' && actVal.value) {
         setActivityLogs((prev) => (JSON.stringify(prev) === JSON.stringify(actVal.value) ? prev : actVal.value));
+      }
+      if (stmtVal.status === 'fulfilled' && stmtVal.value) {
+        setBankStatements((prev) => (JSON.stringify(prev) === JSON.stringify(stmtVal.value) ? prev : stmtVal.value));
       }
 
       setSyncError(null);
@@ -901,6 +926,143 @@ export default function App() {
     }
   };
 
+  // Handler: Save Bank Statement (Create / Update)
+  const handleSaveStatement = async (statementPayload: any, statementId?: number) => {
+    const idToken = await getToken();
+    if (!idToken) throw new Error('Authentication required');
+
+    setDataLoading(true);
+    try {
+      const url = statementId ? `/api/bank-statements/${statementId}` : '/api/bank-statements';
+      const method = statementId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(statementPayload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Failed to save bank statement (${res.status})`);
+      }
+      const saved = await res.json();
+      dialog.toast.success(statementId ? 'Bank statement updated' : 'Bank statement imported successfully');
+      await loadData(true);
+      return saved;
+    } catch (err: any) {
+      console.error('Statement save error:', err);
+      dialog.alert({
+        title: 'Statement Import Failed',
+        message: err?.message || 'Failed to process bank statement',
+        variant: 'danger',
+      });
+      return null;
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Handler: Delete Bank Statement
+  const handleDeleteStatement = async (statementId: number) => {
+    const idToken = await getToken();
+    if (!idToken) throw new Error('Authentication required');
+
+    setDataLoading(true);
+    try {
+      const res = await fetch(`/api/bank-statements/${statementId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Failed to delete statement (${res.status})`);
+      }
+      dialog.toast.success('Bank statement removed');
+      await loadData(true);
+    } catch (err: any) {
+      console.error('Statement delete error:', err);
+      dialog.alert({
+        title: 'Delete Failed',
+        message: err?.message || 'Failed to delete bank statement',
+        variant: 'danger',
+      });
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Handler: Reconcile Single Transaction
+  const handleReconcileTransaction = async (
+    statementId: number,
+    transactionId: string,
+    matchData: any
+  ) => {
+    const idToken = await getToken();
+    if (!idToken) throw new Error('Authentication required');
+
+    try {
+      const res = await fetch(`/api/bank-statements/${statementId}/reconcile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ transactionId, matchData }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to reconcile transaction');
+      }
+      dialog.toast.success('Transaction matched & reconciled');
+      await loadData(true);
+    } catch (err: any) {
+      console.error('Reconciliation error:', err);
+      dialog.alert({
+        title: 'Reconciliation Failed',
+        message: err?.message || 'Failed to reconcile transaction',
+        variant: 'danger',
+      });
+    }
+  };
+
+  // Handler: Unreconcile Single Transaction
+  const handleUnreconcileTransaction = async (statementId: number, transactionId: string) => {
+    const idToken = await getToken();
+    if (!idToken) throw new Error('Authentication required');
+
+    try {
+      const res = await fetch(`/api/bank-statements/${statementId}/unreconcile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ transactionId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to unmatch transaction');
+      }
+      dialog.toast.success('Transaction unlinked');
+      await loadData(true);
+    } catch (err: any) {
+      console.error('Unreconcile error:', err);
+      dialog.alert({
+        title: 'Unlink Failed',
+        message: err?.message || 'Failed to unlink transaction',
+        variant: 'danger',
+      });
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
@@ -933,6 +1095,7 @@ export default function App() {
         purchasesCount={invoices.filter((i) => i.voucherType === 'purchase').length}
         paymentsCount={payments.length}
         chequesCount={cheques.length}
+        bankStatementsCount={bankStatements.length}
         journalEntriesCount={journalEntries.length}
         expensesCount={expenses.length}
         partiesCount={parties.length}
@@ -967,6 +1130,28 @@ export default function App() {
               >
                 Retry
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Auditor Read-Only Inspection Banner */}
+        {isReadOnlyRole(userRole) && (
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-4">
+            <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-3 rounded-2xl text-xs flex items-center justify-between gap-3 shadow-lg shadow-amber-500/5">
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
+                  <Eye className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-amber-200">Statutory Auditor Mode Active (Read-Only)</span>
+                  <p className="text-slate-400 text-[11px] mt-0.5">
+                    You have complete read & audit visibility into books, ledgers, bank statements, and reports. Creation, editing, and deletion operations are locked.
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider text-amber-300 whitespace-nowrap hidden sm:inline-block">
+                Read Only
+              </span>
             </div>
           </div>
         )}
@@ -1096,6 +1281,26 @@ export default function App() {
                 }
               }}
               onNavigateToParty={() => setActiveTab('ledgers')}
+            />
+          )}
+
+          {activeTab === 'banking' && (
+            <BankReconciliationView
+              bankStatements={bankStatements}
+              payments={payments}
+              cheques={cheques}
+              expenses={expenses}
+              parties={parties}
+              invoices={invoices}
+              company={company}
+              onSaveStatement={handleSaveStatement}
+              onDeleteStatement={handleDeleteStatement}
+              onReconcileTransaction={handleReconcileTransaction}
+              onUnreconcileTransaction={handleUnreconcileTransaction}
+              onCreatePayment={handleSavePayment}
+              onCreateExpense={handleSaveExpense}
+              onRefresh={handleManualSync}
+              loading={dataLoading}
             />
           )}
 

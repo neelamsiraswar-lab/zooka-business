@@ -30,7 +30,10 @@ import {
   Sparkles,
   RefreshCw,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission, UserRole } from '../lib/permissions';
 
 interface ReceiptPaymentViewProps {
   payments: PaymentVoucher[];
@@ -61,6 +64,12 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
   initialInvoiceId,
   onNavigateToInvoices,
 }) => {
+  const { profile } = useAuth();
+  const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
+
+  const canCreate = hasPermission(currentUserRole, 'payments:create');
+  const canDelete = hasPermission(currentUserRole, 'payments:delete');
+
   const dialog = useDialog();
   // Navigation & Filter State
   const [activeFilter, setActiveFilter] = useState<'all' | 'receipt' | 'payment'>(
@@ -310,20 +319,29 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => openNewVoucherModal('receipt')}
-            className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer transition"
-          >
-            <ArrowDownLeft className="w-4 h-4 font-bold" />
-            <span>+ Record Receipt (F6)</span>
-          </button>
-          <button
-            onClick={() => openNewVoucherModal('payment')}
-            className="px-4 py-2.5 bg-rose-500 hover:bg-rose-400 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-500/20 cursor-pointer transition"
-          >
-            <ArrowUpRight className="w-4 h-4 font-bold" />
-            <span>+ Record Payment (F5)</span>
-          </button>
+          {canCreate ? (
+            <>
+              <button
+                onClick={() => openNewVoucherModal('receipt')}
+                className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer transition"
+              >
+                <ArrowDownLeft className="w-4 h-4 font-bold" />
+                <span>+ Record Receipt (F6)</span>
+              </button>
+              <button
+                onClick={() => openNewVoucherModal('payment')}
+                className="px-4 py-2.5 bg-rose-500 hover:bg-rose-400 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-500/20 cursor-pointer transition"
+              >
+                <ArrowUpRight className="w-4 h-4 font-bold" />
+                <span>+ Record Payment (F5)</span>
+              </button>
+            </>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800/80 text-slate-400 border border-slate-700/60 text-xs">
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Read-Only Mode</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -515,20 +533,22 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
                           ? 'Try modifying your search keywords or clearing filters.'
                           : 'Record a receipt from a customer or a payment to a supplier to start tracking cash flow.'}
                       </p>
-                      <div className="flex items-center gap-3 pt-2">
-                        <button
-                          onClick={() => openNewVoucherModal('receipt')}
-                          className="px-3.5 py-1.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold rounded-xl text-xs transition cursor-pointer"
-                        >
-                          + Record Receipt
-                        </button>
-                        <button
-                          onClick={() => openNewVoucherModal('payment')}
-                          className="px-3.5 py-1.5 bg-rose-500 hover:bg-rose-400 text-white font-semibold rounded-xl text-xs transition cursor-pointer"
-                        >
-                          + Record Payment
-                        </button>
-                      </div>
+                      {canCreate && (
+                        <div className="flex items-center gap-3 pt-2">
+                          <button
+                            onClick={() => openNewVoucherModal('receipt')}
+                            className="px-3.5 py-1.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold rounded-xl text-xs transition cursor-pointer"
+                          >
+                            + Record Receipt
+                          </button>
+                          <button
+                            onClick={() => openNewVoucherModal('payment')}
+                            className="px-3.5 py-1.5 bg-rose-500 hover:bg-rose-400 text-white font-semibold rounded-xl text-xs transition cursor-pointer"
+                          >
+                            + Record Payment
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -633,24 +653,26 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
                           >
                             <Printer className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={async () => {
-                              const ok = await dialog.confirm({
-                                title: `Delete ${voucher.voucherType === 'receipt' ? 'Receipt' : 'Payment'} Voucher`,
-                                message: `Are you sure you want to delete voucher #${voucher.voucherNumber}? This will automatically revert any linked invoice paid amount and recalculate balances.`,
-                                confirmText: 'Delete Voucher',
-                                variant: 'danger',
-                                icon: 'trash',
-                              });
-                              if (ok) {
-                                onDeletePayment(voucher.id);
-                              }
-                            }}
-                            title="Delete Voucher"
-                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={async () => {
+                                const ok = await dialog.confirm({
+                                  title: `Delete ${voucher.voucherType === 'receipt' ? 'Receipt' : 'Payment'} Voucher`,
+                                  message: `Are you sure you want to delete voucher #${voucher.voucherNumber}? This will automatically revert any linked invoice paid amount and recalculate balances.`,
+                                  confirmText: 'Delete Voucher',
+                                  variant: 'danger',
+                                  icon: 'trash',
+                                });
+                                if (ok) {
+                                  onDeletePayment(voucher.id);
+                                }
+                              }}
+                              title="Delete Voucher"
+                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -12,6 +12,7 @@ import {
   users,
   chequeBooks,
   cheques,
+  bankStatements,
 } from './schema.ts';
 import { eq, desc, and, sql, gte, lte, inArray } from 'drizzle-orm';
 
@@ -41,20 +42,20 @@ export async function getCompanyProfile(userId: number) {
     .limit(1);
 
   if (list.length > 0) return list[0];
-  // return default company profile
+  // return clean default company profile
   return {
-    businessName: 'Apex Enterprise & Trading Co.',
-    tradeName: 'Apex GST Billing',
-    gstin: '27AABCU9603R1ZM',
+    businessName: 'My Enterprise',
+    tradeName: 'My Enterprise',
+    gstin: '',
     stateCode: '27',
     stateName: 'Maharashtra',
-    address: 'Plot 42, MIDC Industrial Area, Andheri East, Mumbai 400093',
-    phone: '+91 98200 12345',
-    email: 'accounts@apexenterprise.in',
-    bankName: 'HDFC Bank Ltd',
-    accountNumber: '50200049281729',
-    ifscCode: 'HDFC0000123',
-    upiId: 'apexenterprise@hdfcbank',
+    address: '',
+    phone: '',
+    email: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    upiId: '',
     invoiceNumberingMode: 'automatic',
     invoicePrefix: 'INV/2026-27/',
     invoiceSuffix: '',
@@ -1965,6 +1966,7 @@ export async function clearMasterLedger(userId: number) {
   await db.delete(chequeBooks).where(eq(chequeBooks.userId, userId));
   await db.delete(inventoryItems).where(eq(inventoryItems.userId, userId));
   await db.delete(parties).where(eq(parties.userId, userId));
+  await db.delete(bankStatements).where(eq(bankStatements.userId, userId));
 
   await db
     .update(companyProfiles)
@@ -2126,5 +2128,215 @@ export async function restoreDataFromBackup(userId: number, backupPayload: any) 
 
   await logActivity(userId, 'system@backup.restore', 'RESTORE_DATA_BACKUP', 'company', String(userId), 'Restored application state from JSON backup file.');
   return { success: true, message: 'Data restored successfully from backup' };
+}
+
+// -------------------------------------------------------------
+// Bank Statements & Auto-Reconciliation Data Services
+// -------------------------------------------------------------
+
+export async function getBankStatements(userId: number) {
+  return await db
+    .select()
+    .from(bankStatements)
+    .where(and(eq(bankStatements.userId, userId), eq(bankStatements.status, 'active')))
+    .orderBy(desc(bankStatements.id));
+}
+
+export async function getBankStatementById(statementId: number, userId: number) {
+  const list = await db
+    .select()
+    .from(bankStatements)
+    .where(and(eq(bankStatements.id, statementId), eq(bankStatements.userId, userId)));
+  return list.length > 0 ? list[0] : null;
+}
+
+export async function createBankStatement(userId: number, data: any) {
+  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+  const transactionsCount = transactions.length;
+  const reconciledCount = transactions.filter((t: any) => t.reconciled).length;
+
+  const res = await db
+    .insert(bankStatements)
+    .values({
+      userId,
+      bankName: data.bankName || 'HDFC Bank',
+      accountNumber: data.accountNumber || null,
+      fileName: data.fileName || 'Statement.csv',
+      statementStartDate: data.statementStartDate || null,
+      statementEndDate: data.statementEndDate || null,
+      openingBalance: String(data.openingBalance || '0.00'),
+      closingBalance: String(data.closingBalance || '0.00'),
+      totalCredits: String(data.totalCredits || '0.00'),
+      totalDebits: String(data.totalDebits || '0.00'),
+      transactionsCount,
+      reconciledCount,
+      transactions,
+      status: 'active',
+    })
+    .returning();
+
+  return res[0];
+}
+
+export async function updateBankStatement(statementId: number, userId: number, data: any) {
+  const existing = await getBankStatementById(statementId, userId);
+  if (!existing) return null;
+
+  const transactions = Array.isArray(data.transactions) ? data.transactions : (existing.transactions as any[]) || [];
+  const transactionsCount = transactions.length;
+  const reconciledCount = transactions.filter((t: any) => t.reconciled).length;
+
+  const res = await db
+    .update(bankStatements)
+    .set({
+      bankName: data.bankName !== undefined ? data.bankName : existing.bankName,
+      accountNumber: data.accountNumber !== undefined ? data.accountNumber : existing.accountNumber,
+      statementStartDate: data.statementStartDate !== undefined ? data.statementStartDate : existing.statementStartDate,
+      statementEndDate: data.statementEndDate !== undefined ? data.statementEndDate : existing.statementEndDate,
+      openingBalance: data.openingBalance !== undefined ? String(data.openingBalance) : existing.openingBalance,
+      closingBalance: data.closingBalance !== undefined ? String(data.closingBalance) : existing.closingBalance,
+      totalCredits: data.totalCredits !== undefined ? String(data.totalCredits) : existing.totalCredits,
+      totalDebits: data.totalDebits !== undefined ? String(data.totalDebits) : existing.totalDebits,
+      transactionsCount,
+      reconciledCount,
+      transactions,
+    })
+    .where(and(eq(bankStatements.id, statementId), eq(bankStatements.userId, userId)))
+    .returning();
+
+  return res[0];
+}
+
+export async function deleteBankStatement(statementId: number, userId: number) {
+  const existing = await getBankStatementById(statementId, userId);
+  if (!existing) return null;
+
+  // Soft delete / archive
+  await db
+    .update(bankStatements)
+    .set({ status: 'archived' })
+    .where(and(eq(bankStatements.id, statementId), eq(bankStatements.userId, userId)));
+
+  return existing;
+}
+
+export async function reconcileBankStatementTransaction(
+  statementId: number,
+  transactionId: string,
+  userId: number,
+  matchData: {
+    matchedVoucherType: 'receipt' | 'payment' | 'cheque' | 'expense' | 'journal';
+    matchedVoucherId: number;
+    matchedVoucherNumber?: string;
+    matchedPartyName?: string;
+    matchedAmount?: number;
+    matchConfidence?: number;
+    matchReason?: string;
+  }
+) {
+  const statement = await getBankStatementById(statementId, userId);
+  if (!statement) return null;
+
+  const txns = ((statement.transactions as any[]) || []).map((t: any) => {
+    if (t.id === transactionId) {
+      return {
+        ...t,
+        reconciled: true,
+        matchedVoucherType: matchData.matchedVoucherType,
+        matchedVoucherId: matchData.matchedVoucherId,
+        matchedVoucherNumber: matchData.matchedVoucherNumber || null,
+        matchedPartyName: matchData.matchedPartyName || null,
+        matchedAmount: matchData.matchedAmount ?? null,
+        matchConfidence: matchData.matchConfidence || 100,
+        matchReason: matchData.matchReason || 'Manual match',
+        reconciledAt: new Date().toISOString(),
+      };
+    }
+    return t;
+  });
+
+  const reconciledCount = txns.filter((t: any) => t.reconciled).length;
+
+  // If matched with cheque, mark cheque as cleared
+  if (matchData.matchedVoucherType === 'cheque' && matchData.matchedVoucherId) {
+    const targetTxn = txns.find((t: any) => t.id === transactionId);
+    const clearanceDate = targetTxn?.date || new Date().toISOString().split('T')[0];
+    try {
+      await updateChequeStatus(matchData.matchedVoucherId, userId, {
+        status: 'cleared',
+        clearanceDate,
+      });
+    } catch (err) {
+      console.warn('Could not auto-update cheque clearance date:', err);
+    }
+  }
+
+  const updated = await db
+    .update(bankStatements)
+    .set({
+      transactions: txns,
+      reconciledCount,
+    })
+    .where(and(eq(bankStatements.id, statementId), eq(bankStatements.userId, userId)))
+    .returning();
+
+  return updated[0];
+}
+
+export async function unreconcileBankStatementTransaction(
+  statementId: number,
+  transactionId: string,
+  userId: number
+) {
+  const statement = await getBankStatementById(statementId, userId);
+  if (!statement) return null;
+
+  let prevMatchedChequeId: number | null = null;
+
+  const txns = ((statement.transactions as any[]) || []).map((t: any) => {
+    if (t.id === transactionId) {
+      if (t.matchedVoucherType === 'cheque' && t.matchedVoucherId) {
+        prevMatchedChequeId = t.matchedVoucherId;
+      }
+      return {
+        ...t,
+        reconciled: false,
+        matchedVoucherType: null,
+        matchedVoucherId: null,
+        matchedVoucherNumber: null,
+        matchedPartyName: null,
+        matchedAmount: null,
+        matchConfidence: null,
+        matchReason: null,
+        reconciledAt: null,
+      };
+    }
+    return t;
+  });
+
+  const reconciledCount = txns.filter((t: any) => t.reconciled).length;
+
+  // If was a cheque, revert back to deposited
+  if (prevMatchedChequeId) {
+    try {
+      await updateChequeStatus(prevMatchedChequeId, userId, {
+        status: 'deposited',
+        clearanceDate: null,
+      });
+    } catch (err) {
+      console.warn('Could not revert cheque status:', err);
+    }
+  }
+
+  const updated = await db
+    .update(bankStatements)
+    .set({
+      transactions: txns,
+      reconciledCount,
+    })
+    .where(and(eq(bankStatements.id, statementId), eq(bankStatements.userId, userId)))
+    .returning();
+
+  return updated[0];
 }
 

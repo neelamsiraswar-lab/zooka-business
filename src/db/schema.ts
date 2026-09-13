@@ -275,12 +275,29 @@ export const cheques = pgTable('cheques', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Bank Statements uploaded for Auto-Reconciliation
+export const bankStatements = pgTable('bank_statements', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  bankName: text('bank_name').notNull(), // 'HDFC Bank', 'State Bank of India', 'ICICI Bank', 'Axis Bank', 'Other'
+  accountNumber: text('account_number'),
+  fileName: text('file_name').notNull(),
+  statementStartDate: text('statement_start_date'),
+  statementEndDate: text('statement_end_date'),
+  openingBalance: decimal('opening_balance', { precision: 12, scale: 2 }).default('0.00').notNull(),
+  closingBalance: decimal('closing_balance', { precision: 12, scale: 2 }).default('0.00').notNull(),
+  totalCredits: decimal('total_credits', { precision: 12, scale: 2 }).default('0.00').notNull(),
+  totalDebits: decimal('total_debits', { precision: 12, scale: 2 }).default('0.00').notNull(),
+  transactionsCount: integer('transactions_count').default(0).notNull(),
+  reconciledCount: integer('reconciled_count').default(0).notNull(),
+  transactions: jsonb('transactions'), // Array of bank statement lines with reconciliation metadata
+  status: text('status').default('active').notNull(), // 'active', 'archived'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
-  companyProfile: one(companyProfiles, {
-    fields: [users.id],
-    references: [companyProfiles.userId],
-  }),
+  companyProfile: one(companyProfiles),
   invoices: many(invoices),
   payments: many(payments),
   journalEntries: many(journalEntries),
@@ -290,6 +307,14 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   activityLogs: many(activityLogs),
   chequeBooks: many(chequeBooks),
   cheques: many(cheques),
+  bankStatements: many(bankStatements),
+}));
+
+export const bankStatementsRelations = relations(bankStatements, ({ one }) => ({
+  user: one(users, {
+    fields: [bankStatements.userId],
+    references: [users.id],
+  }),
 }));
 
 export const companyProfilesRelations = relations(companyProfiles, ({ one }) => ({
