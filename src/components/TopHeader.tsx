@@ -12,11 +12,13 @@ import {
   ChevronDown,
   Check,
   LogOut,
+  User,
+  Lock,
+  KeyRound,
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_CONFIG, UserRole } from '../lib/permissions';
-import { RoleSwitchPinModal } from './RoleSwitchPinModal';
 
 interface TopHeaderProps {
   isCollapsed: boolean;
@@ -39,34 +41,27 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   user,
   profile,
 }) => {
-  const { getToken, refreshProfile, logout } = useAuth();
+  const { logout } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [showRoleMenu, setShowRoleMenu] = useState<boolean>(false);
-  const [pinModalTargetRole, setPinModalTargetRole] = useState<UserRole | null>(null);
-  const roleMenuRef = useRef<HTMLDivElement>(null);
+  const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const currentRole: UserRole = (profile?.role as UserRole) || 'accountant';
   const roleConfig = ROLE_CONFIG[currentRole] || ROLE_CONFIG.accountant;
 
-  const handleSelectRole = (targetRole: UserRole) => {
-    setShowRoleMenu(false);
-    if (targetRole === currentRole) return;
-    setPinModalTargetRole(targetRole);
-  };
-
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (roleMenuRef.current && !roleMenuRef.current.contains(e.target as Node)) {
-        setShowRoleMenu(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
       }
     };
-    if (showRoleMenu) {
+    if (showUserMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showRoleMenu]);
+  }, [showUserMenu]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -172,20 +167,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           type="button"
           id="header-quick-logout-btn"
           onClick={logout}
-          title="Log out and return to Homepage"
+          title="Log out and return to Workspace Portal"
           className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-500/10 border border-slate-700/60 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Logout</span>
         </button>
 
-        {/* User Profile Chip & Interactive Role Switcher */}
-        <div className="relative" ref={roleMenuRef}>
+        {/* User Profile Chip & Account Details Menu */}
+        <div className="relative" ref={userMenuRef}>
           <button
             type="button"
-            id="header-role-switcher-btn"
-            onClick={() => setShowRoleMenu(!showRoleMenu)}
-            title="Click to view permissions or switch security role"
+            id="header-user-menu-btn"
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            title="Click to view user profile and security role"
             className="flex items-center gap-2 pl-2 border-l border-slate-800 hover:bg-slate-800/50 py-1 px-1.5 rounded-xl transition cursor-pointer group"
           >
             {user?.photoURL ? (
@@ -196,7 +191,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               />
             ) : (
               <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold">
-                {user?.email?.[0]?.toUpperCase() || 'U'}
+                {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
               </div>
             )}
             <div className="hidden sm:block text-left min-w-0">
@@ -210,82 +205,72 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform" />
           </button>
 
-          {/* Role Switcher Dropdown */}
-          {showRoleMenu && (
+          {/* User Account & Security Info Dropdown */}
+          {showUserMenu && (
             <div
-              id="header-role-menu"
-              className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-2.5 z-50 animate-fade-in space-y-1.5"
+              id="header-user-menu"
+              className="absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-3 z-50 animate-fade-in space-y-3"
             >
-              <div className="px-2.5 py-1.5 border-b border-slate-800">
+              {/* User Identity Header */}
+              <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+                <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm font-bold text-emerald-400 shrink-0">
+                  {user?.photoURL ? (
+                    <img src={user.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                  ) : (
+                    user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-white truncate">
+                    {user?.displayName || 'Workspace User'}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono truncate">
+                    {user?.email}
+                  </div>
+                </div>
+              </div>
+
+              {/* Active Role Card */}
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Active Security Role
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Shield className="w-3 h-3 text-emerald-400" /> Assigned Security Role
                   </span>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
                     {roleConfig.badge}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                <div className="text-xs font-semibold text-slate-200">
+                  {roleConfig.title}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
                   {roleConfig.description}
                 </p>
               </div>
 
-              <div className="px-2.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Switch Role for Testing:
+              {/* Security & Access Info */}
+              <div className="px-1 py-0.5 text-[11px] text-slate-400 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span>User roles and PINs are managed exclusively by Workspace Administrators.</span>
               </div>
 
-              {(['admin', 'accountant', 'billing_operator', 'auditor'] as UserRole[]).map((roleKey) => {
-                const conf = ROLE_CONFIG[roleKey];
-                const isSelected = roleKey === currentRole;
-                return (
-                  <button
-                    key={roleKey}
-                    type="button"
-                    onClick={() => handleSelectRole(roleKey)}
-                    className={`w-full text-left p-2 rounded-xl transition flex items-start justify-between gap-2 cursor-pointer ${
-                      isSelected
-                        ? 'bg-slate-800/90 border border-slate-700'
-                        : 'hover:bg-slate-800/50 border border-transparent'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-xs font-bold ${conf.textBadge}`}>
-                          {conf.title}
-                        </span>
-                        {isSelected && (
-                          <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded">
-                            ACTIVE
-                          </span>
-                        )}
-                      </div>
-                      <span className="block text-[10px] text-slate-400 leading-tight mt-0.5">
-                        {conf.description.slice(0, 55)}...
-                      </span>
-                    </div>
-                    {isSelected && (
-                      <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    )}
-                  </button>
-                );
-              })}
-
+              {/* Logout Option */}
               <div className="pt-2 border-t border-slate-800">
                 <button
                   type="button"
                   id="header-menu-logout-btn"
                   onClick={async () => {
-                    setShowRoleMenu(false);
+                    setShowUserMenu(false);
                     await logout();
                   }}
-                  className="w-full text-left p-2 rounded-xl transition flex items-center justify-between gap-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 cursor-pointer text-xs font-semibold"
+                  className="w-full text-left p-2.5 rounded-xl transition flex items-center justify-between gap-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 cursor-pointer text-xs font-semibold"
                 >
                   <div className="flex items-center gap-2">
                     <LogOut className="w-4 h-4 text-rose-400" />
-                    <span>Sign Out / Logout</span>
+                    <span>Sign Out / Switch User</span>
                   </div>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400/80 font-normal">
-                    Exit to RBAC Login
+                    Exit to Portal
                   </span>
                 </button>
               </div>
@@ -293,18 +278,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           )}
         </div>
       </div>
-
-      {/* Role Switch Security PIN Verification Modal */}
-      <RoleSwitchPinModal
-        isOpen={Boolean(pinModalTargetRole)}
-        onClose={() => setPinModalTargetRole(null)}
-        targetRole={pinModalTargetRole}
-        currentRole={currentRole}
-        onSuccess={async () => {
-          await refreshProfile();
-        }}
-        getToken={getToken}
-      />
     </header>
   );
 };

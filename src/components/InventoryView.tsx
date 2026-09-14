@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { InventoryItem } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission, UserRole } from '../lib/permissions';
 import {
   Boxes,
   Plus,
@@ -33,6 +35,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   onAdjustStock,
   loading,
 }) => {
+  const { profile } = useAuth();
+  const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
+  const canCreate = hasPermission(currentUserRole, 'inventory:create');
+  const canEdit = hasPermission(currentUserRole, 'inventory:edit');
+  const canAdjust = hasPermission(currentUserRole, 'inventory:adjust');
+  const canDelete = hasPermission(currentUserRole, 'inventory:delete');
+
   const [search, setSearch] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'in_stock'>('all');
   const [showItemModal, setShowItemModal] = useState(false);
@@ -196,14 +205,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          id="add-stock-item-btn"
-          className="px-4 py-2 bg-teal-400 hover:bg-teal-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-500/20 cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4 font-bold" />
-          <span>Add Stock Item</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={openCreateModal}
+            id="add-stock-item-btn"
+            className="px-4 py-2 bg-teal-400 hover:bg-teal-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-500/20 cursor-pointer self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4 font-bold" />
+            <span>Add Stock Item</span>
+          </button>
+        )}
       </div>
 
       {/* Summary Metrics */}
@@ -369,7 +380,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                       </td>
                       <td className="py-3.5 px-4 text-right font-sans">
                         <div className="flex items-center justify-end gap-1.5">
-                          {onAdjustStock && (
+                          {canAdjust && onAdjustStock && (
                             <button
                               onClick={() => handleOpenAdjustStock(it)}
                               id={`adjust-stock-${it.id}`}
@@ -379,15 +390,17 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                               <SlidersHorizontal className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          <button
-                            onClick={() => openEditModal(it)}
-                            id={`edit-stock-item-${it.id}`}
-                            title="Edit item properties"
-                            className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          {onDeleteItem && (
+                          {canEdit && (
+                            <button
+                              onClick={() => openEditModal(it)}
+                              id={`edit-stock-item-${it.id}`}
+                              title="Edit item properties"
+                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canDelete && onDeleteItem && (
                             <button
                               onClick={() => setDeletingItem(it)}
                               id={`delete-stock-item-${it.id}`}
@@ -396,6 +409,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
+                          )}
+                          {!canAdjust && !canEdit && !canDelete && (
+                            <span className="text-[11px] text-slate-400 font-medium italic">Read-only</span>
                           )}
                         </div>
                       </td>

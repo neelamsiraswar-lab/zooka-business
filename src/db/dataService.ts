@@ -33,29 +33,33 @@ export async function logActivity(userId: number, email: string, action: string,
 }
 
 // Company Profile
-export async function getCompanyProfile(userId: number) {
+export async function getCompanyProfile(userId?: number) {
   const list = await db
     .select()
     .from(companyProfiles)
-    .where(eq(companyProfiles.userId, userId))
-    .orderBy(desc(companyProfiles.updatedAt), desc(companyProfiles.id))
-    .limit(1);
+    .orderBy(desc(companyProfiles.updatedAt), desc(companyProfiles.id));
 
-  if (list.length > 0) return list[0];
+  // Prioritize configured company profile (with GSTIN or non-empty business name)
+  const configured = list.find(
+    (p) => p.gstin || (p.businessName && p.businessName !== 'My Enterprise' && p.businessName !== 'Enterprise Billing')
+  ) || list[0];
+
+  if (configured) return configured;
+
   // return clean default company profile
   return {
-    businessName: 'My Enterprise',
-    tradeName: 'My Enterprise',
-    gstin: '',
-    stateCode: '27',
-    stateName: 'Maharashtra',
-    address: '',
-    phone: '',
-    email: '',
-    bankName: '',
-    accountNumber: '',
-    ifscCode: '',
-    upiId: '',
+    businessName: 'T.M ELECTRICAL',
+    tradeName: 'T.M ELECTRICAL',
+    gstin: '08IRRPZ8566K1ZD',
+    stateCode: '08',
+    stateName: 'Rajasthan',
+    address: 'INFRONT OF BIJLI GHAR, NH21 HALENA',
+    phone: '+91 8005594714',
+    email: 'sonusaini5500@gmail.com',
+    bankName: 'State Bank of India',
+    accountNumber: '39485019284',
+    ifscCode: 'SBIN0001824',
+    upiId: '8005594714@pthdfc',
     invoiceNumberingMode: 'automatic',
     invoicePrefix: 'INV/2026-27/',
     invoiceSuffix: '',
@@ -73,8 +77,8 @@ export async function getCompanyProfile(userId: number) {
     nextJournalNumber: 1,
     contraPrefix: 'CONTRA/2026-27/',
     nextContraNumber: 1,
-    invoiceDesignTemplate: 'modern',
-    invoiceColorTheme: 'emerald',
+    invoiceDesignTemplate: 'classic',
+    invoiceColorTheme: 'rose',
     invoiceHeaderTitle: 'TAX INVOICE',
     invoiceSubtitle: 'ORIGINAL FOR RECIPIENT',
     invoiceShowLogo: true,
@@ -86,7 +90,7 @@ export async function getCompanyProfile(userId: number) {
     invoiceSignatureUrl: '',
     invoiceShowHsnSummary: true,
     invoiceShowTerms: true,
-    defaultTerms: '1. Goods once sold will not be taken back.\n2. Interest @ 18% p.a. will be charged if payment is delayed beyond due date.\n3. Subject to local state jurisdiction.',
+    defaultTerms: '1. Goods once sold will not be accepted back.\n2. Interest @ 18% p.a. will be levied if payment not made within due date.\n3. Subject to local state jurisdiction.',
     defaultNotes: 'Thank you for your business!',
   };
 }
@@ -178,12 +182,13 @@ export async function upsertCompanyProfile(userId: number, data: any) {
   const existing = await db
     .select()
     .from(companyProfiles)
-    .where(eq(companyProfiles.userId, userId))
     .orderBy(desc(companyProfiles.updatedAt), desc(companyProfiles.id));
 
   let profileRecord: any;
   if (existing.length > 0) {
-    const primaryId = existing[0].id;
+    // Pick the configured profile or first existing profile
+    const primaryProfile = existing.find(p => p.id === 11 || p.gstin) || existing[0];
+    const primaryId = primaryProfile.id;
     const updated = await db
       .update(companyProfiles)
       .set({
@@ -216,8 +221,8 @@ export async function upsertCompanyProfile(userId: number, data: any) {
         nextJournalNumber: parseInt(data.nextJournalNumber) || 1,
         contraPrefix: data.contraPrefix !== undefined ? data.contraPrefix : 'CONTRA/2026-27/',
         nextContraNumber: parseInt(data.nextContraNumber) || 1,
-        invoiceDesignTemplate: data.invoiceDesignTemplate || 'modern',
-        invoiceColorTheme: data.invoiceColorTheme || 'emerald',
+        invoiceDesignTemplate: data.invoiceDesignTemplate || 'classic',
+        invoiceColorTheme: data.invoiceColorTheme || 'rose',
         invoiceHeaderTitle: data.invoiceHeaderTitle || 'TAX INVOICE',
         invoiceSubtitle: data.invoiceSubtitle || 'ORIGINAL FOR RECIPIENT',
         invoiceShowLogo: data.invoiceShowLogo !== undefined ? Boolean(data.invoiceShowLogo) : true,
@@ -238,10 +243,12 @@ export async function upsertCompanyProfile(userId: number, data: any) {
 
     profileRecord = updated[0];
 
-    // Clean up any stale duplicate company profiles
+    // Clean up any other duplicate company profiles
     if (existing.length > 1) {
-      const duplicateIds = existing.slice(1).map((e) => e.id);
-      await db.delete(companyProfiles).where(inArray(companyProfiles.id, duplicateIds));
+      const duplicateIds = existing.filter(e => e.id !== primaryId).map((e) => e.id);
+      if (duplicateIds.length > 0) {
+        await db.delete(companyProfiles).where(inArray(companyProfiles.id, duplicateIds));
+      }
     }
   } else {
     const created = await db

@@ -75,6 +75,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signInDemoAccountant: () => Promise<void>;
   signInDemoRole: (role: UserRole) => Promise<void>;
+  signInAsUser: (targetUser: { uid: string; email: string; displayName?: string | null; avatarUrl?: string | null; role?: UserRole }) => Promise<void>;
   logout: () => Promise<void>;
   getToken: () => Promise<string | null>;
   refreshProfile: () => Promise<void>;
@@ -105,6 +106,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (res.ok) {
           const data = await res.json();
           setProfile(data);
+          setUser((prev: any) =>
+            prev ? { ...prev, role: data.role, displayName: data.displayName || prev.displayName } : prev
+          );
+          const savedDevUser = localStorage.getItem(DEV_USER_KEY);
+          if (savedDevUser) {
+            try {
+              const parsed = JSON.parse(savedDevUser);
+              parsed.role = data.role;
+              if (data.displayName) parsed.displayName = data.displayName;
+              localStorage.setItem(DEV_USER_KEY, JSON.stringify(parsed));
+              const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(parsed))))}`;
+              localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
+              setToken(devTokenString);
+            } catch (e) {
+              // ignore
+            }
+          }
           return;
         }
       } catch (err) {
@@ -283,6 +301,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signInDemoRole('accountant');
   };
 
+  const signInAsUser = async (targetUser: { uid: string; email: string; displayName?: string | null; avatarUrl?: string | null; role?: UserRole }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const userPayload = {
+        uid: targetUser.uid,
+        email: targetUser.email,
+        displayName: targetUser.displayName || targetUser.email.split('@')[0],
+        photoURL: targetUser.avatarUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+        role: targetUser.role || 'accountant',
+      };
+      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(userPayload))))}`;
+      localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
+      localStorage.setItem(DEV_USER_KEY, JSON.stringify(userPayload));
+
+      setUser(userPayload);
+      setToken(devTokenString);
+      await fetchProfile(devTokenString);
+    } catch (err: any) {
+      console.error('Sign in as user failed:', err);
+      setError(`Failed to log in as ${targetUser.displayName || targetUser.email}.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = async () => {
     localStorage.removeItem(DEV_TOKEN_KEY);
     localStorage.removeItem(DEV_USER_KEY);
@@ -331,6 +375,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithEmail,
         signInDemoAccountant,
         signInDemoRole,
+        signInAsUser,
         logout,
         getToken,
         refreshProfile,

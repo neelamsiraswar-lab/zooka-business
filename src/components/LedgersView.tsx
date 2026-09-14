@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Party, Invoice, PaymentVoucher, Cheque } from '../types';
 import { useDialog } from '../context/DialogContext';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission, UserRole } from '../lib/permissions';
 import { AppSelect } from './AppSelect';
 import {
   Users,
@@ -58,6 +60,15 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
   loading,
 }) => {
   const dialog = useDialog();
+  const { profile } = useAuth();
+  const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
+  const canCreateParty = hasPermission(currentUserRole, 'parties:create');
+  const canEditParty = hasPermission(currentUserRole, 'parties:edit');
+  const canDeleteParty = hasPermission(currentUserRole, 'parties:delete');
+  const canRecordPayment = hasPermission(currentUserRole, 'payments:create');
+  const canCreateSalesInvoice = hasPermission(currentUserRole, 'sales:create');
+  const canCreatePurchaseBill = hasPermission(currentUserRole, 'purchases:create');
+
   const [search, setSearch] = useState('');
   const [partyTypeFilter, setPartyTypeFilter] = useState<'all' | 'customer' | 'vendor'>('all');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -242,14 +253,16 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={openCreatePartyModal}
-          id="add-party-btn"
-          className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4 font-bold" />
-          <span>Add Party (Debtor/Creditor)</span>
-        </button>
+        {canCreateParty && (
+          <button
+            onClick={openCreatePartyModal}
+            id="add-party-btn"
+            className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4 font-bold" />
+            <span>Add Party (Debtor/Creditor)</span>
+          </button>
+        )}
       </div>
 
       {/* Summary Metrics */}
@@ -570,7 +583,7 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                               <span className="hidden sm:inline">Statement</span>
                             </button>
 
-                            {onRecordPayment && (
+                            {canRecordPayment && onRecordPayment && (
                               <button
                                 onClick={() =>
                                   onRecordPayment(
@@ -582,7 +595,7 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                                   isCustomer
                                     ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                                     : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30'
-                               }`}
+                                }`}
                                 title={
                                   isCustomer
                                     ? 'Record Receipt from Customer'
@@ -603,7 +616,7 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                               </button>
                             )}
 
-                            {(onNavigateToSales || onNavigateToPurchases || onNavigateToInvoices) && (
+                            {((isCustomer && canCreateSalesInvoice) || (!isCustomer && canCreatePurchaseBill)) && (onNavigateToSales || onNavigateToPurchases || onNavigateToInvoices) && (
                               <button
                                 onClick={() => {
                                   if (isCustomer) {
@@ -622,16 +635,18 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                               </button>
                             )}
 
-                            <button
-                              onClick={() => openEditPartyModal(p)}
-                              id={`edit-party-${p.id}`}
-                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
-                              title="Edit party details"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
+                            {canEditParty && (
+                              <button
+                                onClick={() => openEditPartyModal(p)}
+                                id={`edit-party-${p.id}`}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
+                                title="Edit party details"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            )}
 
-                            {onDeleteParty && (
+                            {canDeleteParty && onDeleteParty && (
                               <button
                                 onClick={() => handleDeletePartyConfirm(p)}
                                 id={`delete-party-${p.id}`}
@@ -801,16 +816,18 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                     </button>
 
                     <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => openEditPartyModal(p)}
-                        id={`edit-party-${p.id}`}
-                        className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
-                        title="Edit party details"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canEditParty && (
+                        <button
+                          onClick={() => openEditPartyModal(p)}
+                          id={`edit-party-${p.id}`}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
+                          title="Edit party details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
 
-                      {onDeleteParty && (
+                      {canDeleteParty && onDeleteParty && (
                         <button
                           onClick={() => handleDeletePartyConfirm(p)}
                           id={`delete-party-card-${p.id}`}
@@ -821,7 +838,7 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                         </button>
                       )}
 
-                      {onRecordPayment && (
+                      {canRecordPayment && onRecordPayment && (
                         <button
                           onClick={() =>
                             onRecordPayment(

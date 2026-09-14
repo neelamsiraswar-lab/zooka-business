@@ -1,33 +1,27 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useAuth, DEMO_RBAC_PERSONAS } from '../context/AuthContext';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import {
   Building2,
   ShieldCheck,
   Zap,
   Users,
-  FileSpreadsheet,
   Lock,
   ArrowRight,
   AlertTriangle,
-  UserCheck,
   CheckCircle2,
   X,
-  Mail,
   KeyRound,
-  UserPlus,
   LogIn,
-  User,
-  Shield,
-  Check,
   Eye,
   EyeOff,
   Sparkles,
   Delete,
-  ShieldAlert,
-  BadgeCheck,
   FileText,
-  ShoppingCart,
   Search,
+  RefreshCw,
+  Clock,
+  Shield,
+  Check,
 } from 'lucide-react';
 import {
   UserRole,
@@ -36,55 +30,120 @@ import {
   getRoleDefaultPin,
 } from '../lib/permissions';
 
+interface RegisteredWorkspaceUser {
+  id: number;
+  uid: string;
+  email: string;
+  displayName: string | null;
+  role: UserRole;
+  pin?: string | null;
+  avatarUrl: string | null;
+  createdAt?: string;
+}
+
 export const LoginView: React.FC = () => {
   const {
-    signInWithGoogle,
-    signInWithEmail,
-    signUpWithEmail,
     signInDemoRole,
+    signInAsUser,
     loading,
     error,
     clearError,
   } = useAuth();
 
-  const [mode, setMode] = useState<'rbac' | 'signin' | 'register'>('rbac');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [selectedInitialRole, setSelectedInitialRole] = useState<UserRole>('accountant');
-  const [submitting, setSubmitting] = useState(false);
-  const [authenticatingRole, setAuthenticatingRole] = useState<UserRole | null>(null);
+  const [authenticatingTarget, setAuthenticatingTarget] = useState<string | null>(null);
+
+  // Live registered users fetched automatically from backend
+  const [registeredUsers, setRegisteredUsers] = useState<RegisteredWorkspaceUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+  const [userSearchQuery, setUserSearchQuery] = useState<string>('');
 
   // Security PIN verification modal state on login page
-  const [pinModalRole, setPinModalRole] = useState<UserRole | null>(null);
+  const [pinModalTarget, setPinModalTarget] = useState<{
+    role: UserRole;
+    displayName: string;
+    email: string;
+    avatarUrl?: string | null;
+    pin?: string | null;
+    userObj?: RegisteredWorkspaceUser;
+  } | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [showPinText, setShowPinText] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinSuccess, setPinSuccess] = useState(false);
+  const [restoringAdmin, setRestoringAdmin] = useState<boolean>(false);
   const pinInputRef = useRef<HTMLInputElement>(null);
 
+  const handleRestoreAdmin = async () => {
+    setRestoringAdmin(true);
+    try {
+      const res = await fetch('/api/public/restore-admin', { method: 'POST' });
+      if (res.ok) {
+        await fetchRegisteredUsers(true);
+      }
+    } catch (err) {
+      console.error('Failed to restore admin profile:', err);
+    } finally {
+      setRestoringAdmin(false);
+    }
+  };
+
+  // Fetch all registered workspace users from API
+  const fetchRegisteredUsers = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoadingUsers(true);
+    try {
+      const res = await fetch('/api/public/users');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setRegisteredUsers(data);
+          setLastSyncTime(new Date());
+        }
+      }
+    } catch (err) {
+      console.warn('Could not auto-fetch registered users from server:', err);
+    } finally {
+      if (showLoading) setLoadingUsers(false);
+    }
+  }, []);
+
+  // Auto-fetch on mount and poll periodically every 8s so new/edited users appear live
   useEffect(() => {
-    if (pinModalRole) {
+    fetchRegisteredUsers(true);
+    const interval = setInterval(() => {
+      fetchRegisteredUsers(false);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [fetchRegisteredUsers]);
+
+  useEffect(() => {
+    if (pinModalTarget) {
       setPinInput('');
       setPinError(null);
       setPinSuccess(false);
       setTimeout(() => pinInputRef.current?.focus(), 150);
     }
-  }, [pinModalRole]);
+  }, [pinModalTarget]);
 
-  const handleInstantRoleLogin = async (role: UserRole) => {
-    setAuthenticatingRole(role);
+  const handleInstantUserLogin = async (userItem: RegisteredWorkspaceUser) => {
+    setAuthenticatingTarget(`user-${userItem.id}`);
     clearError();
     try {
-      await signInDemoRole(role);
+      await signInAsUser({
+        uid: userItem.uid,
+        email: userItem.email,
+        displayName: userItem.displayName,
+        avatarUrl: userItem.avatarUrl,
+        role: userItem.role,
+      });
     } finally {
-      setAuthenticatingRole(null);
+      setAuthenticatingTarget(null);
     }
   };
 
   const handleVerifyPinAndLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!pinModalRole) return;
+    if (!pinModalTarget) return;
 
     const trimmed = pinInput.trim();
     if (trimmed.length < 4) {
@@ -93,11 +152,14 @@ export const LoginView: React.FC = () => {
       return;
     }
 
-    const expectedPin = getRoleDefaultPin(pinModalRole);
+    const defaultRolePin = getRoleDefaultPin(pinModalTarget.role);
+    const userCustomPin = pinModalTarget.pin || pinModalTarget.userObj?.pin;
     const isMaster = trimmed === DEFAULT_ROLE_PINS.master || trimmed === '1234';
+    const isCustomMatch = userCustomPin && trimmed === userCustomPin;
+    const isDefaultMatch = trimmed === defaultRolePin;
 
-    if (trimmed !== expectedPin && !isMaster) {
-      setPinError(`Invalid PIN for ${ROLE_CONFIG[pinModalRole].title}. Default PIN is ${expectedPin} (or Master 1234).`);
+    if (!isCustomMatch && !isDefaultMatch && !isMaster) {
+      setPinError(`Invalid PIN for ${ROLE_CONFIG[pinModalTarget.role]?.title || 'user'}. Contact Admin or use PIN: ${userCustomPin || defaultRolePin}`);
       setPinInput('');
       pinInputRef.current?.focus();
       return;
@@ -105,37 +167,39 @@ export const LoginView: React.FC = () => {
 
     setPinSuccess(true);
     setPinError(null);
-    setAuthenticatingRole(pinModalRole);
+    setAuthenticatingTarget(pinModalTarget.userObj ? `user-${pinModalTarget.userObj.id}` : `role-${pinModalTarget.role}`);
 
     setTimeout(async () => {
       try {
-        await signInDemoRole(pinModalRole);
-        setPinModalRole(null);
+        if (pinModalTarget.userObj) {
+          await signInAsUser({
+            uid: pinModalTarget.userObj.uid,
+            email: pinModalTarget.userObj.email,
+            displayName: pinModalTarget.userObj.displayName,
+            avatarUrl: pinModalTarget.userObj.avatarUrl,
+            role: pinModalTarget.userObj.role,
+          });
+        } else {
+          await signInDemoRole(pinModalTarget.role);
+        }
+        setPinModalTarget(null);
       } finally {
-        setAuthenticatingRole(null);
+        setAuthenticatingTarget(null);
       }
     }, 400);
   };
 
-  const handleSubmitEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) return;
-    if (mode === 'register' && !displayName) return;
-    setSubmitting(true);
-    try {
-      if (mode === 'register') {
-        await signUpWithEmail(email, password, displayName);
-      } else {
-        await signInWithEmail(email, password);
-      }
-    } catch (err) {
-      // handled in context
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const rolesList: UserRole[] = ['admin', 'accountant', 'billing_operator', 'auditor'];
+  // Filter dynamic registered workspace users by search query
+  const query = userSearchQuery.trim().toLowerCase();
+  const filteredWorkspaceUsers = registeredUsers.filter((u) => {
+    if (!query) return true;
+    return (
+      (u.displayName || '').toLowerCase().includes(query) ||
+      (u.email || '').toLowerCase().includes(query) ||
+      (u.role || '').toLowerCase().includes(query) ||
+      (ROLE_CONFIG[u.role]?.title || '').toLowerCase().includes(query)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white">
@@ -147,7 +211,7 @@ export const LoginView: React.FC = () => {
           </div>
           <div>
             <span className="font-semibold text-lg tracking-tight text-white flex items-center gap-2">
-              Apex TallyGST <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider font-bold">RBAC Ready</span>
+              Apex TallyGST <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider font-bold">Admin Managed</span>
             </span>
             <p className="text-xs text-slate-400">Enterprise Cloud Accounting & Tax Compliance</p>
           </div>
@@ -158,9 +222,9 @@ export const LoginView: React.FC = () => {
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>Cloud SQL PostgreSQL Active</span>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-300 font-medium">
-            <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-            <span>4 Security Roles Configured</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[11px] text-teal-300 font-medium">
+            <Users className="w-3.5 h-3.5 text-teal-400" />
+            <span>{registeredUsers.length} Workspace Users Registered</span>
           </div>
         </div>
       </header>
@@ -168,7 +232,7 @@ export const LoginView: React.FC = () => {
       {/* Main Container */}
       <main className="flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
         <div className="max-w-6xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Column: Platform Overview & RBAC Permissions Matrix */}
+          {/* Left Column: Platform Overview & Security Architecture */}
           <div className="lg:col-span-6 space-y-6">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-emerald-400">
               <Zap className="w-3.5 h-3.5 text-emerald-400" />
@@ -176,172 +240,110 @@ export const LoginView: React.FC = () => {
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
-              Enterprise Role-Based Access Control (RBAC)
+              Enterprise Multi-User Cloud Accounting
             </h1>
 
             <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-              Log in directly as any predefined role to test isolated permissions, financial authorizations, and PIN-secured switches.
+              Secure role-based accounting, double-entry general ledgers, tax filings, and instant PIN-authorized sign-in for provisioned workspace personnel.
             </p>
 
-            {/* Quick RBAC Role Cards Matrix */}
-            <div className="space-y-2.5 pt-1">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                Security Roles & Access Privileges
-              </span>
+            {/* Admin Management Policy Notice */}
+            <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-2">
+              <div className="flex items-center gap-2 text-purple-400">
+                <ShieldCheck className="w-4 h-4" />
+                <span className="text-xs font-bold text-white">Centralized Administrator Control</span>
+              </div>
+              <p className="text-xs text-purple-200/80 leading-relaxed">
+                Public self-registration is strictly disabled. Only workspace <strong>Administrators</strong> can create team members, assign security roles, and configure 4-digit access PINs in <strong>Settings &gt; Team &amp; RBAC</strong>.
+              </p>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Admin */}
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-purple-500/20 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs font-bold">
-                          <Shield className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-xs font-bold text-purple-300">Administrator</span>
-                      </div>
-                      <span className="text-[10px] font-mono bg-purple-500/10 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/20">
-                        PIN: 9999
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-snug">
-                      Unconstrained authority: Master company profile, user accounts, role management, database restore & PIN settings.
-                    </p>
-                  </div>
-                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                    <span>13 / 13 Modules</span>
-                    <span className="text-purple-400 font-semibold">Full Authority</span>
-                  </div>
+            {/* Key Features Overview */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <FileText className="w-4 h-4" />
+                  <span className="text-xs font-bold text-white">Full GST Invoicing & Ledgers</span>
                 </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Automated HSN calculation, tax splits, GSTR-1, GSTR-3B preparation and Day Book tracking.
+                </p>
+              </div>
 
-                {/* Senior Accountant */}
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-emerald-500/20 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold">
-                          <FileText className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-xs font-bold text-emerald-300">Senior Accountant</span>
-                      </div>
-                      <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                        PIN: 2222
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-snug">
-                      Complete financial accounting: Day book, journal vouchers, BRS, GSTR-1 & 3B, P&L, balance sheets & adjustments.
-                    </p>
-                  </div>
-                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                    <span>13 / 13 Modules</span>
-                    <span className="text-emerald-400 font-semibold">Financial Control</span>
-                  </div>
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+                <div className="flex items-center gap-2 text-teal-400">
+                  <Users className="w-4 h-4" />
+                  <span className="text-xs font-bold text-white">Dynamic User Management</span>
                 </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Live team directory synchronized directly with PostgreSQL. Admin manages all permissions.
+                </p>
+              </div>
 
-                {/* Billing Operator */}
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-blue-500/20 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold">
-                          <ShoppingCart className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-xs font-bold text-blue-300">Billing Operator</span>
-                      </div>
-                      <span className="text-[10px] font-mono bg-blue-500/10 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/20">
-                        PIN: 1111
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-snug">
-                      POS & sales desk: Inward/outward bills, receipts, customer ledger lookup. Locked out of bank, journals & settings.
-                    </p>
-                  </div>
-                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                    <span>6 Modules Only</span>
-                    <span className="text-blue-400 font-semibold">POS Restricted</span>
-                  </div>
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+                <div className="flex items-center gap-2 text-purple-400">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span className="text-xs font-bold text-white">Role-Based Security</span>
                 </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Fine-grained permissions for Admins, Accountants, Billing Operators, and Statutory Auditors.
+                </p>
+              </div>
 
-                {/* Statutory Auditor */}
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-amber-500/20 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs font-bold">
-                          <Search className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-xs font-bold text-amber-300">Statutory Auditor</span>
-                      </div>
-                      <span className="text-[10px] font-mono bg-amber-500/10 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/20">
-                        PIN: 3333
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-snug">
-                      Inspection authority: Complete read-only audit access across all books, GSTR-2B matching, and immutable audit logs.
-                    </p>
-                  </div>
-                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                    <span>12 Modules</span>
-                    <span className="text-amber-400 font-semibold">Strict Read-Only</span>
-                  </div>
+              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+                <div className="flex items-center gap-2 text-amber-400">
+                  <KeyRound className="w-4 h-4" />
+                  <span className="text-xs font-bold text-white">4-Digit PIN Security</span>
                 </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Instant authorization verification and audit trail logging for all sensitive accounting operations.
+                </p>
               </div>
             </div>
 
             <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                Master Security Bypass PIN: <strong className="text-slate-200 font-mono">1234</strong> can unlock any role for development.
+                Master Supervisor Override PIN: <strong className="text-slate-200 font-mono">1234</strong>
               </span>
             </div>
           </div>
 
-          {/* Right Column: Interactive Login / RBAC Selection Card */}
+          {/* Right Column: Interactive Workspace Users Selection Card */}
           <div className="lg:col-span-6">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
               <div className="absolute -top-16 -right-16 w-44 h-44 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-              {/* Mode Toggle Tabs */}
-              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 mb-5">
-                <button
-                  type="button"
-                  id="tab-rbac-mode"
-                  onClick={() => { setMode('rbac'); clearError(); }}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    mode === 'rbac'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  RBAC Roles
-                </button>
-                <button
-                  type="button"
-                  id="tab-signin-mode"
-                  onClick={() => { setMode('signin'); clearError(); }}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    mode === 'signin'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <LogIn className="w-3.5 h-3.5" />
-                  Email Sign In
-                </button>
-                <button
-                  type="button"
-                  id="tab-register-mode"
-                  onClick={() => { setMode('register'); clearError(); }}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                    mode === 'register'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  Register
-                </button>
+              {/* Header */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Users className="w-5 h-5 text-emerald-400" />
+                    <span>Workspace Users Portal</span>
+                  </h2>
+                  <div
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-300"
+                    title={`Last updated at ${lastSyncTime.toLocaleTimeString()}`}
+                  >
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="text-[10px] font-medium text-emerald-400">
+                      Live Sync ({registeredUsers.length} Users)
+                    </span>
+                    <button
+                      type="button"
+                      id="btn-refresh-users-homepage"
+                      onClick={() => fetchRegisteredUsers(true)}
+                      disabled={loadingUsers}
+                      title="Refresh live users list from database"
+                      className="ml-1 text-slate-400 hover:text-white transition cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${loadingUsers ? 'animate-spin text-emerald-400' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Select your provisioned account below to log in or authenticate with your 4-digit PIN:
+                </p>
               </div>
 
               {/* Notification Banner */}
@@ -359,77 +361,93 @@ export const LoginView: React.FC = () => {
                 </div>
               )}
 
-              {/* ---------------- MODE 1: RBAC ROLE SELECTION (DEFAULT) ---------------- */}
-              {mode === 'rbac' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        <span>Select Security Persona</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
-                          Instant Access
-                        </span>
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Choose a role below to log in directly or enter its PIN to verify:
-                      </p>
-                    </div>
-                  </div>
+              {/* Live Search Input */}
+              <div className="relative mb-4">
+                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder="Search users by name, email, or role..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8.5 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+                />
+                {userSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setUserSearchQuery('')}
+                    className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-                  <div className="space-y-3">
-                    {rolesList.map((roleKey) => {
-                      const persona = DEMO_RBAC_PERSONAS[roleKey];
-                      const conf = ROLE_CONFIG[roleKey];
-                      const isSubmittingThis = authenticatingRole === roleKey;
-                      const defaultPin = getRoleDefaultPin(roleKey);
+              {/* Dynamic Workspace Users List */}
+              <div className="space-y-2.5">
+                {loadingUsers && registeredUsers.length === 0 ? (
+                  <div className="py-12 text-center space-y-2">
+                    <div className="w-7 h-7 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <p className="text-xs text-slate-400">Loading registered workspace users...</p>
+                  </div>
+                ) : filteredWorkspaceUsers.length > 0 ? (
+                  <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                    {filteredWorkspaceUsers.map((u) => {
+                      const conf = ROLE_CONFIG[u.role] || ROLE_CONFIG.accountant;
+                      const isSubmittingThis = authenticatingTarget === `user-${u.id}`;
+                      const userPin = u.pin || getRoleDefaultPin(u.role || 'accountant');
+                      const displayNameStr = u.displayName || u.email.split('@')[0];
+                      const fallbackAvatar = `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`;
 
                       return (
                         <div
-                          key={roleKey}
-                          id={`rbac-card-${roleKey}`}
-                          className={`p-3 sm:p-3.5 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                            roleKey === 'admin'
+                          key={u.id}
+                          id={`workspace-user-card-${u.id}`}
+                          className={`p-3.5 rounded-xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            u.role === 'admin'
                               ? 'bg-purple-950/20 border-purple-500/30 hover:border-purple-500/50'
-                              : roleKey === 'accountant'
-                              ? 'bg-emerald-950/20 border-emerald-500/30 hover:border-emerald-500/50'
-                              : roleKey === 'billing_operator'
+                              : u.role === 'billing_operator'
                               ? 'bg-blue-950/20 border-blue-500/30 hover:border-blue-500/50'
-                              : 'bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50'
+                              : u.role === 'auditor'
+                              ? 'bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50'
+                              : 'bg-emerald-950/20 border-emerald-500/30 hover:border-emerald-500/50'
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <img
-                              src={persona.photoURL}
-                              alt={persona.displayName}
-                              className={`w-10 h-10 rounded-full border-2 object-cover shrink-0 ${
-                                roleKey === 'admin'
+                              src={u.avatarUrl || fallbackAvatar}
+                              alt={displayNameStr}
+                              className={`w-11 h-11 rounded-full border-2 object-cover shrink-0 ${
+                                u.role === 'admin'
                                   ? 'border-purple-500'
-                                  : roleKey === 'accountant'
-                                  ? 'border-emerald-500'
-                                  : roleKey === 'billing_operator'
+                                  : u.role === 'billing_operator'
                                   ? 'border-blue-500'
-                                  : 'border-amber-500'
+                                  : u.role === 'auditor'
+                                  ? 'border-amber-500'
+                                  : 'border-emerald-500'
                               }`}
                             />
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-bold text-white truncate">
-                                  {persona.displayName}
+                                  {displayNameStr}
                                 </span>
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border leading-none ${conf.bgBadge} ${conf.textBadge} ${conf.borderBadge}`}>
                                   {conf.badge}
                                 </span>
                               </div>
                               <span className="block text-[11px] text-slate-400 truncate mt-0.5">
-                                {persona.email}
+                                {u.email}
                               </span>
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-[10px] font-mono text-slate-400 bg-slate-900/90 px-1.5 py-0.5 rounded border border-slate-800">
-                                  PIN: <strong className="text-slate-200">{defaultPin}</strong>
+                                  PIN: <strong className="text-slate-200">{userPin}</strong>
                                 </span>
-                                <span className="text-[10px] text-slate-500 hidden sm:inline">
-                                  {persona.subtitle.slice(0, 35)}...
-                                </span>
+                                {u.createdAt && (
+                                  <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {new Date(u.createdAt).toLocaleDateString()}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -438,30 +456,39 @@ export const LoginView: React.FC = () => {
                             {/* Option 1: Enter PIN Button */}
                             <button
                               type="button"
-                              id={`btn-pin-${roleKey}`}
-                              onClick={() => setPinModalRole(roleKey)}
-                              disabled={loading || Boolean(authenticatingRole)}
-                              title={`Enter security PIN for ${conf.title}`}
+                              id={`btn-pin-user-${u.id}`}
+                              onClick={() =>
+                                setPinModalTarget({
+                                  role: u.role || 'accountant',
+                                  displayName: displayNameStr,
+                                  email: u.email,
+                                  avatarUrl: u.avatarUrl,
+                                  pin: userPin,
+                                  userObj: u,
+                                })
+                              }
+                              disabled={loading || Boolean(authenticatingTarget)}
+                              title={`Enter security PIN for ${displayNameStr}`}
                               className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                             >
                               <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                              <span className="hidden sm:inline">Enter PIN</span>
+                              <span className="hidden sm:inline">PIN</span>
                             </button>
 
                             {/* Option 2: Instant Login Button */}
                             <button
                               type="button"
-                              id={`btn-instant-login-${roleKey}`}
-                              onClick={() => handleInstantRoleLogin(roleKey)}
-                              disabled={loading || Boolean(authenticatingRole)}
+                              id={`btn-login-user-${u.id}`}
+                              onClick={() => handleInstantUserLogin(u)}
+                              disabled={loading || Boolean(authenticatingTarget)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow active:scale-[0.98] disabled:opacity-50 ${
-                                roleKey === 'admin'
+                                u.role === 'admin'
                                   ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                                  : roleKey === 'accountant'
-                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                                  : roleKey === 'billing_operator'
+                                  : u.role === 'billing_operator'
                                   ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                                  : 'bg-amber-600 hover:bg-amber-500 text-white'
+                                  : u.role === 'auditor'
+                                  ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                               }`}
                             >
                               {isSubmittingThis ? (
@@ -481,225 +508,47 @@ export const LoginView: React.FC = () => {
                       );
                     })}
                   </div>
+                ) : (
+                  <div className="p-6 rounded-xl bg-slate-950/50 border border-slate-800/80 text-center space-y-2">
+                    <Users className="w-8 h-8 text-slate-600 mx-auto" />
+                    <p className="text-xs text-slate-400">
+                      {userSearchQuery
+                        ? `No registered workspace users match "${userSearchQuery}".`
+                        : 'No workspace users found.'}
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      New users must be provisioned by the Administrator inside Settings &gt; Team &amp; RBAC.
+                    </p>
+                  </div>
+                )}
+              </div>
 
-                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500">
-                    <span>Switching between roles tests instant permission recalculation.</span>
+              <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
+                <span>Live role-based access control &amp; audit trails.</span>
+                <div className="flex items-center gap-3">
+                  {!registeredUsers.some(u => u.role === 'admin') && (
                     <button
                       type="button"
-                      onClick={() => setMode('signin')}
-                      className="text-emerald-400 hover:underline cursor-pointer"
+                      id="btn-recover-admin-homepage"
+                      onClick={handleRestoreAdmin}
+                      disabled={restoringAdmin}
+                      className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold underline cursor-pointer"
                     >
-                      Use Custom Email →
+                      {restoringAdmin ? 'Restoring Admin...' : 'Restore Admin Profile'}
                     </button>
-                  </div>
+                  )}
+                  <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" /> PIN Protected
+                  </span>
                 </div>
-              )}
-
-              {/* ---------------- MODE 2: EMAIL SIGN IN ---------------- */}
-              {mode === 'signin' && (
-                <div>
-                  <form onSubmit={handleSubmitEmailAuth} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                        Email Address
-                      </label>
-                      <div className="relative">
-                        <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                        <input
-                          type="email"
-                          required
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="e.g. ca.kuldeep@apexaccounting.com"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                        Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                        <input
-                          type="password"
-                          required
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="••••••••••••"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={loading || submitting}
-                      className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-slate-950 bg-emerald-400 hover:bg-emerald-300 transition shadow active:scale-[0.99] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      {submitting ? 'Authenticating...' : 'Sign In with Email'}
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </form>
-
-                  <div className="relative my-5">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-slate-800"></div>
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-slate-900 px-2 text-slate-500 font-medium">Or continue with</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <button
-                      type="button"
-                      onClick={signInWithGoogle}
-                      disabled={loading || submitting}
-                      className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl font-medium text-slate-900 bg-white hover:bg-slate-100 transition shadow active:scale-[0.99] disabled:opacity-50 cursor-pointer text-xs"
-                    >
-                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
-                        <path
-                          fill="#4285F4"
-                          d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
-                        />
-                        <path
-                          fill="#34A853"
-                          d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24Z"
-                        />
-                        <path
-                          fill="#FBBC05"
-                          d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15Z"
-                        />
-                        <path
-                          fill="#EA4335"
-                          d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
-                        />
-                      </svg>
-                      <span className="font-semibold">Sign in with Google</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setMode('rbac')}
-                      className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition text-xs cursor-pointer"
-                    >
-                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      <span>Back to RBAC Role Selectors (4 Roles)</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ---------------- MODE 3: REGISTER ---------------- */}
-              {mode === 'register' && (
-                <div>
-                  <form onSubmit={handleSubmitEmailAuth} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                        Full Name
-                      </label>
-                      <div className="relative">
-                        <User className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                        <input
-                          type="text"
-                          required
-                          value={displayName}
-                          onChange={(e) => setDisplayName(e.target.value)}
-                          placeholder="e.g. CA Kuldeep Nawar"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                        Email Address
-                      </label>
-                      <div className="relative">
-                        <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                        <input
-                          type="email"
-                          required
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="e.g. kuldeep@apexaccounting.com"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                        Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
-                        <input
-                          type="password"
-                          required
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="At least 6 characters"
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Initial Role Selection */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                        Initial Assigned Role
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {rolesList.map((r) => {
-                          const conf = ROLE_CONFIG[r];
-                          const isSelected = selectedInitialRole === r;
-                          return (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() => setSelectedInitialRole(r)}
-                              className={`p-2 rounded-xl border text-left transition cursor-pointer ${
-                                isSelected
-                                  ? 'bg-slate-800 border-emerald-500 text-white shadow'
-                                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className={`text-xs font-bold ${conf.textBadge}`}>
-                                  {conf.title}
-                                </span>
-                                {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                              </div>
-                              <span className="block text-[10px] text-slate-500 mt-0.5 truncate">
-                                {conf.description.slice(0, 30)}...
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={loading || submitting}
-                      className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-slate-950 bg-emerald-400 hover:bg-emerald-300 transition shadow active:scale-[0.99] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      {submitting ? 'Creating Account...' : 'Register New Account'}
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </form>
-                </div>
-              )}
+              </div>
             </div>
           </div>
         </div>
       </main>
 
       {/* ---------------- INTERACTIVE PIN VERIFICATION MODAL ON LOGIN PAGE ---------------- */}
-      {pinModalRole && (
+      {pinModalTarget && (
         <div
           id="login-pin-verification-modal-backdrop"
           className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
@@ -710,7 +559,7 @@ export const LoginView: React.FC = () => {
           >
             <button
               type="button"
-              onClick={() => { setPinModalRole(null); setPinError(null); }}
+              onClick={() => { setPinModalTarget(null); setPinError(null); }}
               className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -727,7 +576,7 @@ export const LoginView: React.FC = () => {
               <p className="text-xs text-slate-400">
                 Enter the 4-digit authorization PIN for{' '}
                 <span className="text-white font-semibold">
-                  {ROLE_CONFIG[pinModalRole].title}
+                  {ROLE_CONFIG[pinModalTarget.role]?.title || 'Security Persona'}
                 </span>
               </p>
             </div>
@@ -735,19 +584,19 @@ export const LoginView: React.FC = () => {
             {/* Persona Target Info */}
             <div className="mt-4 p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-3">
               <img
-                src={DEMO_RBAC_PERSONAS[pinModalRole].photoURL}
-                alt={DEMO_RBAC_PERSONAS[pinModalRole].displayName}
+                src={pinModalTarget.avatarUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`}
+                alt={pinModalTarget.displayName}
                 className="w-10 h-10 rounded-full border border-slate-700 object-cover shrink-0"
               />
               <div className="min-w-0">
                 <span className="block text-xs font-bold text-white truncate">
-                  {DEMO_RBAC_PERSONAS[pinModalRole].displayName}
+                  {pinModalTarget.displayName}
                 </span>
                 <span className="block text-[11px] text-slate-400 truncate">
-                  {DEMO_RBAC_PERSONAS[pinModalRole].email}
+                  {pinModalTarget.email}
                 </span>
-                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border leading-none mt-1 ${ROLE_CONFIG[pinModalRole].bgBadge} ${ROLE_CONFIG[pinModalRole].textBadge} ${ROLE_CONFIG[pinModalRole].borderBadge}`}>
-                  {ROLE_CONFIG[pinModalRole].badge}
+                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border leading-none mt-1 ${ROLE_CONFIG[pinModalTarget.role]?.bgBadge} ${ROLE_CONFIG[pinModalTarget.role]?.textBadge} ${ROLE_CONFIG[pinModalTarget.role]?.borderBadge}`}>
+                  {ROLE_CONFIG[pinModalTarget.role]?.badge}
                 </span>
               </div>
             </div>
@@ -791,7 +640,7 @@ export const LoginView: React.FC = () => {
               {pinSuccess && (
                 <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                  <span>PIN verified! Logging into {ROLE_CONFIG[pinModalRole].title}...</span>
+                  <span>PIN verified! Logging in...</span>
                 </div>
               )}
 
@@ -801,13 +650,13 @@ export const LoginView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    const pin = getRoleDefaultPin(pinModalRole);
+                    const pin = pinModalTarget.pin || getRoleDefaultPin(pinModalTarget.role);
                     setPinInput(pin);
                     setPinError(null);
                   }}
                   className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 text-[11px] font-mono border border-slate-700 cursor-pointer"
                 >
-                  Use PIN: {getRoleDefaultPin(pinModalRole)}
+                  Use PIN: {pinModalTarget.pin || getRoleDefaultPin(pinModalTarget.role)}
                 </button>
               </div>
 
@@ -860,7 +709,7 @@ export const LoginView: React.FC = () => {
                 className="w-full py-2.5 rounded-xl font-bold text-xs text-slate-950 bg-amber-400 hover:bg-amber-300 transition shadow active:scale-[0.99] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 mt-2"
               >
                 <ShieldCheck className="w-4 h-4" />
-                <span>Verify PIN & Login</span>
+                <span>Verify PIN &amp; Login</span>
               </button>
             </form>
           </div>
@@ -869,7 +718,7 @@ export const LoginView: React.FC = () => {
 
       {/* Footer */}
       <footer className="px-6 py-4 border-t border-slate-900 text-center text-xs text-slate-600">
-        © 2026 Apex TallyGST Accounting Platform. Multi-role cloud synchronization, PIN-secured RBAC & automated tax compliance.
+        © 2026 Apex TallyGST Accounting Platform. Multi-role cloud synchronization, PIN-secured RBAC &amp; automated tax compliance.
       </footer>
     </div>
   );

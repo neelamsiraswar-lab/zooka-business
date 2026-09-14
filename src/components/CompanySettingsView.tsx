@@ -41,6 +41,9 @@ import {
   UserPlus,
   KeyRound,
   X,
+  Pencil,
+  UserX,
+  UserCog,
 } from 'lucide-react';
 import { InvoiceTemplateRenderer, COLOR_THEMES } from './InvoiceTemplateRenderer.tsx';
 import { LocalImageUploader } from './LocalImageUploader.tsx';
@@ -121,6 +124,8 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const canRestore = hasPermission(currentUserRole, 'settings:restore');
   const canEditCompany = hasPermission(currentUserRole, 'settings:edit_company');
   const canManageRoles = hasPermission(currentUserRole, 'users:manage_roles');
+  const canEditUsers = hasPermission(currentUserRole, 'users:edit');
+  const canDeleteUsers = hasPermission(currentUserRole, 'users:delete');
 
   // Synchronization and persistence protection refs
   const hasInitializedRef = useRef(false);
@@ -141,9 +146,25 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<UserRole>('accountant');
+  const [invitePin, setInvitePin] = useState('1234');
   const [inviting, setInviting] = useState(false);
   const [updatingMemberId, setUpdatingMemberId] = useState<number | null>(null);
   const [matrixSearch, setMatrixSearch] = useState('');
+
+  // Edit Other User Profile State
+  const [editingMember, setEditingMember] = useState<any | null>(null);
+  const [editMemberName, setEditMemberName] = useState('');
+  const [editMemberEmail, setEditMemberEmail] = useState('');
+  const [editMemberRole, setEditMemberRole] = useState<UserRole>('accountant');
+  const [editMemberPin, setEditMemberPin] = useState('');
+  const [editMemberAvatar, setEditMemberAvatar] = useState('');
+  const [savingEditMember, setSavingEditMember] = useState(false);
+  const [editMemberError, setEditMemberError] = useState<string | null>(null);
+
+  // Delete Other User Profile State
+  const [deletingMember, setDeletingMember] = useState<any | null>(null);
+  const [deletingMemberLoading, setDeletingMemberLoading] = useState(false);
+  const [deleteMemberError, setDeleteMemberError] = useState<string | null>(null);
 
   // Role Switch Security PINs State
   const [rolePins, setRolePins] = useState<RolePinConfig>(DEFAULT_ROLE_PINS);
@@ -243,11 +264,13 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           email: inviteEmail.trim(),
           displayName: inviteName.trim(),
           role: inviteRole,
+          pin: invitePin.trim() || DEFAULT_ROLE_PINS[inviteRole] || '1234',
         }),
       });
       if (res.ok) {
         setInviteEmail('');
         setInviteName('');
+        setInvitePin('1234');
         setShowInviteModal(false);
         await fetchTeamMembers();
       } else {
@@ -290,6 +313,96 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     }
   };
 
+  const openEditMemberModal = (member: any) => {
+    setEditingMember(member);
+    setEditMemberName(member.displayName || '');
+    setEditMemberEmail(member.email || '');
+    setEditMemberRole((member.role as UserRole) || 'accountant');
+    setEditMemberPin(member.pin || DEFAULT_ROLE_PINS[(member.role as UserRole) || 'accountant'] || '1234');
+    setEditMemberAvatar(member.avatarUrl || '');
+    setEditMemberError(null);
+  };
+
+  const handleSaveEditMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    if (!editMemberName.trim()) {
+      setEditMemberError('Full display name is required');
+      return;
+    }
+    if (!editMemberEmail.trim()) {
+      setEditMemberError('Email address is required');
+      return;
+    }
+
+    try {
+      const idToken = await getToken();
+      if (!idToken) return;
+      setSavingEditMember(true);
+      setEditMemberError(null);
+
+      const res = await fetch(`/api/users/${editingMember.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          displayName: editMemberName.trim(),
+          email: editMemberEmail.trim(),
+          role: editMemberRole,
+          pin: editMemberPin.trim() || DEFAULT_ROLE_PINS[editMemberRole] || '1234',
+          avatarUrl: editMemberAvatar.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setEditingMember(null);
+        await fetchTeamMembers();
+        if (editingMember.id === profile?.id) {
+          await refreshProfile();
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setEditMemberError(err.error || 'Failed to update user profile');
+      }
+    } catch (e: any) {
+      setEditMemberError(e.message || 'Error updating user profile');
+    } finally {
+      setSavingEditMember(false);
+    }
+  };
+
+  const handleDeleteMember = async () => {
+    if (!deletingMember) return;
+
+    try {
+      const idToken = await getToken();
+      if (!idToken) return;
+      setDeletingMemberLoading(true);
+      setDeleteMemberError(null);
+
+      const res = await fetch(`/api/users/${deletingMember.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (res.ok) {
+        setDeletingMember(null);
+        await fetchTeamMembers();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setDeleteMemberError(err.error || 'Failed to delete user profile');
+      }
+    } catch (e: any) {
+      setDeleteMemberError(e.message || 'Error deleting user profile');
+    } finally {
+      setDeletingMemberLoading(false);
+    }
+  };
+
   const handleQuickSwitchRole = (targetRole: UserRole) => {
     if (targetRole === currentUserRole) return;
     setPinModalTargetRole(targetRole);
@@ -315,7 +428,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ displayName: userDisplayName, role: userRole }),
+        body: JSON.stringify({ displayName: userDisplayName }),
       });
       if (res.ok) {
         await refreshProfile();
@@ -873,34 +986,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   ];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      {/* Top Header Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <Sliders className="w-5 h-5" />
-            </span>
-            <div>
-              <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                Company Settings & Preferences
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Configure GST jurisdiction, automated invoice serial numbering, and duplicity controls.
-              </p>
-            </div>
+    <div className="max-w-5xl mx-auto space-y-5">
+      {/* Success Notification */}
+      {savedSuccess && (
+        <div className="px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2 font-medium animate-fade-in shadow-sm">
+          <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <div>
+            <span className="font-semibold">{savedEntityName || 'Company'}</span> settings updated successfully!
           </div>
         </div>
-
-        {savedSuccess && (
-          <div className="px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2 font-medium animate-fade-in shadow-sm">
-            <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <div>
-              <span className="font-semibold">{savedEntityName || 'Company'}</span> settings updated!
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Error Notice */}
       {errorMessage && (
@@ -909,37 +1004,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           <div className="flex-1">
             <p className="font-semibold text-rose-200">Unable to Save Changes</p>
             <p className="mt-0.5">{errorMessage}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Active Entity Quick Banner */}
-      {company && (
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-              {company.businessName ? company.businessName.charAt(0) : 'C'}
-            </div>
-            <div>
-              <span className="font-semibold text-white">{company.businessName}</span>
-              <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                <span className="font-mono text-slate-300">GSTIN: {company.gstin}</span>
-                <span>•</span>
-                <span>
-                  {company.stateName} ({company.stateCode})
-                </span>
-                <span>•</span>
-                <span className="text-emerald-400 font-mono">
-                  Series: {invoiceNumberingMode === 'automatic' ? `${invoicePrefix}001` : 'Manual'}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-slate-400">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 text-[11px] font-mono text-emerald-400 border border-slate-700">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              PostgreSQL Cloud Connected
-            </span>
           </div>
         </div>
       )}
@@ -1011,19 +1075,20 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 text-xs">
-        {/* TAB 1: GST & Legal Profile */}
-        {activeTab === 'general' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4 animate-fade-in">
-            <div className="border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Legal Business Registration & Jurisdiction</span>
-              </h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                These legal entity details will be printed on all Tax Invoices, Delivery Challans, and GSTR summaries.
-              </p>
-            </div>
+      {activeTab !== 'roles' ? (
+        <form onSubmit={handleSubmit} className="space-y-6 text-xs">
+          {/* TAB 1: GST & Legal Profile */}
+          {activeTab === 'general' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4 animate-fade-in">
+              <div className="border-b border-slate-800 pb-3">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Legal Business Registration & Jurisdiction</span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  These legal entity details will be printed on all Tax Invoices, Delivery Challans, and GSTR summaries.
+                </p>
+              </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -2266,54 +2331,69 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* TAB 6: TEAM & RBAC SECURITY ROLES                                         */}
-        {/* ========================================================================= */}
-        {activeTab === 'roles' && (
-          <div className="space-y-6 animate-fade-in">
-            {/* Section Header Banner */}
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                    <Shield className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-                      Role-Based Access Control (RBAC) & Team Management
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Configure workspace team permissions, inspect granular security matrices, and test all 4 standard accounting roles.
-                    </p>
-                  </div>
-                </div>
+        {/* Bottom Action Buttons Bar */}
+        <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={loading}
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium text-xs flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Current Tab</span>
+            </button>
+            <span className="text-[11px] text-slate-500 hidden sm:inline">
+              Changes apply across all tabs simultaneously
+            </span>
+          </div>
 
-                <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${ROLE_CONFIG[currentUserRole]?.bgBadge} ${ROLE_CONFIG[currentUserRole]?.textBadge} ${ROLE_CONFIG[currentUserRole]?.borderBadge}`}>
-                    Active: {ROLE_CONFIG[currentUserRole]?.title}
-                  </span>
-                </div>
+          <button
+            type="submit"
+            disabled={loading || !canEditCompany}
+            title={canEditCompany ? 'Save All Settings' : 'Your role does not have permission to modify company profile settings'}
+            className={`w-full sm:w-auto px-7 py-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-lg transition ${
+              canEditCompany
+                ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow-emerald-500/20 cursor-pointer'
+                : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+            }`}
+          >
+            {loading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : canEditCompany ? (
+              <Save className="w-4 h-4" />
+            ) : (
+              <Lock className="w-4 h-4 text-slate-500" />
+            )}
+            <span>{loading ? 'Saving to Cloud SQL...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
+          </button>
+        </div>
+      </form>
+      ) : (
+        <div className="space-y-6 text-xs animate-fade-in">
+          {/* Quick Interactive Role Switcher with PIN */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-purple-400" />
+                  Instant Role Switcher (Protected by PIN)
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Select any role to test. A 4-digit Security PIN is required before switching to ensure role-based privilege enforcement.
+                </p>
               </div>
-            </div>
-
-            {/* Quick Interactive Role Switcher with PIN */}
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <KeyRound className="w-4 h-4 text-purple-400" />
-                    Instant Role Switcher (Protected by PIN)
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Select any role to test. A 4-digit Security PIN is required before switching to ensure role-based privilege enforcement.
-                  </p>
-                </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${ROLE_CONFIG[currentUserRole]?.bgBadge} ${ROLE_CONFIG[currentUserRole]?.textBadge} ${ROLE_CONFIG[currentUserRole]?.borderBadge}`}>
+                  Active: {ROLE_CONFIG[currentUserRole]?.title}
+                </span>
                 {userSaveSuccess && (
                   <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
                     <Check className="w-3.5 h-3.5" /> Switched Role!
                   </span>
                 )}
               </div>
+            </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
                 {(['admin', 'accountant', 'billing_operator', 'auditor'] as UserRole[]).map((roleKey) => {
@@ -2609,7 +2689,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                         <th className="pb-2.5">User</th>
                         <th className="pb-2.5">Email</th>
                         <th className="pb-2.5">Current Role</th>
-                        <th className="pb-2.5 text-right">Role Assignment</th>
+                        <th className="pb-2.5">Access PIN</th>
+                        <th className="pb-2.5">Role Change</th>
+                        <th className="pb-2.5 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
@@ -2617,28 +2699,42 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                         const mRole = (member.role as UserRole) || 'accountant';
                         const mConfig = ROLE_CONFIG[mRole] || ROLE_CONFIG.accountant;
                         const isSelf = member.id === profile?.id;
+                        const memberPin = member.pin || DEFAULT_ROLE_PINS[mRole] || '1234';
                         return (
                           <tr key={member.id} className="hover:bg-slate-800/30 transition">
                             <td className="py-3 font-medium text-slate-200 flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[11px] font-bold text-emerald-400">
-                                {member.displayName?.[0]?.toUpperCase() || member.email?.[0]?.toUpperCase() || 'U'}
+                              <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[11px] font-bold text-emerald-400 shrink-0">
+                                {member.avatarUrl ? (
+                                  <img src={member.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                                ) : (
+                                  member.displayName?.[0]?.toUpperCase() || member.email?.[0]?.toUpperCase() || 'U'
+                                )}
                               </div>
                               <div>
-                                <span className="font-semibold text-white">{member.displayName || 'User'}</span>
-                                {isSelf && (
-                                  <span className="ml-1.5 text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded">
-                                    YOU
-                                  </span>
-                                )}
+                                <div className="font-semibold text-white flex items-center gap-1.5">
+                                  <span>{member.displayName || 'User'}</span>
+                                  {isSelf && (
+                                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded">
+                                      YOU
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono">ID #{member.id}</div>
                               </div>
                             </td>
                             <td className="py-3 font-mono text-slate-400 text-[11px]">{member.email}</td>
                             <td className="py-3">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold border ${mConfig.bgBadge} ${mConfig.textBadge} ${mConfig.borderBadge}`}>
+                              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${mConfig.bgBadge} ${mConfig.textBadge} ${mConfig.borderBadge}`}>
                                 {mConfig.title}
                               </span>
                             </td>
-                            <td className="py-3 text-right">
+                            <td className="py-3">
+                              <span className="inline-flex items-center gap-1 font-mono text-slate-300 bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[11px]">
+                                <KeyRound className="w-3 h-3 text-amber-400" />
+                                {memberPin}
+                              </span>
+                            </td>
+                            <td className="py-3">
                               {canManageRoles ? (
                                 <select
                                   value={mRole}
@@ -2652,10 +2748,49 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                                   <option value="auditor">Statutory Auditor</option>
                                 </select>
                               ) : (
-                                <span className="text-[11px] text-slate-500 flex items-center justify-end gap-1">
+                                <span className="text-[11px] text-slate-500 flex items-center gap-1">
                                   <Lock className="w-3 h-3" /> Admin Managed
                                 </span>
                               )}
+                            </td>
+                            <td className="py-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {canEditUsers ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditMemberModal(member)}
+                                    title="Edit User Profile & Role"
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg transition cursor-pointer border border-slate-700/60"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5 text-blue-400" />
+                                  </button>
+                                ) : null}
+
+                                {canDeleteUsers ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!isSelf) {
+                                        setDeletingMember(member);
+                                        setDeleteMemberError(null);
+                                      }
+                                    }}
+                                    disabled={isSelf}
+                                    title={isSelf ? 'Cannot delete your own active session' : `Delete ${member.displayName || member.email}`}
+                                    className={`p-1.5 rounded-lg transition border ${
+                                      isSelf
+                                        ? 'bg-slate-900 text-slate-600 border-slate-800/80 cursor-not-allowed'
+                                        : 'bg-rose-950/30 hover:bg-rose-900/60 text-rose-400 hover:text-rose-300 border-rose-900/40 cursor-pointer'
+                                    }`}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : null}
+
+                                {!canEditUsers && !canDeleteUsers && (
+                                  <span className="text-[10px] text-slate-500 font-mono">-</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2826,17 +2961,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-400 mb-1">Active Security Role</label>
-                  <select
-                    value={userRole}
-                    onChange={(e) => setUserRole(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-xs"
-                  >
-                    <option value="admin">Admin (Full System & Data Management)</option>
-                    <option value="accountant">Accountant (Invoices, Vouchers, Ledgers)</option>
-                    <option value="auditor">Auditor (Read-only GST Reports & Books)</option>
-                    <option value="billing_operator">Billing Operator (Invoices & Receipts Only)</option>
-                  </select>
+                  <label className="block font-medium text-slate-400 mb-1">Assigned Security Role</label>
+                  <div className="w-full bg-slate-950/60 border border-slate-800/80 rounded-xl px-3 py-2.5 text-slate-300 text-xs flex items-center justify-between">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                      {ROLE_CONFIG[currentUserRole]?.title || currentUserRole}
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${ROLE_CONFIG[currentUserRole]?.bgBadge} ${ROLE_CONFIG[currentUserRole]?.textBadge} ${ROLE_CONFIG[currentUserRole]?.borderBadge}`}>
+                      {ROLE_CONFIG[currentUserRole]?.badge}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="sm:col-span-2 flex justify-end pt-1">
@@ -2847,223 +2981,444 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                     className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer shadow-md shadow-emerald-600/20"
                   >
                     <Save className="w-4 h-4" />
-                    <span>{savingUser ? 'Updating Profile...' : 'Save Profile & Role'}</span>
+                    <span>{savingUser ? 'Updating Profile...' : 'Save Profile Name'}</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Invite Modal */}
-            {showInviteModal && (
-              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                      <UserPlus className="w-5 h-5 text-emerald-400" />
-                      Add Team Member
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setShowInviteModal(false)}
-                      className="text-slate-400 hover:text-white"
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
+            {/* Data Backup & Restore Center */}
+            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <HardDrive className="w-4 h-4 text-emerald-400" />
+                  Data Backup & Restore (JSON)
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Download a complete JSON backup of all company profiles, parties, inventory, invoices, and vouchers, or restore from a previous backup.
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleDownloadBackup}
+                  disabled={backupLoading}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer shadow-sm"
+                >
+                  <Download className="w-4 h-4 text-emerald-400" />
+                  <span>Download Data Backup</span>
+                </button>
 
-                  <form onSubmit={handleInviteMember} className="space-y-4 text-xs">
-                    <div>
-                      <label className="block font-medium text-slate-300 mb-1">Full Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={inviteName}
-                        onChange={(e) => setInviteName(e.target.value)}
-                        placeholder="e.g. Priya Sharma"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
+                <input
+                  type="file"
+                  ref={restoreFileRef}
+                  accept=".json"
+                  onChange={handleRestoreFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (canRestore) {
+                      restoreFileRef.current?.click();
+                    }
+                  }}
+                  disabled={backupLoading || !canRestore}
+                  title={canRestore ? 'Restore from JSON backup' : 'Administrator role required to restore backups'}
+                  className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-md ${
+                    canRestore
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-emerald-600/20'
+                      : 'bg-slate-800/80 text-slate-500 border border-slate-800 cursor-not-allowed'
+                  }`}
+                >
+                  {canRestore ? <Upload className="w-4 h-4" /> : <Lock className="w-4 h-4 text-slate-500" />}
+                  <span>{canRestore ? 'Restore from Backup' : 'Restore (Admin Only)'}</span>
+                </button>
+              </div>
+            </div>
 
-                    <div>
-                      <label className="block font-medium text-slate-300 mb-1">Email Address</label>
-                      <input
-                        type="email"
-                        required
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        placeholder="e.g. priya@company.com"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-medium text-slate-300 mb-1">Assigned Role</label>
-                      <select
-                        value={inviteRole}
-                        onChange={(e) => setInviteRole(e.target.value as UserRole)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                      >
-                        <option value="admin">Administrator (Full Control)</option>
-                        <option value="accountant">Senior Accountant (Books & Ledgers)</option>
-                        <option value="billing_operator">Billing Operator (Invoices & Receipts)</option>
-                        <option value="auditor">Statutory Auditor (Read-Only Books)</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setShowInviteModal(false)}
-                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={inviting}
-                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
-                      >
-                        {inviting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                        <span>{inviting ? 'Adding...' : 'Add Member'}</span>
-                      </button>
-                    </div>
-                  </form>
+            {/* Danger Zone: Clear All Master Ledgers */}
+            {onClearMasterLedger && (
+              <div className={`p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border ${
+                canClearLedger
+                  ? 'bg-rose-950/20 border-rose-900/40'
+                  : 'bg-slate-900/60 border-slate-800 text-slate-400'
+              }`}>
+                <div>
+                  <h3 className={`text-sm font-bold flex items-center gap-2 ${
+                    canClearLedger ? 'text-rose-300' : 'text-slate-300'
+                  }`}>
+                    {canClearLedger ? (
+                      <Trash2 className="w-4 h-4 text-rose-400" />
+                    ) : (
+                      <Lock className="w-4 h-4 text-amber-400" />
+                    )}
+                    Data Management / Clear All Master Ledgers
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {canClearLedger
+                      ? 'Permanently clear all parties, inventory items, sales invoices, purchase bills, expenses, and journal entries.'
+                      : `Restricted Operation: Only Administrators can purge company master ledgers. Your active role is ${ROLE_CONFIG[currentUserRole]?.title}.`}
+                  </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={canClearLedger ? onClearMasterLedger : undefined}
+                  disabled={loading || !canClearLedger}
+                  title={canClearLedger ? 'Clear All Master Ledgers' : 'Only Administrator role can purge ledgers'}
+                  className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-md shrink-0 ${
+                    canClearLedger
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer shadow-rose-600/30'
+                      : 'bg-slate-800/60 text-slate-500 border border-slate-700/60 cursor-not-allowed'
+                  }`}
+                >
+                  {canClearLedger ? <Trash2 className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                  <span>{canClearLedger ? 'Clear All Master Ledgers' : 'Locked (Admin Only)'}</span>
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Data Backup & Restore Center */}
-        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <HardDrive className="w-4 h-4 text-emerald-400" />
-              Data Backup & Restore (JSON)
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Download a complete JSON backup of all company profiles, parties, inventory, invoices, and vouchers, or restore from a previous backup.
-            </p>
-          </div>
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            <button
-              type="button"
-              onClick={handleDownloadBackup}
-              disabled={backupLoading}
-              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer shadow-sm"
-            >
-              <Download className="w-4 h-4 text-emerald-400" />
-              <span>Download Data Backup</span>
-            </button>
+      {/* Invite Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-emerald-400" />
+                Add Team Member
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowInviteModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            <input
-              type="file"
-              ref={restoreFileRef}
-              accept=".json"
-              onChange={handleRestoreFileChange}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (canRestore) {
-                  restoreFileRef.current?.click();
-                }
-              }}
-              disabled={backupLoading || !canRestore}
-              title={canRestore ? 'Restore from JSON backup' : 'Administrator role required to restore backups'}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-md ${
-                canRestore
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-emerald-600/20'
-                  : 'bg-slate-800/80 text-slate-500 border border-slate-800 cursor-not-allowed'
-              }`}
-            >
-              {canRestore ? <Upload className="w-4 h-4" /> : <Lock className="w-4 h-4 text-slate-500" />}
-              <span>{canRestore ? 'Restore from Backup' : 'Restore (Admin Only)'}</span>
-            </button>
+            <form onSubmit={handleInviteMember} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  placeholder="e.g. Priya Sharma"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="e.g. priya@company.com"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Assigned Role</label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => {
+                    const newRole = e.target.value as UserRole;
+                    setInviteRole(newRole);
+                    setInvitePin(DEFAULT_ROLE_PINS[newRole] || '1234');
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="admin">Administrator (Full Control)</option>
+                  <option value="accountant">Senior Accountant (Books & Ledgers)</option>
+                  <option value="billing_operator">Billing Operator (Invoices & Receipts)</option>
+                  <option value="auditor">Statutory Auditor (Read-Only Books)</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-medium text-slate-300">4-Digit Security PIN / Password *</label>
+                  <button
+                    type="button"
+                    onClick={() => setInvitePin(DEFAULT_ROLE_PINS[inviteRole] || '1234')}
+                    className="text-[10px] text-emerald-400 hover:underline cursor-pointer"
+                  >
+                    Use Role Default ({DEFAULT_ROLE_PINS[inviteRole] || '1234'})
+                  </button>
+                </div>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <KeyRound className="w-4 h-4 text-amber-400" />
+                  </span>
+                  <input
+                    type="text"
+                    required
+                    maxLength={4}
+                    value={invitePin}
+                    onChange={(e) => setInvitePin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="1234"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 font-mono tracking-widest text-sm"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">User will enter this 4-digit PIN to authenticate on the login screen.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={inviting}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
+                >
+                  {inviting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>{inviting ? 'Adding...' : 'Add Member'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-        {/* Danger Zone: Clear All Master Ledgers */}
-        {onClearMasterLedger && (
-          <div className={`p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border ${
-            canClearLedger
-              ? 'bg-rose-950/20 border-rose-900/40'
-              : 'bg-slate-900/60 border-slate-800 text-slate-400'
-          }`}>
-            <div>
-              <h3 className={`text-sm font-bold flex items-center gap-2 ${
-                canClearLedger ? 'text-rose-300' : 'text-slate-300'
-              }`}>
-                {canClearLedger ? (
-                  <Trash2 className="w-4 h-4 text-rose-400" />
-                ) : (
-                  <Lock className="w-4 h-4 text-amber-400" />
-                )}
-                Data Management / Clear All Master Ledgers
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {canClearLedger
-                  ? 'Permanently clear all parties, inventory items, sales invoices, purchase bills, expenses, and journal entries.'
-                  : `Restricted Operation: Only Administrators can purge company master ledgers. Your active role is ${ROLE_CONFIG[currentUserRole]?.title}.`}
+      {/* Edit User Profile Modal (Admin Only) */}
+      {editingMember && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                  <UserCog className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Edit User Profile & Role</h3>
+                  <p className="text-[11px] text-slate-400">Modify credentials and RBAC permission assignment</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingMember(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {editMemberError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{editMemberError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditMember} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Full Display Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editMemberName}
+                  onChange={(e) => setEditMemberName(e.target.value)}
+                  placeholder="e.g. Rohit Sharma"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Email Address *</label>
+                <input
+                  type="email"
+                  required
+                  value={editMemberEmail}
+                  onChange={(e) => setEditMemberEmail(e.target.value)}
+                  placeholder="user@company.com"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Security Role</label>
+                <select
+                  value={editMemberRole}
+                  onChange={(e) => {
+                    const newRole = e.target.value as UserRole;
+                    setEditMemberRole(newRole);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 font-medium"
+                >
+                  <option value="admin">Administrator (Full Master Control & User Management)</option>
+                  <option value="accountant">Senior Accountant (Financial Vouchers & GST Reports)</option>
+                  <option value="billing_operator">Billing Operator (Invoices, POS & Receipts Only)</option>
+                  <option value="auditor">Statutory Auditor (Read-Only Books & Audit Logs)</option>
+                </select>
+                <div className="mt-1.5 p-2 bg-slate-950/60 border border-slate-800 rounded-lg text-[11px] text-slate-400 flex items-start gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+                  <span>{ROLE_CONFIG[editMemberRole]?.description}</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-medium text-slate-300">4-Digit Access PIN / Password *</label>
+                  <button
+                    type="button"
+                    onClick={() => setEditMemberPin(DEFAULT_ROLE_PINS[editMemberRole] || '1234')}
+                    className="text-[10px] text-blue-400 hover:underline cursor-pointer"
+                  >
+                    Reset to Role Default ({DEFAULT_ROLE_PINS[editMemberRole] || '1234'})
+                  </button>
+                </div>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <KeyRound className="w-4 h-4 text-amber-400" />
+                  </span>
+                  <input
+                    type="text"
+                    required
+                    maxLength={4}
+                    value={editMemberPin}
+                    onChange={(e) => setEditMemberPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="1234"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white focus:outline-none focus:border-blue-500 font-mono tracking-widest text-sm"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">Allows the user to authenticate into their account using this 4-digit PIN.</p>
+              </div>
+
+              <div>
+                <label className="block font-medium text-slate-300 mb-1">Avatar Image URL (Optional)</label>
+                <input
+                  type="url"
+                  value={editMemberAvatar}
+                  onChange={(e) => setEditMemberAvatar(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditMember}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-blue-600/20 cursor-pointer transition disabled:opacity-50"
+                >
+                  {savingEditMember ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>{savingEditMember ? 'Saving Changes...' : 'Save Profile & Role'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Profile Modal (Admin Only) */}
+      {deletingMember && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-slate-900 border border-rose-900/50 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-white">Delete User Profile</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeletingMember(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {deleteMemberError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{deleteMemberError}</span>
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 bg-rose-950/20 border border-rose-900/30 rounded-xl flex items-start gap-2.5 text-rose-200">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-rose-300">Permanent Action Warning</div>
+                  <div className="text-[11px] text-rose-200/80 mt-0.5 leading-relaxed">
+                    Are you sure you want to delete this profile? The user will immediately lose all access to this company workspace.
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">User:</span>
+                  <span className="font-semibold text-white">{deletingMember.displayName || 'Unnamed User'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Email:</span>
+                  <span className="font-mono text-slate-300">{deletingMember.email}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Role:</span>
+                  <span className="font-semibold text-emerald-400">
+                    {ROLE_CONFIG[deletingMember.role as UserRole]?.title || deletingMember.role}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400">
+                Historical vouchers and transactions created by this user will be safely retained and reassigned to the workspace administrator.
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={canClearLedger ? onClearMasterLedger : undefined}
-              disabled={loading || !canClearLedger}
-              title={canClearLedger ? 'Clear All Master Ledgers' : 'Only Administrator role can purge ledgers'}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-md shrink-0 ${
-                canClearLedger
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer shadow-rose-600/30'
-                  : 'bg-slate-800/60 text-slate-500 border border-slate-700/60 cursor-not-allowed'
-              }`}
-            >
-              {canClearLedger ? <Trash2 className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-              <span>{canClearLedger ? 'Clear All Master Ledgers' : 'Locked (Admin Only)'}</span>
-            </button>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeletingMember(null)}
+                disabled={deletingMemberLoading}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteMember}
+                disabled={deletingMemberLoading}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-rose-600/30 cursor-pointer transition disabled:opacity-50"
+              >
+                {deletingMemberLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>{deletingMemberLoading ? 'Deleting User...' : 'Permanently Delete'}</span>
+              </button>
+            </div>
           </div>
-        )}
-
-        {/* Bottom Action Buttons Bar */}
-        <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={loading}
-              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium text-xs flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Current Tab</span>
-            </button>
-            <span className="text-[11px] text-slate-500 hidden sm:inline">
-              Changes apply across all tabs simultaneously
-            </span>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || !canEditCompany}
-            title={canEditCompany ? 'Save All Settings' : 'Your role does not have permission to modify company profile settings'}
-            className={`w-full sm:w-auto px-7 py-3 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-lg transition ${
-              canEditCompany
-                ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow-emerald-500/20 cursor-pointer'
-                : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-            }`}
-          >
-            {loading ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : canEditCompany ? (
-              <Save className="w-4 h-4" />
-            ) : (
-              <Lock className="w-4 h-4 text-slate-500" />
-            )}
-            <span>{loading ? 'Saving to Cloud SQL...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
-          </button>
         </div>
-      </form>
+      )}
 
       {/* Role Switch Security PIN Modal */}
       <RoleSwitchPinModal

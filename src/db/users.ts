@@ -30,9 +30,6 @@ export async function getOrCreateUser(
   // Check memory cache first (valid for 5 minutes)
   const cached = userMemoryCache.get(uid);
   if (cached && cached.expiresAt > Date.now()) {
-    if (initialRole && cached.user.role !== initialRole) {
-      cached.user.role = initialRole;
-    }
     return cached.user;
   }
 
@@ -41,10 +38,6 @@ export async function getOrCreateUser(
     const existing = await db.select().from(users).where(eq(users.uid, uid));
     if (existing.length > 0) {
       const u = existing[0];
-      if (initialRole && u.role !== initialRole) {
-        await db.update(users).set({ role: initialRole }).where(eq(users.id, u.id));
-        u.role = initialRole;
-      }
       userMemoryCache.set(uid, { user: u, expiresAt: Date.now() + 5 * 60 * 1000 });
       return u;
     }
@@ -64,7 +57,6 @@ export async function getOrCreateUser(
           email,
           displayName: displayName || undefined,
           avatarUrl: avatarUrl || undefined,
-          ...(initialRole ? { role: initialRole } : {}),
         },
       })
       .returning();
@@ -92,6 +84,7 @@ export async function updateUserProfile(
     role?: UserRole;
     avatarUrl?: string;
     email?: string;
+    pin?: string;
   }
 ) {
   const updateData: any = {};
@@ -99,6 +92,7 @@ export async function updateUserProfile(
   if (data.role !== undefined) updateData.role = data.role;
   if (data.avatarUrl !== undefined) updateData.avatarUrl = data.avatarUrl;
   if (data.email !== undefined) updateData.email = data.email.toLowerCase().trim();
+  if (data.pin !== undefined) updateData.pin = data.pin.trim();
 
   const result = await db.update(users)
     .set(updateData)
@@ -151,18 +145,128 @@ export async function deleteUser(userId: number, reassignToUserId?: number) {
 }
 
 export async function getAllUsers() {
-  return await db.select({
+  let all = await db.select({
     id: users.id,
     uid: users.uid,
     email: users.email,
     displayName: users.displayName,
     role: users.role,
+    pin: users.pin,
     avatarUrl: users.avatarUrl,
     createdAt: users.createdAt,
   }).from(users).orderBy(desc(users.createdAt));
+
+  // Safeguard: Ensure at least one Administrator profile is always active and returned
+  const hasAdmin = all.some(u => u.role === 'admin');
+  if (!hasAdmin) {
+    console.warn('No administrator found in workspace. Auto-recovering primary Administrator profile...');
+    const adminRecord = await getOrCreateUser(
+      'admin-workspace-user',
+      'nawarkuldeep@gmail.com',
+      'Kuldeep Siraswar (Admin)',
+      'https://api.dicebear.com/7.x/initials/svg?seed=Admin',
+      'admin'
+    );
+    // Explicitly enforce role='admin'
+    await db.update(users).set({ role: 'admin', pin: '9999', displayName: 'Kuldeep Siraswar (Admin)' }).where(eq(users.id, adminRecord.id));
+    userMemoryCache.clear();
+    all = await db.select({
+      id: users.id,
+      uid: users.uid,
+      email: users.email,
+      displayName: users.displayName,
+      role: users.role,
+      pin: users.pin,
+      avatarUrl: users.avatarUrl,
+      createdAt: users.createdAt,
+    }).from(users).orderBy(desc(users.createdAt));
+  }
+
+  // Ensure default roles exist if missing
+  const defaultTeamRoles = [
+    {
+      uid: 'accountant-ca-kuldeep',
+      email: 'ca.kuldeep@apexaccounting.com',
+      displayName: 'CA Kuldeep Nawar',
+      role: 'accountant' as UserRole,
+      pin: '2468',
+      avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=CA%20Kuldeep%20Nawar',
+    },
+    {
+      uid: 'billing-operator-demo',
+      email: 'billing.rohit@apexaccounting.com',
+      displayName: 'Rohit Sharma',
+      role: 'billing_operator' as UserRole,
+      pin: '1357',
+      avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Rohit%20Sharma',
+    },
+    {
+      uid: 'auditor-neha-demo',
+      email: 'auditor.neha@apexaccounting.com',
+      displayName: 'Neha Gupta',
+      role: 'auditor' as UserRole,
+      pin: '8080',
+      avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Neha%20Gupta',
+    },
+  ];
+
+  let missingCreated = false;
+  for (const member of defaultTeamRoles) {
+    if (!all.some(u => u.uid === member.uid || u.email === member.email)) {
+      try {
+        await db.insert(users).values({
+          uid: member.uid,
+          email: member.email,
+          displayName: member.displayName,
+          role: member.role,
+          pin: member.pin,
+          avatarUrl: member.avatarUrl,
+        }).onConflictDoNothing();
+        missingCreated = true;
+      } catch (err) {
+        console.error(`Failed to auto-seed team role ${member.role}:`, err);
+      }
+    }
+  }
+
+  if (missingCreated) {
+    userMemoryCache.clear();
+    all = await db.select({
+      id: users.id,
+      uid: users.uid,
+      email: users.email,
+      displayName: users.displayName,
+      role: users.role,
+      pin: users.pin,
+      avatarUrl: users.avatarUrl,
+      createdAt: users.createdAt,
+    }).from(users).orderBy(desc(users.createdAt));
+  }
+
+  // Sort order: Admin first, then Accountant, Billing Operator, Auditor, then any extra custom users
+  const roleRank: Record<string, number> = {
+    admin: 1,
+    accountant: 2,
+    billing_operator: 3,
+    auditor: 4,
+  };
+
+  return all.sort((a, b) => {
+    const rankA = roleRank[a.role] || 10;
+    const rankB = roleRank[b.role] || 10;
+    if (rankA !== rankB) return rankA - rankB;
+    return (a.displayName || '').localeCompare(b.displayName || '');
+  });
 }
 
 export async function updateUserRole(userId: number, role: UserRole) {
+  if (role !== 'admin') {
+    const currentAdmins = await db.select().from(users).where(eq(users.role, 'admin'));
+    if (currentAdmins.length === 1 && currentAdmins[0].id === userId) {
+      throw new Error('Cannot demote the only remaining Administrator account in the workspace.');
+    }
+  }
+
   const result = await db.update(users)
     .set({ role })
     .where(eq(users.id, userId))
@@ -172,6 +276,7 @@ export async function updateUserRole(userId: number, role: UserRole) {
       email: users.email,
       displayName: users.displayName,
       role: users.role,
+      pin: users.pin,
       avatarUrl: users.avatarUrl,
     });
 
@@ -185,7 +290,7 @@ export async function updateUserRole(userId: number, role: UserRole) {
   return result[0];
 }
 
-export async function createTeamMember(data: { email: string; displayName: string; role: UserRole }) {
+export async function createTeamMember(data: { email: string; displayName: string; role: UserRole; pin?: string }) {
   const dummyUid = `member-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const result = await db.insert(users)
     .values({
@@ -193,6 +298,7 @@ export async function createTeamMember(data: { email: string; displayName: strin
       email: data.email.toLowerCase().trim(),
       displayName: data.displayName.trim(),
       role: data.role,
+      pin: data.pin ? data.pin.trim() : null,
       avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.displayName)}`,
     })
     .returning();

@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useDialog } from '../context/DialogContext';
+import { useAuth } from '../context/AuthContext';
+import { hasPermission, UserRole, isReadOnlyRole } from '../lib/permissions';
 import { AppSelect } from './AppSelect';
 import { AccountMatchSelector } from './AccountMatchSelector';
 import {
@@ -93,6 +95,13 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
   loading = false,
 }) => {
   const dialog = useDialog();
+  const { profile } = useAuth();
+  const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
+  const canCreateJv = hasPermission(currentUserRole, 'accounting:create');
+  const canEditJv = hasPermission(currentUserRole, 'accounting:edit');
+  const canDeleteJv = hasPermission(currentUserRole, 'accounting:delete');
+  const isReadOnly = isReadOnlyRole(currentUserRole);
+
   const [activeTab, setActiveTab] = useState<AccountingTab>('daybook');
   const [datePreset, setDatePreset] = useState<DateFilterPreset>('fy_2026_27');
   const [customStartDate, setCustomStartDate] = useState('2026-04-01');
@@ -1896,13 +1905,15 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               </p>
             </div>
 
-            <button
-              onClick={() => openNewVoucherModal('journal')}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              + Create New JV
-            </button>
+            {canCreateJv && (
+              <button
+                onClick={() => openNewVoucherModal('journal')}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                + Create New JV
+              </button>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -1944,32 +1955,39 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                       </td>
                       <td className="p-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => openNewVoucherModal(jv.entryType as any, jv)}
-                            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition"
-                            title="Edit Voucher"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={async () => {
-                              const ok = await dialog.confirm({
-                                title: 'Delete Journal Voucher',
-                                message: `Are you sure you want to delete journal voucher #${jv.voucherNumber}? This will revert debit/credit ledger entries.`,
-                                confirmText: 'Delete Voucher',
-                                variant: 'danger',
-                                icon: 'trash',
-                              });
-                              if (ok) {
-                                await onDeleteJournalEntry(jv.id);
-                                onRefresh();
-                              }
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-                            title="Delete Voucher"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {canEditJv && (
+                            <button
+                              onClick={() => openNewVoucherModal(jv.entryType as any, jv)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition cursor-pointer"
+                              title="Edit Voucher"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          {canDeleteJv && (
+                            <button
+                              onClick={async () => {
+                                const ok = await dialog.confirm({
+                                  title: 'Delete Journal Voucher',
+                                  message: `Are you sure you want to delete journal voucher #${jv.voucherNumber}? This will revert debit/credit ledger entries.`,
+                                  confirmText: 'Delete Voucher',
+                                  variant: 'danger',
+                                  icon: 'trash',
+                                });
+                                if (ok) {
+                                  await onDeleteJournalEntry(jv.id);
+                                  onRefresh();
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+                              title="Delete Voucher"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {!canEditJv && !canDeleteJv && (
+                            <span className="text-[11px] text-slate-400 font-medium italic">Read-only</span>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -18,6 +18,7 @@ export const users = pgTable('users', {
   email: text('email').notNull(),
   displayName: text('display_name'),
   role: text('role').default('accountant').notNull(), // 'admin', 'accountant', 'auditor', 'billing_operator'
+  pin: text('pin'), // 4-digit PIN / password set by Admin
   avatarUrl: text('avatar_url'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
