@@ -87,6 +87,19 @@ export const createPool = (): Pool => {
       host = 'localhost';
     }
 
+    // Sanitize connectionString if provided:
+    // 1. If password contains unencoded '@', percent-encode it
+    // 2. Strip sslmode parameter so pg doesn't throw SELF_SIGNED_CERT_IN_CHAIN on Supabase poolers
+    if (connectionString) {
+      const match = connectionString.match(/^(postgres(?:ql)?:\/\/)([^:]+):(.*)@([^@/]+)(.*)$/);
+      if (match) {
+        const [, proto, u, rawPass, h, rest] = match;
+        const encodedPass = rawPass.includes('%') ? rawPass : encodeURIComponent(rawPass);
+        connectionString = `${proto}${u}:${encodedPass}@${h}${rest}`;
+      }
+      connectionString = connectionString.replace(/[?&]sslmode=[^&]+/g, '');
+    }
+
     // SSL Configuration:
     // Supabase cloud databases ALWAYS require SSL with { rejectUnauthorized: false }
     let ssl: boolean | { rejectUnauthorized: boolean } | undefined = undefined;

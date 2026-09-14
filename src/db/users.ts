@@ -219,6 +219,12 @@ export async function getUserById(id: number) {
   return result[0] || null;
 }
 
+export async function getUserByEmail(email: string) {
+  const trimmed = email.toLowerCase().trim();
+  const result = await db.select().from(users).where(eq(users.email, trimmed)).limit(1);
+  return result[0] || null;
+}
+
 export async function getAllUsers() {
   let all = await db.select({
     id: users.id,

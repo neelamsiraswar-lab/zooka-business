@@ -1430,7 +1430,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed max-w-xl">
-                    When enabled, the system verifies your existing vouchers in Cloud SQL. If an invoice or bill with the
+                    When enabled, the system verifies your existing vouchers in Supabase database. If an invoice or bill with the
                     exact same number already exists, saving is blocked with a clear warning and collision details.
                   </p>
                 </div>
@@ -2369,7 +2369,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
             ) : (
               <Lock className="w-4 h-4 text-slate-500" />
             )}
-            <span>{loading ? 'Saving to Cloud SQL...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
+            <span>{loading ? 'Saving to Supabase...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
           </button>
         </div>
       </form>

@@ -459,18 +459,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Bottom Section: Database Sync & User Profile */}
         <div className="border-t border-slate-800 bg-slate-900/70 p-3 space-y-2">
-          {/* Cloud SQL Synced Badge */}
+          {/* Supabase Synced Badge */}
           <div
             className={`flex items-center rounded-lg bg-slate-950/60 border border-slate-800/80 transition-all ${
               isCollapsed ? 'justify-center p-2' : 'justify-between px-3 py-1.5'
             }`}
-            title="PostgreSQL Cloud Synced & ITC Section 16 Compliant"
+            title="Supabase PostgreSQL Synced & ITC Section 16 Compliant"
           >
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
               {!isCollapsed && (
                 <span className="text-[10px] font-medium text-slate-400 truncate">
-                  Cloud SQL Connected
+                  Supabase Connected
                 </span>
               )}
             </div>

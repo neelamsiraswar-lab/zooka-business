@@ -3,7 +3,7 @@ import { Pool } from 'pg';
 
 /**
  * Idempotently creates all required tables and indexes if they do not already exist.
- * This ensures that when deploying to a fresh Google Cloud SQL or production database,
+ * This ensures that when deploying to a fresh Supabase PostgreSQL database,
  * the application bootstraps its full relational schema automatically.
  */
 export async function ensureDatabaseTablesExist(pool: Pool): Promise<{

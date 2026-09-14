@@ -13,6 +13,7 @@ import {
 import {
   getOrCreateUser,
   getUserById,
+  getUserByEmail,
   updateUserProfile,
   getAllUsers,
   updateUserRole,
@@ -125,7 +126,7 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// Comprehensive Database Diagnostics Endpoint for troubleshooting production Cloud SQL
+// Comprehensive Database Diagnostics Endpoint for troubleshooting production Supabase PostgreSQL
 app.get('/api/db-diagnostics', async (req, res) => {
   try {
     const diagnostics = await testDatabaseDiagnostics();
@@ -330,7 +331,7 @@ app.get('/api/public/users', async (req, res) => {
 // Secure server-side PIN verification for Login Portal
 app.post('/api/public/verify-pin', async (req, res) => {
   try {
-    const { userId, role, pin } = req.body;
+    const { userId, email, role, pin } = req.body;
     const enteredPin = String(pin || '').trim();
     if (!enteredPin || enteredPin.length < 4) {
       return res.status(400).json({ valid: false, error: 'Please enter a 4-digit security PIN.' });
@@ -344,9 +345,40 @@ app.post('/api/public/verify-pin', async (req, res) => {
       const userRole = (user.role as UserRole) || 'accountant';
       const userPin = user.pin || DEFAULT_ROLE_PINS[userRole] || '9999';
       if (enteredPin === userPin) {
-        return res.json({ valid: true });
+        return res.json({
+          valid: true,
+          user: {
+            id: user.id,
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+            role: user.role,
+          },
+        });
       }
       return res.status(401).json({ valid: false, error: 'Incorrect Security PIN. Please try again or contact your Administrator.' });
+    } else if (email) {
+      const user = await getUserByEmail(String(email));
+      if (!user) {
+        return res.status(404).json({ valid: false, error: 'No account found with this email address.' });
+      }
+      const userRole = (user.role as UserRole) || 'accountant';
+      const userPin = user.pin || DEFAULT_ROLE_PINS[userRole] || '9999';
+      if (enteredPin === userPin) {
+        return res.json({
+          valid: true,
+          user: {
+            id: user.id,
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+            role: user.role,
+          },
+        });
+      }
+      return res.status(401).json({ valid: false, error: 'Incorrect Security PIN. Please try again.' });
     } else if (role) {
       const defaultRolePin = DEFAULT_ROLE_PINS[role as UserRole] || '9999';
       if (enteredPin === defaultRolePin) {
@@ -355,7 +387,7 @@ app.post('/api/public/verify-pin', async (req, res) => {
       return res.status(401).json({ valid: false, error: 'Incorrect Security PIN for requested role.' });
     }
 
-    return res.status(400).json({ valid: false, error: 'User or role parameter required.' });
+    return res.status(400).json({ valid: false, error: 'User ID or email parameter required.' });
   } catch (error: any) {
     console.error('Error in POST /api/public/verify-pin:', error);
     res.status(500).json({ valid: false, error: 'PIN verification failed' });
