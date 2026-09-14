@@ -7,7 +7,7 @@ import {
 export const diagnosticsRouter = Router();
 
 // Health check endpoint for Cloud Run, Vercel, and deployment probes
-diagnosticsRouter.get('/api/health', async (req, res) => {
+diagnosticsRouter.get(['/api/health', '/health'], async (req, res) => {
   const checkDb = req.query.db === 'true';
   let dbStatus = undefined;
 
@@ -29,7 +29,7 @@ diagnosticsRouter.get('/api/health', async (req, res) => {
 });
 
 // Comprehensive Database Diagnostics Endpoint for troubleshooting Supabase PostgreSQL
-diagnosticsRouter.get('/api/db-diagnostics', async (req, res) => {
+diagnosticsRouter.get(['/api/db-diagnostics', '/db-diagnostics'], async (req, res) => {
   try {
     const diagnostics = await testDatabaseDiagnostics();
     const httpCode = diagnostics.connected ? 200 : 503;
@@ -46,7 +46,7 @@ diagnosticsRouter.get('/api/db-diagnostics', async (req, res) => {
 });
 
 // Automatic Database Schema Initializer Endpoint (safe and idempotent)
-diagnosticsRouter.post('/api/db-init', async (req, res) => {
+diagnosticsRouter.post(['/api/db-init', '/db-init'], async (req, res) => {
   try {
     const result = await initializeDatabaseSchema();
     if (result.success) {

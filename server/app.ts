@@ -22,6 +22,25 @@ app.use(cors({
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
+// Path normalization for Vercel Serverless Function rewrites
+app.use((req, res, next) => {
+  const matchedPath = (req.headers['x-matched-path'] as string) || (req.headers['x-vercel-matched-path'] as string) || (req.headers['x-forwarded-uri'] as string);
+  if (matchedPath && matchedPath.startsWith('/api') && req.url === '/api') {
+    req.url = matchedPath;
+  }
+  next();
+});
+
+// Root API Health & Diagnostic Base Endpoints
+app.get(['/', '/api'], (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'Tally GST Accounting API',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Mount API Routers
 app.use(diagnosticsRouter);
 app.use(authRouter);
