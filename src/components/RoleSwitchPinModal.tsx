@@ -8,16 +8,12 @@ import {
   X,
   Check,
   AlertCircle,
-  Sparkles,
   ArrowRight,
   Delete,
-  ShieldAlert,
 } from 'lucide-react';
 import {
   ROLE_CONFIG,
   UserRole,
-  DEFAULT_ROLE_PINS,
-  getRoleDefaultPin,
 } from '../lib/permissions';
 
 interface RoleSwitchPinModalProps {
@@ -57,7 +53,6 @@ export const RoleSwitchPinModal: React.FC<RoleSwitchPinModalProps> = ({
 
   const targetConfig = ROLE_CONFIG[targetRole] || ROLE_CONFIG.accountant;
   const currentConfig = ROLE_CONFIG[currentRole] || ROLE_CONFIG.accountant;
-  const defaultPin = getRoleDefaultPin(targetRole);
 
   const handleSubmit = async (pinToVerify?: string) => {
     const finalPin = (pinToVerify !== undefined ? pinToVerify : pin).trim();
@@ -108,12 +103,6 @@ export const RoleSwitchPinModal: React.FC<RoleSwitchPinModalProps> = ({
     }
   };
 
-  const handleQuickFill = () => {
-    setPin(defaultPin);
-    setError(null);
-    handleSubmit(defaultPin);
-  };
-
   const handleKeyPress = (digit: string) => {
     if (pin.length < 4) {
       const newPin = pin + digit;
@@ -159,7 +148,7 @@ export const RoleSwitchPinModal: React.FC<RoleSwitchPinModalProps> = ({
                 Authorize Role Switch
               </h3>
               <p className="text-xs text-slate-400">
-                Enter Security PIN to verify role privilege
+                Enter your 4-digit Security PIN to verify role privilege
               </p>
             </div>
           </div>
@@ -197,31 +186,6 @@ export const RoleSwitchPinModal: React.FC<RoleSwitchPinModalProps> = ({
                 {targetConfig.title}
               </span>
             </div>
-          </div>
-
-          {/* Quick Default PIN helper */}
-          <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3 flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 text-purple-200">
-              <Shield className="w-4 h-4 text-purple-400 shrink-0" />
-              <span>
-                Default PIN for <strong>{targetConfig.badge}</strong> is{' '}
-                <span className="font-mono font-bold text-white bg-purple-950/80 px-1.5 py-0.5 rounded border border-purple-500/30">
-                  {defaultPin}
-                </span>{' '}
-                <span className="text-slate-400 text-[11px]">(or Master: 1234)</span>
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleQuickFill}
-              disabled={submitting}
-              className="px-2.5 py-1 bg-purple-500 hover:bg-purple-400 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer shrink-0 shadow-sm"
-              title="Auto-fill default PIN for rapid testing"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>Quick Fill</span>
-            </button>
           </div>
 
           {/* PIN Input Form */}

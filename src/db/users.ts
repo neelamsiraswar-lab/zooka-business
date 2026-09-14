@@ -117,21 +117,79 @@ export async function deleteUser(userId: number, reassignToUserId?: number) {
     }
   }
 
-  // Reassign or cleanup child references to avoid foreign key violations
-  if (reassignToUserId && reassignToUserId !== userId) {
-    await db.update(companyProfiles).set({ userId: reassignToUserId }).where(eq(companyProfiles.userId, userId)).catch(() => {});
-    await db.update(parties).set({ userId: reassignToUserId }).where(eq(parties.userId, userId)).catch(() => {});
-    await db.update(inventoryItems).set({ userId: reassignToUserId }).where(eq(inventoryItems.userId, userId)).catch(() => {});
-    await db.update(invoices).set({ userId: reassignToUserId }).where(eq(invoices.userId, userId)).catch(() => {});
-    await db.update(expenses).set({ userId: reassignToUserId }).where(eq(expenses.userId, userId)).catch(() => {});
-    await db.update(payments).set({ userId: reassignToUserId }).where(eq(payments.userId, userId)).catch(() => {});
-    await db.update(journalEntries).set({ userId: reassignToUserId }).where(eq(journalEntries.userId, userId)).catch(() => {});
-    await db.update(chequeBooks).set({ userId: reassignToUserId }).where(eq(chequeBooks.userId, userId)).catch(() => {});
-    await db.update(cheques).set({ userId: reassignToUserId }).where(eq(cheques.userId, userId)).catch(() => {});
-    await db.update(bankStatements).set({ userId: reassignToUserId }).where(eq(bankStatements.userId, userId)).catch(() => {});
-    await db.update(activityLogs).set({ userId: reassignToUserId }).where(eq(activityLogs.userId, userId)).catch(() => {});
+  // Find an admin to safely reassign child records to
+  let targetAdminId = reassignToUserId;
+  if (!targetAdminId || targetAdminId === userId) {
+    const adminUsers = await db.select({ id: users.id }).from(users).where(eq(users.role, 'admin'));
+    const otherAdmin = adminUsers.find((a) => a.id !== userId);
+    if (otherAdmin) {
+      targetAdminId = otherAdmin.id;
+    }
+  }
+
+  // Safely reassign foreign key dependencies before deletion
+  if (targetAdminId && targetAdminId !== userId) {
+    try {
+      await db.update(companyProfiles).set({ userId: targetAdminId }).where(eq(companyProfiles.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning companyProfiles:', e);
+    }
+    try {
+      await db.update(parties).set({ userId: targetAdminId }).where(eq(parties.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning parties:', e);
+    }
+    try {
+      await db.update(inventoryItems).set({ userId: targetAdminId }).where(eq(inventoryItems.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning inventoryItems:', e);
+    }
+    try {
+      await db.update(invoices).set({ userId: targetAdminId }).where(eq(invoices.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning invoices:', e);
+    }
+    try {
+      await db.update(expenses).set({ userId: targetAdminId }).where(eq(expenses.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning expenses:', e);
+    }
+    try {
+      await db.update(payments).set({ userId: targetAdminId }).where(eq(payments.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning payments:', e);
+    }
+    try {
+      await db.update(journalEntries).set({ userId: targetAdminId }).where(eq(journalEntries.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning journalEntries:', e);
+    }
+    try {
+      await db.update(chequeBooks).set({ userId: targetAdminId }).where(eq(chequeBooks.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning chequeBooks:', e);
+    }
+    try {
+      await db.update(cheques).set({ userId: targetAdminId }).where(eq(cheques.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning cheques:', e);
+    }
+    try {
+      await db.update(bankStatements).set({ userId: targetAdminId }).where(eq(bankStatements.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning bankStatements:', e);
+    }
+    try {
+      await db.update(activityLogs).set({ userId: targetAdminId }).where(eq(activityLogs.userId, userId));
+    } catch (e) {
+      console.error('Error reassigning activityLogs:', e);
+    }
   } else {
-    await db.delete(activityLogs).where(eq(activityLogs.userId, userId)).catch(() => {});
+    try {
+      await db.delete(activityLogs).where(eq(activityLogs.userId, userId));
+    } catch (e) {
+      console.error('Error deleting activityLogs for user:', e);
+    }
   }
 
   const result = await db.delete(users).where(eq(users.id, userId)).returning({
@@ -141,7 +199,13 @@ export async function deleteUser(userId: number, reassignToUserId?: number) {
     displayName: users.displayName,
     role: users.role,
   });
+
   return result[0];
+}
+
+export async function getUserById(id: number) {
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0] || null;
 }
 
 export async function getAllUsers() {
@@ -169,67 +233,6 @@ export async function getAllUsers() {
     );
     // Explicitly enforce role='admin'
     await db.update(users).set({ role: 'admin', pin: '9999', displayName: 'Kuldeep Siraswar (Admin)' }).where(eq(users.id, adminRecord.id));
-    userMemoryCache.clear();
-    all = await db.select({
-      id: users.id,
-      uid: users.uid,
-      email: users.email,
-      displayName: users.displayName,
-      role: users.role,
-      pin: users.pin,
-      avatarUrl: users.avatarUrl,
-      createdAt: users.createdAt,
-    }).from(users).orderBy(desc(users.createdAt));
-  }
-
-  // Ensure default roles exist if missing
-  const defaultTeamRoles = [
-    {
-      uid: 'accountant-ca-kuldeep',
-      email: 'ca.kuldeep@apexaccounting.com',
-      displayName: 'CA Kuldeep Nawar',
-      role: 'accountant' as UserRole,
-      pin: '2468',
-      avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=CA%20Kuldeep%20Nawar',
-    },
-    {
-      uid: 'billing-operator-demo',
-      email: 'billing.rohit@apexaccounting.com',
-      displayName: 'Rohit Sharma',
-      role: 'billing_operator' as UserRole,
-      pin: '1357',
-      avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Rohit%20Sharma',
-    },
-    {
-      uid: 'auditor-neha-demo',
-      email: 'auditor.neha@apexaccounting.com',
-      displayName: 'Neha Gupta',
-      role: 'auditor' as UserRole,
-      pin: '8080',
-      avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Neha%20Gupta',
-    },
-  ];
-
-  let missingCreated = false;
-  for (const member of defaultTeamRoles) {
-    if (!all.some(u => u.uid === member.uid || u.email === member.email)) {
-      try {
-        await db.insert(users).values({
-          uid: member.uid,
-          email: member.email,
-          displayName: member.displayName,
-          role: member.role,
-          pin: member.pin,
-          avatarUrl: member.avatarUrl,
-        }).onConflictDoNothing();
-        missingCreated = true;
-      } catch (err) {
-        console.error(`Failed to auto-seed team role ${member.role}:`, err);
-      }
-    }
-  }
-
-  if (missingCreated) {
     userMemoryCache.clear();
     all = await db.select({
       id: users.id,

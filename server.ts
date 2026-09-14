@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
 import {
   requireRoles,
@@ -11,6 +11,7 @@ import {
 } from './src/middleware/rbac.ts';
 import {
   getOrCreateUser,
+  getUserById,
   updateUserProfile,
   getAllUsers,
   updateUserRole,
@@ -85,6 +86,16 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+
+// Health check endpoint for Cloud Run and production deployment probes
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development',
+    uptime: process.uptime(),
+  });
+});
 
 // API Routes
 
@@ -225,18 +236,18 @@ app.put('/api/user/profile', authUser, async (req: ExtendedAuthRequest, res) => 
 });
 
 // 1b. Team & Role-Based Access Control Endpoints
-// Public endpoint for homepage/login to dynamically list all registered workspace users
+// Public endpoint for homepage/login to dynamically list all registered workspace users (Sanitized - no PIN exposure)
 app.get('/api/public/users', async (req, res) => {
   try {
     const usersList = await getAllUsers();
-    // Return user list for login selection with assigned role and access PIN
+    // Return sanitized user list for login selection WITHOUT exposing PINs
     const sanitized = usersList.map((u) => ({
       id: u.id,
       uid: u.uid,
       email: u.email,
       displayName: u.displayName,
       role: u.role,
-      pin: u.pin || DEFAULT_ROLE_PINS[u.role as UserRole] || '1234',
+      hasPin: Boolean(u.pin),
       avatarUrl: u.avatarUrl,
       createdAt: u.createdAt,
     }));
@@ -244,6 +255,41 @@ app.get('/api/public/users', async (req, res) => {
   } catch (error: any) {
     console.error('Error in GET /api/public/users:', error);
     res.status(500).json({ error: 'Failed to retrieve workspace users' });
+  }
+});
+
+// Secure server-side PIN verification for Login Portal
+app.post('/api/public/verify-pin', async (req, res) => {
+  try {
+    const { userId, role, pin } = req.body;
+    const enteredPin = String(pin || '').trim();
+    if (!enteredPin || enteredPin.length < 4) {
+      return res.status(400).json({ valid: false, error: 'Please enter a 4-digit security PIN.' });
+    }
+
+    if (userId) {
+      const user = await getUserById(Number(userId));
+      if (!user) {
+        return res.status(404).json({ valid: false, error: 'User account not found.' });
+      }
+      const userRole = (user.role as UserRole) || 'accountant';
+      const userPin = user.pin || DEFAULT_ROLE_PINS[userRole] || '9999';
+      if (enteredPin === userPin) {
+        return res.json({ valid: true });
+      }
+      return res.status(401).json({ valid: false, error: 'Incorrect Security PIN. Please try again or contact your Administrator.' });
+    } else if (role) {
+      const defaultRolePin = DEFAULT_ROLE_PINS[role as UserRole] || '9999';
+      if (enteredPin === defaultRolePin) {
+        return res.json({ valid: true });
+      }
+      return res.status(401).json({ valid: false, error: 'Incorrect Security PIN for requested role.' });
+    }
+
+    return res.status(400).json({ valid: false, error: 'User or role parameter required.' });
+  } catch (error: any) {
+    console.error('Error in POST /api/public/verify-pin:', error);
+    res.status(500).json({ valid: false, error: 'PIN verification failed' });
   }
 });
 
@@ -274,7 +320,14 @@ app.post('/api/public/restore-admin', async (req, res) => {
 app.get('/api/users', authUser, async (req: ExtendedAuthRequest, res) => {
   try {
     const usersList = await getAllUsers();
-    res.json(usersList);
+    const isAdmin = req.appUser!.role === 'admin';
+    // Protect user PINs from non-admin accounts
+    const sanitized = usersList.map((u) => ({
+      ...u,
+      pin: isAdmin ? (u.pin || DEFAULT_ROLE_PINS[u.role as UserRole] || '9999') : undefined,
+      hasPin: Boolean(u.pin),
+    }));
+    res.json(sanitized);
   } catch (error: any) {
     console.error('Error in GET /api/users:', error);
     res.status(500).json({ error: 'Failed to retrieve team members' });
@@ -413,7 +466,7 @@ app.post('/api/users/invite', authUser, requireRoles('admin'), async (req: Exten
       return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
     }
 
-    const memberPin = (pin && String(pin).trim()) || DEFAULT_ROLE_PINS[role as UserRole] || '1234';
+    const memberPin = (pin && String(pin).trim()) || DEFAULT_ROLE_PINS[role as UserRole] || '9999';
     const member = await createTeamMember({ email, displayName, role, pin: memberPin });
     await logActivity(
       req.appUser!.id,
@@ -440,7 +493,6 @@ function getWorkspaceRolePins(userId: number): RolePinConfig {
     accountant: custom?.accountant || DEFAULT_ROLE_PINS.accountant,
     billing_operator: custom?.billing_operator || DEFAULT_ROLE_PINS.billing_operator,
     auditor: custom?.auditor || DEFAULT_ROLE_PINS.auditor,
-    master: custom?.master || DEFAULT_ROLE_PINS.master,
   };
 }
 
@@ -458,7 +510,7 @@ app.get('/api/role-pins', authUser, async (req: ExtendedAuthRequest, res) => {
 // Update configured role PINs for current workspace (Admin only)
 app.put('/api/role-pins', authUser, requireRoles('admin'), async (req: ExtendedAuthRequest, res) => {
   try {
-    const { admin, accountant, billing_operator, auditor, master } = req.body;
+    const { admin, accountant, billing_operator, auditor } = req.body;
     const current = getWorkspaceRolePins(req.appUser!.id);
     
     const updated: RolePinConfig = {
@@ -466,7 +518,6 @@ app.put('/api/role-pins', authUser, requireRoles('admin'), async (req: ExtendedA
       accountant: (accountant && String(accountant).trim()) || current.accountant,
       billing_operator: (billing_operator && String(billing_operator).trim()) || current.billing_operator,
       auditor: (auditor && String(auditor).trim()) || current.auditor,
-      master: (master && String(master).trim()) || current.master,
     };
 
     workspaceCustomPins.set(req.appUser!.id, updated);
@@ -499,22 +550,19 @@ app.post('/api/users/switch-role', authUser, async (req: ExtendedAuthRequest, re
     const targetConfig = ROLE_CONFIG[role as UserRole];
     const roleTitle = targetConfig?.title || role;
     const configuredPins = getWorkspaceRolePins(req.appUser!.id);
-    const expectedRolePin = configuredPins[role as UserRole];
-    const expectedMasterPin = configuredPins.master;
+    const expectedRolePin = configuredPins[role as UserRole] || DEFAULT_ROLE_PINS[role as UserRole];
 
     const enteredPin = String(pin || '').trim();
     if (!enteredPin) {
       return res.status(400).json({
-        error: `Security PIN required to switch to ${roleTitle}. Default PIN is ${expectedRolePin} (or Master PIN ${expectedMasterPin}).`,
-        expectedPin: expectedRolePin,
+        error: `Security PIN required to switch to ${roleTitle}.`,
       });
     }
 
-    // Verify entered PIN against role-specific PIN or universal master PIN
-    if (enteredPin !== expectedRolePin && enteredPin !== expectedMasterPin) {
+    // Verify entered PIN strictly against role-specific PIN
+    if (enteredPin !== expectedRolePin) {
       return res.status(403).json({
-        error: `Incorrect Security PIN for ${roleTitle}. (Hint: Default PIN is ${expectedRolePin} or Master PIN ${expectedMasterPin})`,
-        expectedPin: expectedRolePin,
+        error: `Incorrect Security PIN for ${roleTitle}. Please try again.`,
       });
     }
 
@@ -1408,6 +1456,7 @@ app.get('/api/activity', authUser, requireRoles('admin', 'accountant', 'auditor'
 // Vite Middleware for development & static file serving for production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -1416,6 +1465,12 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
+
+    // Fallback 404 for unhandled API calls in production
+    app.use('/api', (req, res) => {
+      res.status(404).json({ error: `API route ${req.method} ${req.originalUrl} not found` });
+    });
+
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });

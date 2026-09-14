@@ -36,7 +36,7 @@ interface RegisteredWorkspaceUser {
   email: string;
   displayName: string | null;
   role: UserRole;
-  pin?: string | null;
+  hasPin?: boolean;
   avatarUrl: string | null;
   createdAt?: string;
 }
@@ -64,7 +64,6 @@ export const LoginView: React.FC = () => {
     displayName: string;
     email: string;
     avatarUrl?: string | null;
-    pin?: string | null;
     userObj?: RegisteredWorkspaceUser;
   } | null>(null);
   const [pinInput, setPinInput] = useState('');
@@ -152,41 +151,52 @@ export const LoginView: React.FC = () => {
       return;
     }
 
-    const defaultRolePin = getRoleDefaultPin(pinModalTarget.role);
-    const userCustomPin = pinModalTarget.pin || pinModalTarget.userObj?.pin;
-    const isMaster = trimmed === DEFAULT_ROLE_PINS.master || trimmed === '1234';
-    const isCustomMatch = userCustomPin && trimmed === userCustomPin;
-    const isDefaultMatch = trimmed === defaultRolePin;
+    try {
+      // Secure server-side PIN verification
+      const verifyRes = await fetch('/api/public/verify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: pinModalTarget.userObj?.id,
+          role: pinModalTarget.role,
+          pin: trimmed,
+        }),
+      });
+      const verifyData = await verifyRes.json().catch(() => ({}));
 
-    if (!isCustomMatch && !isDefaultMatch && !isMaster) {
-      setPinError(`Invalid PIN for ${ROLE_CONFIG[pinModalTarget.role]?.title || 'user'}. Contact Admin or use PIN: ${userCustomPin || defaultRolePin}`);
-      setPinInput('');
-      pinInputRef.current?.focus();
-      return;
-    }
-
-    setPinSuccess(true);
-    setPinError(null);
-    setAuthenticatingTarget(pinModalTarget.userObj ? `user-${pinModalTarget.userObj.id}` : `role-${pinModalTarget.role}`);
-
-    setTimeout(async () => {
-      try {
-        if (pinModalTarget.userObj) {
-          await signInAsUser({
-            uid: pinModalTarget.userObj.uid,
-            email: pinModalTarget.userObj.email,
-            displayName: pinModalTarget.userObj.displayName,
-            avatarUrl: pinModalTarget.userObj.avatarUrl,
-            role: pinModalTarget.userObj.role,
-          });
-        } else {
-          await signInDemoRole(pinModalTarget.role);
-        }
-        setPinModalTarget(null);
-      } finally {
-        setAuthenticatingTarget(null);
+      if (!verifyRes.ok || !verifyData.valid) {
+        setPinError(verifyData.error || 'Incorrect Security PIN. Please try again.');
+        setPinInput('');
+        pinInputRef.current?.focus();
+        return;
       }
-    }, 400);
+
+      setPinSuccess(true);
+      setPinError(null);
+      setAuthenticatingTarget(pinModalTarget.userObj ? `user-${pinModalTarget.userObj.id}` : `role-${pinModalTarget.role}`);
+
+      setTimeout(async () => {
+        try {
+          if (pinModalTarget.userObj) {
+            await signInAsUser({
+              uid: pinModalTarget.userObj.uid,
+              email: pinModalTarget.userObj.email,
+              displayName: pinModalTarget.userObj.displayName,
+              avatarUrl: pinModalTarget.userObj.avatarUrl,
+              role: pinModalTarget.userObj.role,
+            });
+          } else {
+            await signInDemoRole(pinModalTarget.role);
+          }
+          setPinModalTarget(null);
+        } finally {
+          setAuthenticatingTarget(null);
+        }
+      }, 400);
+    } catch (err: any) {
+      setPinError(err?.message || 'Verification service error. Please try again.');
+      setPinInput('');
+    }
   };
 
   // Filter dynamic registered workspace users by search query
@@ -300,13 +310,6 @@ export const LoginView: React.FC = () => {
                 </p>
               </div>
             </div>
-
-            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>
-                Master Supervisor Override PIN: <strong className="text-slate-200 font-mono">1234</strong>
-              </span>
-            </div>
           </div>
 
           {/* Right Column: Interactive Workspace Users Selection Card */}
@@ -394,7 +397,6 @@ export const LoginView: React.FC = () => {
                     {filteredWorkspaceUsers.map((u) => {
                       const conf = ROLE_CONFIG[u.role] || ROLE_CONFIG.accountant;
                       const isSubmittingThis = authenticatingTarget === `user-${u.id}`;
-                      const userPin = u.pin || getRoleDefaultPin(u.role || 'accountant');
                       const displayNameStr = u.displayName || u.email.split('@')[0];
                       const fallbackAvatar = `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`;
 
@@ -439,8 +441,9 @@ export const LoginView: React.FC = () => {
                                 {u.email}
                               </span>
                               <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[10px] font-mono text-slate-400 bg-slate-900/90 px-1.5 py-0.5 rounded border border-slate-800">
-                                  PIN: <strong className="text-slate-200">{userPin}</strong>
+                                <span className="text-[10px] font-medium text-emerald-400/90 bg-slate-900/90 px-2 py-0.5 rounded border border-slate-800 flex items-center gap-1">
+                                  <Lock className="w-2.5 h-2.5 text-emerald-400" />
+                                  <span>PIN Secured</span>
                                 </span>
                                 {u.createdAt && (
                                   <span className="text-[10px] text-slate-500 flex items-center gap-1">
@@ -463,7 +466,6 @@ export const LoginView: React.FC = () => {
                                   displayName: displayNameStr,
                                   email: u.email,
                                   avatarUrl: u.avatarUrl,
-                                  pin: userPin,
                                   userObj: u,
                                 })
                               }
@@ -643,22 +645,6 @@ export const LoginView: React.FC = () => {
                   <span>PIN verified! Logging in...</span>
                 </div>
               )}
-
-              {/* Quick Fill Default PIN Helper */}
-              <div className="flex items-center justify-between text-xs pt-1">
-                <span className="text-slate-500 text-[11px]">Quick Autofill:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const pin = pinModalTarget.pin || getRoleDefaultPin(pinModalTarget.role);
-                    setPinInput(pin);
-                    setPinError(null);
-                  }}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 text-[11px] font-mono border border-slate-700 cursor-pointer"
-                >
-                  Use PIN: {pinModalTarget.pin || getRoleDefaultPin(pinModalTarget.role)}
-                </button>
-              </div>
 
               {/* Virtual Numpad */}
               <div className="grid grid-cols-3 gap-1.5 pt-1">
