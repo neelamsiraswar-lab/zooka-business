@@ -44,33 +44,41 @@ export async function getCompanyProfile(userId?: number) {
   try {
     const profilesRef = db.collection(COLLECTIONS.COMPANY_PROFILES);
     const snap = await profilesRef.get();
-    const list = snap.docs.map((doc) => doc.data());
+    const list = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() as any }));
 
-    // Prioritize configured company profile (with GSTIN or non-empty business name)
+    // Purge legacy mock default profile if found
+    for (const doc of snap.docs) {
+      const p = doc.data() as any;
+      if (p.businessName === 'T.M ELECTRICAL' || p.gstin === '08IRRPZ8566K1ZD') {
+        await doc.ref.delete();
+      }
+    }
+
+    // Prioritize user's actual configured company profile
     const configured = list.find(
-      (p: any) => p.gstin || (p.businessName && p.businessName !== 'My Enterprise' && p.businessName !== 'Enterprise Billing')
-    ) || list[0];
+      (p: any) => p.businessName && p.businessName !== 'T.M ELECTRICAL'
+    );
 
     if (configured) return configured;
   } catch (err) {
     console.error('Error getting company profile from Firestore:', err);
   }
 
-  // return clean default company profile
+  // return clean initial company profile
   return {
     id: 1,
-    businessName: 'T.M ELECTRICAL',
-    tradeName: 'T.M ELECTRICAL',
-    gstin: '08IRRPZ8566K1ZD',
+    businessName: '',
+    tradeName: '',
+    gstin: '',
     stateCode: '08',
     stateName: 'Rajasthan',
-    address: 'INFRONT OF BIJLI GHAR, NH21 HALENA',
-    phone: '+91 8005594714',
-    email: 'sonusaini5500@gmail.com',
-    bankName: 'State Bank of India',
-    accountNumber: '39485019284',
-    ifscCode: 'SBIN0001824',
-    upiId: '8005594714@pthdfc',
+    address: '',
+    phone: '',
+    email: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    upiId: '',
     invoiceNumberingMode: 'automatic',
     invoicePrefix: 'INV/2026-27/',
     invoiceSuffix: '',
@@ -92,10 +100,10 @@ export async function getCompanyProfile(userId?: number) {
     invoiceColorTheme: 'rose',
     invoiceHeaderTitle: 'TAX INVOICE',
     invoiceSubtitle: 'ORIGINAL FOR RECIPIENT',
-    invoiceShowLogo: true,
+    invoiceShowLogo: false,
     invoiceLogoUrl: '',
-    invoiceShowBankDetails: true,
-    invoiceShowUpiQr: true,
+    invoiceShowBankDetails: false,
+    invoiceShowUpiQr: false,
     invoiceShowAuthorizedSignatory: true,
     invoiceSignatoryLabel: 'Authorized Signatory',
     invoiceSignatureUrl: '',
@@ -176,10 +184,24 @@ export async function getNextAvailableInvoiceNumber(userId: number, voucherType:
 }
 
 export async function checkInvoiceNumberDuplicate(
-  userId: number,
-  invoiceNumber: string,
-  excludeInvoiceId?: number
+  param1: number | string,
+  param2?: string | number,
+  param3?: number | string
 ) {
+  let invoiceNumber = '';
+  let excludeInvoiceId: number | undefined = undefined;
+  let voucherType: string | undefined = undefined;
+
+  if (typeof param1 === 'string') {
+    invoiceNumber = param1;
+    if (typeof param2 === 'number') excludeInvoiceId = param2;
+    if (typeof param3 === 'string') voucherType = param3;
+  } else {
+    // called as (userId, invoiceNumber, excludeInvoiceId)
+    if (typeof param2 === 'string') invoiceNumber = param2;
+    if (typeof param3 === 'number') excludeInvoiceId = param3;
+  }
+
   const trimmed = (invoiceNumber || '').trim().toLowerCase();
   if (!trimmed) {
     return { isDuplicate: false, existing: null };
@@ -189,6 +211,7 @@ export async function checkInvoiceNumberDuplicate(
   const duplicateDoc = snap.docs.find((doc) => {
     const data = doc.data();
     if (excludeInvoiceId && data.id === excludeInvoiceId) return false;
+    if (voucherType && data.voucherType && data.voucherType !== voucherType) return false;
     return (data.invoiceNumber || '').trim().toLowerCase() === trimmed;
   });
 

@@ -12,59 +12,6 @@ import { auth, googleAuthProvider } from '../lib/firebase';
 import { UserProfile } from '../types';
 import { UserRole } from '../lib/permissions';
 import { getOrCreateUser, updateUserProfile, updateUserRole } from '../db/users';
-import { seedDemoDataForUser } from '../db/seed';
-
-export const DEMO_RBAC_PERSONAS: Record<UserRole, {
-  uid: string;
-  email: string;
-  displayName: string;
-  photoURL: string;
-  role: UserRole;
-  title: string;
-  subtitle: string;
-  defaultPin: string;
-}> = {
-  admin: {
-    uid: 'admin-workspace-user',
-    email: 'admin.rohit@apexaccounting.com',
-    displayName: 'Rohit Sharma',
-    photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&crop=faces',
-    role: 'admin',
-    title: 'Administrator',
-    subtitle: 'Full System & Security Management',
-    defaultPin: '9999',
-  },
-  accountant: {
-    uid: 'accountant-ca-kuldeep',
-    email: 'ca.kuldeep@apexaccounting.com',
-    displayName: 'CA Kuldeep Nawar',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
-    role: 'accountant',
-    title: 'Senior Accountant',
-    subtitle: 'Ledgers, Vouchers & Tax Filings',
-    defaultPin: '2222',
-  },
-  billing_operator: {
-    uid: 'billing-operator-vikram',
-    email: 'billing.vikram@apexaccounting.com',
-    displayName: 'Vikram Patel',
-    photoURL: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop&crop=faces',
-    role: 'billing_operator',
-    title: 'Billing Operator',
-    subtitle: 'Point-of-Sale, Counter Invoices & Stock Check',
-    defaultPin: '1111',
-  },
-  auditor: {
-    uid: 'auditor-neha',
-    email: 'auditor.neha@apexaccounting.com',
-    displayName: 'CA Neha Gupta',
-    photoURL: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=faces',
-    role: 'auditor',
-    title: 'Statutory Auditor',
-    subtitle: 'Read-Only Ledger & GSTR-2B Inspection',
-    defaultPin: '3333',
-  },
-};
 
 interface AuthContextType {
   user: User | { uid: string; email: string | null; displayName: string | null; photoURL: string | null; role?: UserRole } | null;
@@ -99,20 +46,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchProfile = async (idToken?: string) => {
     try {
-      let uid = 'demo-user';
-      let email = 'nawarkuldeep@gmail.com';
-      let displayName: string | null = 'Kuldeep Siraswar (Admin)';
-      let photoURL: string | null = 'https://api.dicebear.com/7.x/initials/svg?seed=Admin';
+      let uid = '';
+      let email = '';
+      let displayName: string | null = null;
+      let photoURL: string | null = null;
       let initialRole: UserRole | undefined = undefined;
 
       if (idToken && idToken.startsWith('dev-token-')) {
         try {
           const raw = decodeURIComponent(escape(atob(idToken.replace('dev-token-', ''))));
           const parsed = JSON.parse(raw);
-          uid = parsed.uid || uid;
-          email = parsed.email || email;
-          displayName = parsed.displayName || displayName;
-          photoURL = parsed.photoURL || photoURL;
+          uid = parsed.uid || '';
+          email = parsed.email || '';
+          displayName = parsed.displayName || null;
+          photoURL = parsed.photoURL || null;
           initialRole = parsed.role;
         } catch (e) {
           // ignore
@@ -123,18 +70,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         displayName = auth.currentUser.displayName || null;
         photoURL = auth.currentUser.photoURL || null;
       } else if (user) {
-        uid = user.uid || uid;
-        email = user.email || email;
+        uid = user.uid || '';
+        email = user.email || '';
         displayName = user.displayName || null;
         photoURL = user.photoURL || null;
         initialRole = (user as any)?.role;
       }
 
+      if (!uid || !email) {
+        return;
+      }
+
       const dbUser = await getOrCreateUser(uid, email, displayName, photoURL, initialRole);
-      await seedDemoDataForUser(dbUser);
       setProfile(dbUser);
       setUser((prev: any) =>
-        prev ? { ...prev, role: dbUser.role, displayName: dbUser.displayName || prev.displayName } : dbUser
+        prev ? { ...prev, id: dbUser.id, role: dbUser.role, displayName: dbUser.displayName || prev.displayName } : dbUser
       );
     } catch (err) {
       console.error('Failed to load user profile directly from Cloud Firestore:', err);
@@ -280,24 +230,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     setError(null);
     try {
-      const persona = DEMO_RBAC_PERSONAS[role] || DEMO_RBAC_PERSONAS.accountant;
-      const demoUser = {
-        uid: persona.uid,
-        email: persona.email,
-        displayName: persona.displayName,
-        photoURL: persona.photoURL,
-        role: persona.role,
+      const workspaceUser = {
+        uid: `workspace-${role}-user`,
+        email: `team.${role}@workspace.local`,
+        displayName: `${role.charAt(0).toUpperCase() + role.slice(1)} User`,
+        photoURL: null,
+        role: role,
       };
-      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(demoUser))))}`;
+      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(workspaceUser))))}`;
       localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-      localStorage.setItem(DEV_USER_KEY, JSON.stringify(demoUser));
+      localStorage.setItem(DEV_USER_KEY, JSON.stringify(workspaceUser));
 
-      setUser(demoUser);
+      setUser(workspaceUser);
       setToken(devTokenString);
       await fetchProfile(devTokenString);
     } catch (err: any) {
       console.error('Role sign in failed:', err);
-      setError(`Failed to initialize ${role} demo workspace.`);
+      setError(`Failed to authenticate as ${role}.`);
     } finally {
       setLoading(false);
     }

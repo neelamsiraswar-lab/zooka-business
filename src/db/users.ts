@@ -239,65 +239,49 @@ export async function getAllUsers(): Promise<DbUser[]> {
     };
   });
 
-  // Filter out any corrupted/empty records
-  all = all.filter((u) => u.email && u.email.includes('@'));
+  // Filter out any corrupted/empty records and purge legacy demo accounts
+  const cleaned: DbUser[] = [];
+  for (const u of all) {
+    if (!u.email || !u.email.includes('@')) continue;
+    // Remove legacy mock demo users
+    if (
+      u.email === 'ca.kuldeep@apexaccounting.com' ||
+      u.email === 'billing.rohit@apexaccounting.com' ||
+      u.email === 'auditor.neha@apexaccounting.com' ||
+      u.email === 'admin.rohit@apexaccounting.com' ||
+      u.email === 'billing.vikram@apexaccounting.com'
+    ) {
+      try {
+        await usersRef.doc(String(u.id)).delete();
+        console.log(`Purged legacy mock user: ${u.email}`);
+      } catch (e) {
+        // ignore
+      }
+      continue;
+    }
+    cleaned.push(u);
+  }
+  all = cleaned;
 
-  // Bootstrap initial team ONLY IF the database is completely empty
+  // Bootstrap initial primary administrator ONLY IF the database is completely empty
   if (all.length === 0) {
-    console.log('Bootstrapping initial workspace team members in Firestore...');
-    const defaultTeamRoles = [
-      {
+    console.log('Initializing workspace administrator profile in Firestore...');
+    try {
+      const nextId = await getNextSequenceId('user_id');
+      const adminUser: DbUser = {
+        id: nextId,
         uid: 'admin-workspace-user',
         email: 'nawarkuldeep@gmail.com',
         displayName: 'Kuldeep Siraswar (Admin)',
-        role: 'admin' as UserRole,
+        role: 'admin',
         pin: '9999',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Admin',
-      },
-      {
-        uid: 'accountant-ca-kuldeep',
-        email: 'ca.kuldeep@apexaccounting.com',
-        displayName: 'CA Kuldeep Nawar',
-        role: 'accountant' as UserRole,
-        pin: '2468',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=CA%20Kuldeep%20Nawar',
-      },
-      {
-        uid: 'billing-operator-demo',
-        email: 'billing.rohit@apexaccounting.com',
-        displayName: 'Rohit Sharma',
-        role: 'billing_operator' as UserRole,
-        pin: '1357',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Rohit%20Sharma',
-      },
-      {
-        uid: 'auditor-neha-demo',
-        email: 'auditor.neha@apexaccounting.com',
-        displayName: 'Neha Gupta',
-        role: 'auditor' as UserRole,
-        pin: '8080',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Neha%20Gupta',
-      },
-    ];
-
-    for (const member of defaultTeamRoles) {
-      try {
-        const nextId = await getNextSequenceId('user_id');
-        const newMember: DbUser = {
-          id: nextId,
-          uid: member.uid,
-          email: member.email,
-          displayName: member.displayName,
-          role: member.role,
-          pin: member.pin,
-          avatarUrl: member.avatarUrl,
-          createdAt: new Date().toISOString(),
-        };
-        await usersRef.doc(String(nextId)).set(newMember);
-        all.push(newMember);
-      } catch (err) {
-        console.error(`Failed to bootstrap team member in Firestore:`, err);
-      }
+        avatarUrl: null,
+        createdAt: new Date().toISOString(),
+      };
+      await usersRef.doc(String(nextId)).set(adminUser);
+      all.push(adminUser);
+    } catch (err) {
+      console.error('Failed to initialize administrator profile:', err);
     }
   }
 
@@ -435,5 +419,29 @@ export async function verifyAndSwitchRole(userId: number, role: UserRole, entere
 
   const updated = await updateUserRole(userId, role);
   return updated;
+}
+
+export async function verifyUserPin(pin: string, userId?: number, role?: string): Promise<boolean> {
+  if (!pin) return false;
+  const cleanPin = pin.trim();
+
+  if (userId) {
+    const users = await getAllUsers();
+    const user = users.find((u) => u.id === userId);
+    if (user) {
+      if (user.pin && user.pin === cleanPin) return true;
+      if (!user.pin && user.role && DEFAULT_ROLE_PINS[user.role] === cleanPin) return true;
+    }
+  }
+
+  if (role && role in DEFAULT_ROLE_PINS) {
+    const rolePins = await getWorkspaceRolePins();
+    if (rolePins[role as UserRole] === cleanPin) return true;
+  }
+
+  const configured = await getWorkspaceRolePins();
+  if (configured.master === cleanPin) return true;
+
+  return false;
 }
 

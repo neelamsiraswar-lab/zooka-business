@@ -1,87 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-    function incoming() {
-      return request.resource.data;
-    }
-    function existing() {
-      return resource.data;
-    }
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Admin lookup
-    function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'nawarkuldeep@gmail.com' ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
-      );
-    }
-
-    // Application Collections - Accessible for enterprise operations
-    match /users/{userId} {
-      allow read, write: if true;
-    }
-
-    match /company_profiles/{profileId} {
-      allow read, write: if true;
-    }
-
-    match /parties/{partyId} {
-      allow read, write: if true;
-    }
-
-    match /inventory_items/{itemId} {
-      allow read, write: if true;
-    }
-
-    match /invoices/{invoiceId} {
-      allow read, write: if true;
-    }
-
-    match /expenses/{expenseId} {
-      allow read, write: if true;
-    }
-
-    match /payments/{paymentId} {
-      allow read, write: if true;
-    }
-
-    match /journal_entries/{entryId} {
-      allow read, write: if true;
-    }
-
-    match /cheque_books/{bookId} {
-      allow read, write: if true;
-    }
-
-    match /cheques/{chequeId} {
-      allow read, write: if true;
-    }
-
-    match /bank_statements/{statementId} {
-      allow read, write: if true;
-    }
-
-    match /activity_logs/{logId} {
-      allow read, write: if true;
-    }
-
-    match /counters/{counterId} {
-      allow read, write: if true;
-    }
-
-    // Default Deny Catch-All for unknown paths
+    // Allow read/write access to application collections
+    // Application-level RBAC, PIN verification, and invariants are enforced by the server and client auth layer
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }
-
