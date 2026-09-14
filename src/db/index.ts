@@ -18,8 +18,34 @@ export const createPool = () => {
     const database = process.env.SQL_DB_NAME || 'postgres';
     const port = process.env.SQL_PORT ? parseInt(process.env.SQL_PORT, 10) : 5432;
 
-    const poolConfig: PoolConfig = process.env.DATABASE_URL
-      ? { connectionString: process.env.DATABASE_URL }
+    const connectionString =
+      process.env.DATABASE_URL ||
+      process.env.POSTGRES_URL ||
+      process.env.POSTGRES_PRISMA_URL ||
+      process.env.POSTGRES_URL_NON_POOLING ||
+      process.env.SQL_DATABASE_URL;
+
+    // SSL determination: Only enable SSL if explicitly requested or required by connection string
+    let ssl: boolean | { rejectUnauthorized: boolean } | undefined = undefined;
+    if (process.env.SQL_SSL === 'true') {
+      ssl = { rejectUnauthorized: false };
+    } else if (process.env.SQL_SSL === 'false') {
+      ssl = false;
+    } else if (connectionString) {
+      if (connectionString.includes('sslmode=require') || connectionString.includes('sslmode=no-verify')) {
+        ssl = { rejectUnauthorized: false };
+      } else if (connectionString.includes('sslmode=disable')) {
+        ssl = false;
+      }
+    }
+
+    const poolConfig: PoolConfig = connectionString
+      ? {
+          connectionString,
+          max: 10,
+          connectionTimeoutMillis: 15000,
+          ...(ssl !== undefined ? { ssl } : {}),
+        }
       : {
           host,
           port,
@@ -28,7 +54,7 @@ export const createPool = () => {
           database,
           max: 10,
           connectionTimeoutMillis: 15000,
-          ssl: process.env.SQL_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+          ...(ssl !== undefined ? { ssl } : {}),
         };
 
     global._postgresPool = new Pool(poolConfig);

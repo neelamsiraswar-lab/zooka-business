@@ -84,6 +84,17 @@ import {
 const app = express();
 const PORT = 3000;
 
+// CORS headers for local, preview, and Vercel deployments
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
@@ -1455,6 +1466,11 @@ app.get('/api/activity', authUser, requireRoles('admin', 'accountant', 'auditor'
 
 // Vite Middleware for development & static file serving for production
 async function startServer() {
+  // If running in a serverless function environment (like Vercel or AWS Lambda), do not start HTTP listener
+  if (process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return;
+  }
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -1482,3 +1498,6 @@ async function startServer() {
 }
 
 startServer();
+
+export { app };
+export default app;
