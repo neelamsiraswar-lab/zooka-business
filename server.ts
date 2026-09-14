@@ -81,6 +81,10 @@ import {
   reconcileBankStatementTransaction,
   unreconcileBankStatementTransaction,
 } from './src/db/dataService.ts';
+import {
+  testDatabaseDiagnostics,
+  initializeDatabaseSchema,
+} from './src/db/index.ts';
 
 const app = express();
 const PORT = 3000;
@@ -100,13 +104,66 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Health check endpoint for Cloud Run and production deployment probes
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  const checkDb = req.query.db === 'true';
+  let dbStatus = undefined;
+
+  if (checkDb) {
+    try {
+      dbStatus = await testDatabaseDiagnostics();
+    } catch (e: any) {
+      dbStatus = { connected: false, error: e?.message || String(e) };
+    }
+  }
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     env: process.env.NODE_ENV || 'development',
     uptime: process.uptime(),
+    ...(dbStatus ? { database: dbStatus } : {}),
   });
+});
+
+// Comprehensive Database Diagnostics Endpoint for troubleshooting production Cloud SQL
+app.get('/api/db-diagnostics', async (req, res) => {
+  try {
+    const diagnostics = await testDatabaseDiagnostics();
+    const httpCode = diagnostics.connected ? 200 : 503;
+    res.status(httpCode).json(diagnostics);
+  } catch (err: any) {
+    res.status(500).json({
+      connected: false,
+      error: {
+        message: err?.message || String(err),
+        troubleshooting: 'Failed to run database diagnostics. Check server environment variables.',
+      },
+    });
+  }
+});
+
+// Automatic Database Schema Initializer Endpoint (safe and idempotent)
+app.post('/api/db-init', async (req, res) => {
+  try {
+    const result = await initializeDatabaseSchema();
+    if (result.success) {
+      res.json({
+        message: 'Database schema verified and tables initialized successfully.',
+        tables: result.tablesCreated,
+      });
+    } else {
+      res.status(500).json({
+        error: 'Schema initialization encountered an error.',
+        details: result.error,
+      });
+    }
+  } catch (err: any) {
+    console.error('Failed to initialize schema via /api/db-init:', err);
+    res.status(500).json({
+      error: 'Failed to initialize database schema.',
+      message: err?.message || String(err),
+    });
+  }
 });
 
 // API Routes
@@ -1519,6 +1576,16 @@ async function startServer() {
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Tally GST Accounting Server running on http://0.0.0.0:${PORT}`);
+      // Asynchronously verify/initialize database tables without blocking server startup
+      initializeDatabaseSchema()
+        .then((res) => {
+          if (res.success) {
+            console.log('✅ Database schema verified and all tables are ready.');
+          }
+        })
+        .catch((err) => {
+          console.warn('⚠️ Database schema initialization deferred (will connect on-demand):', err?.message || err);
+        });
     });
   } catch (err) {
     console.error('Failed to start Express server:', err);
