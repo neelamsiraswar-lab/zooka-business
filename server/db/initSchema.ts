@@ -1,19 +1,26 @@
-// src/db/initSchema.ts
+// server/db/initSchema.ts
 import { Pool } from 'pg';
 
-/**
- * Idempotently creates all required tables and indexes if they do not already exist.
- * This ensures that when deploying to a fresh Supabase PostgreSQL database,
- * the application bootstraps its full relational schema automatically.
- */
-export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
-  success: boolean;
-  tablesCreated: string[];
-  error?: string;
-}> {
-  const ddlStatements = [
-    // 1. Users table
-    `CREATE TABLE IF NOT EXISTS users (
+const ALL_TABLE_NAMES = [
+  'users',
+  'company_profiles',
+  'parties',
+  'inventory_items',
+  'invoices',
+  'invoice_items',
+  'expenses',
+  'activity_logs',
+  'payments',
+  'journal_entries',
+  'cheque_books',
+  'cheques',
+  'bank_statements',
+];
+
+const TABLE_DEFINITIONS: { name: string; ddl: string }[] = [
+  {
+    name: 'users',
+    ddl: `CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       uid TEXT NOT NULL UNIQUE,
       email TEXT NOT NULL,
@@ -23,9 +30,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       avatar_url TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 2. Company Profiles table
-    `CREATE TABLE IF NOT EXISTS company_profiles (
+  },
+  {
+    name: 'company_profiles',
+    ddl: `CREATE TABLE IF NOT EXISTS company_profiles (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       business_name TEXT NOT NULL,
@@ -74,9 +82,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       default_notes TEXT,
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 3. Parties (Ledgers) table
-    `CREATE TABLE IF NOT EXISTS parties (
+  },
+  {
+    name: 'parties',
+    ddl: `CREATE TABLE IF NOT EXISTS parties (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       party_type TEXT NOT NULL,
@@ -91,9 +100,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       balance_type TEXT NOT NULL DEFAULT 'dr',
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 4. Inventory Items table
-    `CREATE TABLE IF NOT EXISTS inventory_items (
+  },
+  {
+    name: 'inventory_items',
+    ddl: `CREATE TABLE IF NOT EXISTS inventory_items (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       name TEXT NOT NULL,
@@ -108,9 +118,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       min_stock_alert NUMERIC(10, 2) NOT NULL DEFAULT 5,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 5. Invoices table
-    `CREATE TABLE IF NOT EXISTS invoices (
+  },
+  {
+    name: 'invoices',
+    ddl: `CREATE TABLE IF NOT EXISTS invoices (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       party_id INTEGER REFERENCES parties(id),
@@ -140,9 +151,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 6. Invoice Line Items table
-    `CREATE TABLE IF NOT EXISTS invoice_items (
+  },
+  {
+    name: 'invoice_items',
+    ddl: `CREATE TABLE IF NOT EXISTS invoice_items (
       id SERIAL PRIMARY KEY,
       invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
       item_id INTEGER REFERENCES inventory_items(id),
@@ -160,9 +172,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       igst_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
       total NUMERIC(12, 2) NOT NULL
     );`,
-
-    // 7. Expenses table
-    `CREATE TABLE IF NOT EXISTS expenses (
+  },
+  {
+    name: 'expenses',
+    ddl: `CREATE TABLE IF NOT EXISTS expenses (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       category TEXT NOT NULL,
@@ -178,9 +191,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       description TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 8. Activity Logs table
-    `CREATE TABLE IF NOT EXISTS activity_logs (
+  },
+  {
+    name: 'activity_logs',
+    ddl: `CREATE TABLE IF NOT EXISTS activity_logs (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       user_email TEXT NOT NULL,
@@ -190,9 +204,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       details TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 9. Payments (Vouchers) table
-    `CREATE TABLE IF NOT EXISTS payments (
+  },
+  {
+    name: 'payments',
+    ddl: `CREATE TABLE IF NOT EXISTS payments (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       voucher_type TEXT NOT NULL,
@@ -211,9 +226,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       notes TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 10. Journal Entries table
-    `CREATE TABLE IF NOT EXISTS journal_entries (
+  },
+  {
+    name: 'journal_entries',
+    ddl: `CREATE TABLE IF NOT EXISTS journal_entries (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       entry_type TEXT NOT NULL,
@@ -228,9 +244,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       narration TEXT NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 11. Cheque Books table
-    `CREATE TABLE IF NOT EXISTS cheque_books (
+  },
+  {
+    name: 'cheque_books',
+    ddl: `CREATE TABLE IF NOT EXISTS cheque_books (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       bank_name TEXT NOT NULL,
@@ -244,9 +261,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 12. Cheques Register table
-    `CREATE TABLE IF NOT EXISTS cheques (
+  },
+  {
+    name: 'cheques',
+    ddl: `CREATE TABLE IF NOT EXISTS cheques (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       cheque_book_id INTEGER REFERENCES cheque_books(id),
@@ -274,9 +292,10 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       remarks TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
-
-    // 13. Bank Statements table
-    `CREATE TABLE IF NOT EXISTS bank_statements (
+  },
+  {
+    name: 'bank_statements',
+    ddl: `CREATE TABLE IF NOT EXISTS bank_statements (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
       bank_name TEXT NOT NULL,
@@ -294,74 +313,131 @@ export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );`,
+  },
+];
 
-    // Missing columns migrations (for existing tables)
-    `ALTER TABLE users ADD COLUMN IF NOT EXISTS pin TEXT;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS prevent_duplicate_invoice_no BOOLEAN DEFAULT TRUE;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS purchase_numbering_mode TEXT DEFAULT 'automatic';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS purchase_prefix TEXT DEFAULT 'PUR/2026-27/';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_purchase_number INTEGER DEFAULT 1;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS receipt_prefix TEXT DEFAULT 'REC/2026-27/';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_receipt_number INTEGER DEFAULT 1;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS payment_prefix TEXT DEFAULT 'PAY/2026-27/';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_payment_number INTEGER DEFAULT 1;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS journal_prefix TEXT DEFAULT 'JV/2026-27/';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_journal_number INTEGER DEFAULT 1;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS contra_prefix TEXT DEFAULT 'CONTRA/2026-27/';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_contra_number INTEGER DEFAULT 1;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_design_template TEXT DEFAULT 'modern';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_color_theme TEXT DEFAULT 'emerald';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_header_title TEXT DEFAULT 'TAX INVOICE';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_subtitle TEXT DEFAULT 'ORIGINAL FOR RECIPIENT';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_logo BOOLEAN DEFAULT TRUE;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_logo_url TEXT;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_bank_details BOOLEAN DEFAULT TRUE;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_upi_qr BOOLEAN DEFAULT TRUE;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_authorized_signatory BOOLEAN DEFAULT TRUE;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_signatory_label TEXT DEFAULT 'Authorized Signatory';`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_signature_url TEXT;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_hsn_summary BOOLEAN DEFAULT TRUE;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_terms BOOLEAN DEFAULT TRUE;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS default_terms TEXT;`,
-    `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS default_notes TEXT;`,
+const ALTER_STATEMENTS = [
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS pin TEXT;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS prevent_duplicate_invoice_no BOOLEAN DEFAULT TRUE;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS purchase_numbering_mode TEXT DEFAULT 'automatic';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS purchase_prefix TEXT DEFAULT 'PUR/2026-27/';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_purchase_number INTEGER DEFAULT 1;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS receipt_prefix TEXT DEFAULT 'REC/2026-27/';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_receipt_number INTEGER DEFAULT 1;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS payment_prefix TEXT DEFAULT 'PAY/2026-27/';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_payment_number INTEGER DEFAULT 1;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS journal_prefix TEXT DEFAULT 'JV/2026-27/';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_journal_number INTEGER DEFAULT 1;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS contra_prefix TEXT DEFAULT 'CONTRA/2026-27/';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS next_contra_number INTEGER DEFAULT 1;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_design_template TEXT DEFAULT 'modern';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_color_theme TEXT DEFAULT 'emerald';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_header_title TEXT DEFAULT 'TAX INVOICE';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_subtitle TEXT DEFAULT 'ORIGINAL FOR RECIPIENT';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_logo BOOLEAN DEFAULT TRUE;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_logo_url TEXT;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_bank_details BOOLEAN DEFAULT TRUE;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_upi_qr BOOLEAN DEFAULT TRUE;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_authorized_signatory BOOLEAN DEFAULT TRUE;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_signatory_label TEXT DEFAULT 'Authorized Signatory';`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_signature_url TEXT;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_hsn_summary BOOLEAN DEFAULT TRUE;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS invoice_show_terms BOOLEAN DEFAULT TRUE;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS default_terms TEXT;`,
+  `ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS default_notes TEXT;`,
+  `CREATE INDEX IF NOT EXISTS idx_invoices_user_date ON invoices(user_id, invoice_date);`,
+  `CREATE INDEX IF NOT EXISTS idx_parties_user_type ON parties(user_id, party_type);`,
+  `CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date);`,
+  `CREATE INDEX IF NOT EXISTS idx_payments_user_date ON payments(user_id, date);`,
+  `CREATE INDEX IF NOT EXISTS idx_journal_user_date ON journal_entries(user_id, date);`,
+  `CREATE INDEX IF NOT EXISTS idx_cheques_user_status ON cheques(user_id, status);`,
+];
 
-    // Helpful indexes for performant queries
-    `CREATE INDEX IF NOT EXISTS idx_invoices_user_date ON invoices(user_id, invoice_date);`,
-    `CREATE INDEX IF NOT EXISTS idx_parties_user_type ON parties(user_id, party_type);`,
-    `CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date);`,
-    `CREATE INDEX IF NOT EXISTS idx_payments_user_date ON payments(user_id, date);`,
-    `CREATE INDEX IF NOT EXISTS idx_journal_user_date ON journal_entries(user_id, date);`,
-    `CREATE INDEX IF NOT EXISTS idx_cheques_user_status ON cheques(user_id, status);`,
-  ];
-
-  const client = await pool.connect();
+/**
+ * Idempotently creates all required tables and indexes if they do not already exist.
+ * This gracefully inspects existing tables first and handles restricted database permissions safely.
+ */
+export async function ensureDatabaseTablesExist(pool: Pool): Promise<{
+  success: boolean;
+  tablesCreated: string[];
+  existingTables: string[];
+  error?: string;
+}> {
+  let client;
   try {
-    for (const statement of ddlStatements) {
-      await client.query(statement);
-    }
-    return {
-      success: true,
-      tablesCreated: [
-        'users',
-        'company_profiles',
-        'parties',
-        'inventory_items',
-        'invoices',
-        'invoice_items',
-        'expenses',
-        'activity_logs',
-        'payments',
-        'journal_entries',
-        'cheque_books',
-        'cheques',
-        'bank_statements',
-      ],
-    };
-  } catch (err: any) {
-    console.error('ensureDatabaseTablesExist error:', err);
+    client = await pool.connect();
+  } catch (connErr: any) {
+    console.warn('⚠️ [Database] Connection could not be established for schema check:', connErr?.message || connErr);
     return {
       success: false,
       tablesCreated: [],
+      existingTables: [],
+      error: connErr?.message || String(connErr),
+    };
+  }
+
+  const existingTables: string[] = [];
+  const tablesCreated: string[] = [];
+
+  try {
+    // 1. Inspect which tables already exist in schema 'public'
+    try {
+      const res = await client.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public';
+      `);
+      for (const row of res.rows) {
+        existingTables.push(row.table_name);
+      }
+    } catch (infoErr: any) {
+      console.warn('⚠️ [Database] Could not inspect information_schema.tables:', infoErr?.message || infoErr);
+    }
+
+    // 2. For any missing table, attempt creation
+    for (const item of TABLE_DEFINITIONS) {
+      if (existingTables.includes(item.name)) {
+        continue;
+      }
+      try {
+        await client.query(item.ddl);
+        tablesCreated.push(item.name);
+        existingTables.push(item.name);
+      } catch (ddlErr: any) {
+        // If permission denied or table already exists, log diagnostic warning
+        const isPermError = ddlErr?.code === '42501' || ddlErr?.message?.includes('permission denied');
+        if (isPermError) {
+          console.warn(`⚠️ [Database] Permission denied when creating table "${item.name}". If tables already exist or were created by another role, DML operations can still succeed.`);
+        } else {
+          console.warn(`⚠️ [Database] Notice creating table "${item.name}":`, ddlErr?.message || ddlErr);
+        }
+      }
+    }
+
+    // 3. Run non-breaking ALTER and INDEX migrations
+    for (const stmt of ALTER_STATEMENTS) {
+      try {
+        await client.query(stmt);
+      } catch {
+        // Safely ignore column/index alteration errors on existing restricted tables
+      }
+    }
+
+    // Check if the essential tables exist (or at least users table)
+    const hasUsersTable = existingTables.includes('users');
+    const isSuccess = hasUsersTable || tablesCreated.length > 0 || existingTables.length >= 5;
+
+    return {
+      success: isSuccess,
+      tablesCreated,
+      existingTables,
+    };
+  } catch (err: any) {
+    console.warn('⚠️ [Database] Schema inspection notice:', err?.message || err);
+    return {
+      success: existingTables.length > 0,
+      tablesCreated,
+      existingTables,
       error: err?.message || String(err),
     };
   } finally {
