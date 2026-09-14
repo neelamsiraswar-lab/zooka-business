@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, DEMO_RBAC_PERSONAS } from '../context/AuthContext';
 import {
   Building2,
   ShieldCheck,
@@ -137,6 +137,56 @@ export const LoginView: React.FC = () => {
       });
     } finally {
       setAuthenticatingTarget(null);
+    }
+  };
+
+  const handleDemoAdminLogin = async () => {
+    setAuthenticatingTarget('demo-admin');
+    clearError();
+    try {
+      const adminUser = registeredUsers.find((u) => u.role === 'admin');
+      if (adminUser) {
+        await signInAsUser({
+          uid: adminUser.uid,
+          email: adminUser.email,
+          displayName: adminUser.displayName || 'Administrator',
+          avatarUrl: adminUser.avatarUrl,
+          role: 'admin',
+        });
+      } else {
+        await signInDemoRole('admin');
+      }
+    } catch (err: any) {
+      console.error('Demo admin login error:', err);
+      try {
+        await signInDemoRole('admin');
+      } catch (fallbackErr) {
+        console.error('Demo role fallback error:', fallbackErr);
+      }
+    } finally {
+      setAuthenticatingTarget(null);
+    }
+  };
+
+  const handleOpenAdminPinModal = () => {
+    clearError();
+    const adminUser = registeredUsers.find((u) => u.role === 'admin');
+    if (adminUser) {
+      setPinModalTarget({
+        role: 'admin',
+        displayName: adminUser.displayName || 'Administrator',
+        email: adminUser.email,
+        avatarUrl: adminUser.avatarUrl,
+        userObj: adminUser,
+      });
+    } else {
+      const persona = DEMO_RBAC_PERSONAS.admin;
+      setPinModalTarget({
+        role: 'admin',
+        displayName: persona.displayName,
+        email: persona.email,
+        avatarUrl: persona.photoURL,
+      });
     }
   };
 
@@ -364,6 +414,105 @@ export const LoginView: React.FC = () => {
                 </div>
               )}
 
+              {/* Featured: Demo Administrator Quick Access Card */}
+              <div
+                id="demo-admin-quick-access-card"
+                className="mb-5 p-4 rounded-xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-indigo-950/50 border border-purple-500/40 shadow-lg relative overflow-hidden"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-purple-600/25 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0 shadow-inner">
+                      <ShieldCheck className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-white">Administrator Access</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          Full Privileges
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Manage Ledgers, Invoices, Company Settings, Team &amp; RBAC
+                      </p>
+                      <div className="flex items-center gap-2.5 mt-1 text-[11px] text-slate-400">
+                        <span>Admin Account</span>
+                        <span className="text-slate-600">•</span>
+                        <span className="text-amber-400 font-mono flex items-center gap-1">
+                          <KeyRound className="w-3 h-3 text-amber-400" /> PIN: <strong className="text-amber-300">9999</strong>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <button
+                      type="button"
+                      id="btn-admin-demo-pin"
+                      onClick={handleOpenAdminPinModal}
+                      disabled={loading || Boolean(authenticatingTarget)}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                      title="Enter security PIN 9999 for Administrator"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                      <span>PIN (9999)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id="btn-demo-login-admin"
+                      onClick={handleDemoAdminLogin}
+                      disabled={loading || Boolean(authenticatingTarget)}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white text-xs font-bold flex items-center gap-2 transition shadow-md shadow-purple-900/30 active:scale-[0.98] cursor-pointer disabled:opacity-50"
+                    >
+                      {authenticatingTarget === 'demo-admin' ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Entering...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LogIn className="w-3.5 h-3.5" />
+                          <span>Demo Login as Admin</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Persona Switcher for other roles */}
+                <div className="mt-3 pt-2.5 border-t border-purple-500/20 flex items-center justify-between gap-2 flex-wrap text-[11px]">
+                  <span className="text-slate-400 font-medium flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-purple-400" /> Other Demo Roles:
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => signInDemoRole('accountant')}
+                      disabled={loading || Boolean(authenticatingTarget)}
+                      className="px-2 py-0.5 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold transition cursor-pointer"
+                    >
+                      Accountant (PIN 2222)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => signInDemoRole('billing_operator')}
+                      disabled={loading || Boolean(authenticatingTarget)}
+                      className="px-2 py-0.5 rounded-lg bg-blue-950/40 hover:bg-blue-900/60 text-blue-300 border border-blue-500/30 text-[10px] font-semibold transition cursor-pointer"
+                    >
+                      Billing (PIN 1111)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => signInDemoRole('auditor')}
+                      disabled={loading || Boolean(authenticatingTarget)}
+                      className="px-2 py-0.5 rounded-lg bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-500/30 text-[10px] font-semibold transition cursor-pointer"
+                    >
+                      Auditor (PIN 3333)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* Live Search Input */}
               <div className="relative mb-4">
                 <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
@@ -581,6 +730,23 @@ export const LoginView: React.FC = () => {
                   {ROLE_CONFIG[pinModalTarget.role]?.title || 'Security Persona'}
                 </span>
               </p>
+              <div className="flex items-center justify-center gap-1.5 pt-0.5">
+                <span className="text-[11px] text-slate-400">Demo PIN:</span>
+                <button
+                  type="button"
+                  id="btn-autofill-demo-pin"
+                  onClick={() => {
+                    const defaultPin = DEFAULT_ROLE_PINS[pinModalTarget.role] || '9999';
+                    setPinInput(defaultPin);
+                    if (pinError) setPinError(null);
+                  }}
+                  className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-mono font-bold cursor-pointer transition flex items-center gap-1 active:scale-95"
+                  title="Click to fill default demo PIN"
+                >
+                  <span>{DEFAULT_ROLE_PINS[pinModalTarget.role] || '9999'}</span>
+                  <span className="text-[10px] text-amber-400/80 font-sans font-normal">(Click to fill)</span>
+                </button>
+              </div>
             </div>
 
             {/* Persona Target Info */}

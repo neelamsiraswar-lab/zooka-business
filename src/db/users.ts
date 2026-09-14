@@ -30,14 +30,25 @@ export async function getOrCreateUser(
   // Check memory cache first (valid for 5 minutes)
   const cached = userMemoryCache.get(uid);
   if (cached && cached.expiresAt > Date.now()) {
-    return cached.user;
+    if (uid === 'admin-workspace-user' && cached.user.role !== 'admin') {
+      userMemoryCache.delete(uid);
+    } else {
+      return cached.user;
+    }
   }
 
   try {
     // 1. Try selecting existing user first to avoid lock contention on concurrent requests
     const existing = await db.select().from(users).where(eq(users.uid, uid));
     if (existing.length > 0) {
-      const u = existing[0];
+      let u = existing[0];
+      if ((uid === 'admin-workspace-user' || initialRole === 'admin') && u.role !== 'admin') {
+        const updated = await db.update(users)
+          .set({ role: 'admin', pin: u.pin || '9999' })
+          .where(eq(users.id, u.id))
+          .returning();
+        if (updated.length > 0) u = updated[0];
+      }
       userMemoryCache.set(uid, { user: u, expiresAt: Date.now() + 5 * 60 * 1000 });
       return u;
     }
