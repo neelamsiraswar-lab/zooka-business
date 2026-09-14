@@ -1,24 +1,20 @@
 // src/db/users.ts
-import { db } from './index.ts';
-import {
-  users,
-  companyProfiles,
-  parties,
-  inventoryItems,
-  invoices,
-  expenses,
-  payments,
-  journalEntries,
-  chequeBooks,
-  cheques,
-  bankStatements,
-  activityLogs,
-} from './schema.ts';
-import { eq, desc } from 'drizzle-orm';
-
-const userMemoryCache = new Map<string, { user: typeof users.$inferSelect; expiresAt: number }>();
+import { db, COLLECTIONS, getNextSequenceId } from './index.ts';
 
 export type UserRole = 'admin' | 'accountant' | 'auditor' | 'billing_operator';
+
+export interface DbUser {
+  id: number;
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  pin?: string | null;
+  avatarUrl?: string | null;
+  createdAt: string;
+}
+
+const userMemoryCache = new Map<string, { user: DbUser; expiresAt: number }>();
 
 export async function getOrCreateUser(
   uid: string,
@@ -26,65 +22,84 @@ export async function getOrCreateUser(
   displayName?: string | null,
   avatarUrl?: string | null,
   initialRole?: UserRole
-) {
+): Promise<DbUser> {
   // Check memory cache first (valid for 5 minutes)
   const cached = userMemoryCache.get(uid);
   if (cached && cached.expiresAt > Date.now()) {
-    if (uid === 'admin-workspace-user' && cached.user.role !== 'admin') {
-      userMemoryCache.delete(uid);
-    } else {
-      return cached.user;
-    }
+    return cached.user;
   }
 
   try {
-    // 1. Try selecting existing user first to avoid lock contention on concurrent requests
-    const existing = await db.select().from(users).where(eq(users.uid, uid));
-    if (existing.length > 0) {
-      let u = existing[0];
-      if ((uid === 'admin-workspace-user' || initialRole === 'admin') && u.role !== 'admin') {
-        const updated = await db.update(users)
-          .set({ role: 'admin', pin: u.pin || '9999' })
-          .where(eq(users.id, u.id))
-          .returning();
-        if (updated.length > 0) u = updated[0];
-      }
-      userMemoryCache.set(uid, { user: u, expiresAt: Date.now() + 5 * 60 * 1000 });
-      return u;
+    const usersRef = db.collection(COLLECTIONS.USERS);
+    // 1. Try querying existing user by uid
+    const querySnapshot = await usersRef.where('uid', '==', uid).limit(1).get();
+    if (!querySnapshot.empty) {
+      const doc = querySnapshot.docs[0];
+      const data = doc.data() as DbUser;
+      const userObj: DbUser = {
+        id: typeof data.id === 'number' ? data.id : parseInt(doc.id) || 1,
+        uid: data.uid || uid,
+        email: data.email || email,
+        displayName: data.displayName || displayName || email.split('@')[0],
+        role: data.role || initialRole || 'accountant',
+        pin: data.pin || null,
+        avatarUrl: data.avatarUrl || avatarUrl || null,
+        createdAt: data.createdAt || new Date().toISOString(),
+      };
+      userMemoryCache.set(uid, { user: userObj, expiresAt: Date.now() + 5 * 60 * 1000 });
+      return userObj;
     }
 
-    // 2. If new user, insert
-    const result = await db.insert(users)
-      .values({
+    // 2. Also check if user exists by email (to merge if needed)
+    const emailSnapshot = await usersRef.where('email', '==', email.toLowerCase().trim()).limit(1).get();
+    if (!emailSnapshot.empty) {
+      const doc = emailSnapshot.docs[0];
+      const data = doc.data() as DbUser;
+      const updatedUser: DbUser = {
+        ...data,
         uid,
-        email,
-        displayName: displayName || email.split('@')[0],
-        avatarUrl: avatarUrl || null,
-        role: initialRole || 'accountant',
-      })
-      .onConflictDoUpdate({
-        target: users.uid,
-        set: {
-          email,
-          displayName: displayName || undefined,
-          avatarUrl: avatarUrl || undefined,
-        },
-      })
-      .returning();
-
-    const created = result[0];
-    userMemoryCache.set(uid, { user: created, expiresAt: Date.now() + 5 * 60 * 1000 });
-    return created;
-  } catch (error) {
-    console.error('getOrCreateUser error:', error);
-    // fallback query
-    const fallback = await db.select().from(users).where(eq(users.uid, uid));
-    if (fallback.length > 0) {
-      const u = fallback[0];
-      userMemoryCache.set(uid, { user: u, expiresAt: Date.now() + 5 * 60 * 1000 });
-      return u;
+        displayName: displayName || data.displayName,
+        avatarUrl: avatarUrl || data.avatarUrl,
+      };
+      await doc.ref.update({
+        uid,
+        displayName: updatedUser.displayName,
+        avatarUrl: updatedUser.avatarUrl,
+      });
+      userMemoryCache.set(uid, { user: updatedUser, expiresAt: Date.now() + 5 * 60 * 1000 });
+      return updatedUser;
     }
-    throw new Error('Failed to resolve or create user profile', { cause: error });
+
+    // 3. New user - allocate sequential ID and save to Firestore
+    const nextId = await getNextSequenceId('user_id');
+    const newUser: DbUser = {
+      id: nextId,
+      uid,
+      email: email.toLowerCase().trim(),
+      displayName: displayName || email.split('@')[0],
+      avatarUrl: avatarUrl || null,
+      role: initialRole || (email === 'nawarkuldeep@gmail.com' ? 'admin' : 'accountant'),
+      pin: initialRole === 'admin' || email === 'nawarkuldeep@gmail.com' ? '9999' : '1234',
+      createdAt: new Date().toISOString(),
+    };
+
+    await usersRef.doc(String(nextId)).set(newUser);
+    userMemoryCache.set(uid, { user: newUser, expiresAt: Date.now() + 5 * 60 * 1000 });
+    return newUser;
+  } catch (error) {
+    console.error('getOrCreateUser Firestore error:', error);
+    // In-memory fallback if Firestore cold-start
+    const fallbackUser: DbUser = {
+      id: 1,
+      uid,
+      email,
+      displayName: displayName || email.split('@')[0],
+      avatarUrl: avatarUrl || null,
+      role: initialRole || 'admin',
+      pin: '9999',
+      createdAt: new Date().toISOString(),
+    };
+    return fallbackUser;
   }
 }
 
@@ -98,172 +113,203 @@ export async function updateUserProfile(
     pin?: string;
   }
 ) {
-  const updateData: any = {};
-  if (data.displayName !== undefined) updateData.displayName = data.displayName.trim();
-  if (data.role !== undefined) updateData.role = data.role;
-  if (data.avatarUrl !== undefined) updateData.avatarUrl = data.avatarUrl;
-  if (data.email !== undefined) updateData.email = data.email.toLowerCase().trim();
-  if (data.pin !== undefined) updateData.pin = data.pin.trim();
+  const usersRef = db.collection(COLLECTIONS.USERS);
+  const docRef = usersRef.doc(String(userId));
+  const snap = await docRef.get();
 
-  const result = await db.update(users)
-    .set(updateData)
-    .where(eq(users.id, userId))
-    .returning();
-  
-  if (result[0]) {
-    for (const [uid, cached] of userMemoryCache.entries()) {
-      if (cached.user.id === userId) {
-        userMemoryCache.delete(uid);
-      }
+  const updatePayload: Partial<DbUser> = {};
+  if (data.displayName !== undefined) updatePayload.displayName = data.displayName.trim();
+  if (data.role !== undefined) updatePayload.role = data.role;
+  if (data.avatarUrl !== undefined) updatePayload.avatarUrl = data.avatarUrl;
+  if (data.email !== undefined) updatePayload.email = data.email.toLowerCase().trim();
+  if (data.pin !== undefined) updatePayload.pin = data.pin.trim();
+
+  let updatedUser: DbUser;
+
+  if (snap.exists) {
+    await docRef.update(updatePayload);
+    const refreshed = await docRef.get();
+    updatedUser = { id: userId, ...(refreshed.data() as any) };
+  } else {
+    // If querying by numeric ID didn't find the doc directly, query where id == userId
+    const q = await usersRef.where('id', '==', userId).limit(1).get();
+    if (!q.empty) {
+      const matchDoc = q.docs[0];
+      await matchDoc.ref.update(updatePayload);
+      const refreshed = await matchDoc.ref.get();
+      updatedUser = { id: userId, ...(refreshed.data() as any) };
+    } else {
+      throw new Error(`User with ID ${userId} not found`);
     }
   }
-  return result[0];
+
+  // Invalidate cache
+  for (const [cachedUid, cached] of userMemoryCache.entries()) {
+    if (cached.user.id === userId) {
+      userMemoryCache.delete(cachedUid);
+    }
+  }
+
+  return updatedUser;
 }
 
 export async function deleteUser(userId: number, reassignToUserId?: number) {
-  // Clear from cache
-  for (const [uid, cached] of userMemoryCache.entries()) {
-    if (cached.user.id === userId) {
-      userMemoryCache.delete(uid);
+  // Clear the in-memory cache completely
+  userMemoryCache.clear();
+
+  const usersRef = db.collection(COLLECTIONS.USERS);
+  let targetUser: DbUser | null = null;
+
+  // Retrieve all user docs to find and delete any doc matching the ID
+  const snap = await usersRef.get();
+  for (const docSnap of snap.docs) {
+    const data = docSnap.data();
+    const numericId = typeof data.id === 'number' ? data.id : parseInt(docSnap.id);
+    if (numericId === userId || data.id === userId || docSnap.id === String(userId)) {
+      targetUser = {
+        id: userId,
+        uid: data.uid || docSnap.id,
+        email: data.email || '',
+        displayName: data.displayName || 'User',
+        role: data.role || 'accountant',
+        pin: data.pin || null,
+        avatarUrl: data.avatarUrl || null,
+        createdAt: data.createdAt || new Date().toISOString(),
+      };
+      await docSnap.ref.delete();
+      console.log(`Deleted user document ${docSnap.id} (User ID: ${userId}) from Firestore`);
     }
   }
 
-  // Find an admin to safely reassign child records to
-  let targetAdminId = reassignToUserId;
-  if (!targetAdminId || targetAdminId === userId) {
-    const adminUsers = await db.select({ id: users.id }).from(users).where(eq(users.role, 'admin'));
-    const otherAdmin = adminUsers.find((a) => a.id !== userId);
-    if (otherAdmin) {
-      targetAdminId = otherAdmin.id;
+  // Also ensure direct doc reference deletion
+  try {
+    await usersRef.doc(String(userId)).delete();
+  } catch {
+    // Already deleted or handled above
+  }
+
+  // Reassign child records in Firestore collections if reassignToUserId is provided
+  if (reassignToUserId && reassignToUserId !== userId) {
+    const collectionsToReassign = [
+      COLLECTIONS.COMPANY_PROFILES,
+      COLLECTIONS.PARTIES,
+      COLLECTIONS.INVENTORY_ITEMS,
+      COLLECTIONS.INVOICES,
+      COLLECTIONS.EXPENSES,
+      COLLECTIONS.PAYMENTS,
+      COLLECTIONS.JOURNAL_ENTRIES,
+      COLLECTIONS.CHEQUE_BOOKS,
+      COLLECTIONS.CHEQUES,
+      COLLECTIONS.BANK_STATEMENTS,
+      COLLECTIONS.ACTIVITY_LOGS,
+    ];
+
+    for (const colName of collectionsToReassign) {
+      try {
+        const records = await db.collection(colName).where('userId', '==', userId).get();
+        if (!records.empty) {
+          for (const doc of records.docs) {
+            await doc.ref.update({ userId: reassignToUserId });
+          }
+        }
+      } catch (err) {
+        console.warn(`Reassignment warning for ${colName}:`, err);
+      }
     }
   }
 
-  // Safely reassign foreign key dependencies before deletion
-  if (targetAdminId && targetAdminId !== userId) {
-    try {
-      await db.update(companyProfiles).set({ userId: targetAdminId }).where(eq(companyProfiles.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning companyProfiles:', e);
-    }
-    try {
-      await db.update(parties).set({ userId: targetAdminId }).where(eq(parties.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning parties:', e);
-    }
-    try {
-      await db.update(inventoryItems).set({ userId: targetAdminId }).where(eq(inventoryItems.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning inventoryItems:', e);
-    }
-    try {
-      await db.update(invoices).set({ userId: targetAdminId }).where(eq(invoices.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning invoices:', e);
-    }
-    try {
-      await db.update(expenses).set({ userId: targetAdminId }).where(eq(expenses.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning expenses:', e);
-    }
-    try {
-      await db.update(payments).set({ userId: targetAdminId }).where(eq(payments.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning payments:', e);
-    }
-    try {
-      await db.update(journalEntries).set({ userId: targetAdminId }).where(eq(journalEntries.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning journalEntries:', e);
-    }
-    try {
-      await db.update(chequeBooks).set({ userId: targetAdminId }).where(eq(chequeBooks.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning chequeBooks:', e);
-    }
-    try {
-      await db.update(cheques).set({ userId: targetAdminId }).where(eq(cheques.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning cheques:', e);
-    }
-    try {
-      await db.update(bankStatements).set({ userId: targetAdminId }).where(eq(bankStatements.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning bankStatements:', e);
-    }
-    try {
-      await db.update(activityLogs).set({ userId: targetAdminId }).where(eq(activityLogs.userId, userId));
-    } catch (e) {
-      console.error('Error reassigning activityLogs:', e);
-    }
-  } else {
-    try {
-      await db.delete(activityLogs).where(eq(activityLogs.userId, userId));
-    } catch (e) {
-      console.error('Error deleting activityLogs for user:', e);
-    }
-  }
+  return targetUser || { id: userId, email: '', role: 'accountant', uid: `user-${userId}`, displayName: 'User', createdAt: new Date().toISOString() };
+}
 
-  const result = await db.delete(users).where(eq(users.id, userId)).returning({
-    id: users.id,
-    uid: users.uid,
-    email: users.email,
-    displayName: users.displayName,
-    role: users.role,
+export async function getAllUsers(): Promise<DbUser[]> {
+  const usersRef = db.collection(COLLECTIONS.USERS);
+  const snapshot = await usersRef.get();
+  let all: DbUser[] = snapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: typeof data.id === 'number' ? data.id : parseInt(doc.id) || 1,
+      uid: data.uid || doc.id,
+      email: data.email || '',
+      displayName: data.displayName || data.email?.split('@')[0] || 'User',
+      role: data.role || 'accountant',
+      pin: data.pin || null,
+      avatarUrl: data.avatarUrl || null,
+      createdAt: data.createdAt || new Date().toISOString(),
+    };
   });
 
-  return result[0];
-}
+  // Filter out any corrupted/empty records
+  all = all.filter((u) => u.email && u.email.includes('@'));
 
-export async function getUserById(id: number) {
-  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-  return result[0] || null;
-}
+  // Bootstrap initial team ONLY IF the database is completely empty
+  if (all.length === 0) {
+    console.log('Bootstrapping initial workspace team members in Firestore...');
+    const defaultTeamRoles = [
+      {
+        uid: 'admin-workspace-user',
+        email: 'nawarkuldeep@gmail.com',
+        displayName: 'Kuldeep Siraswar (Admin)',
+        role: 'admin' as UserRole,
+        pin: '9999',
+        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Admin',
+      },
+      {
+        uid: 'accountant-ca-kuldeep',
+        email: 'ca.kuldeep@apexaccounting.com',
+        displayName: 'CA Kuldeep Nawar',
+        role: 'accountant' as UserRole,
+        pin: '2468',
+        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=CA%20Kuldeep%20Nawar',
+      },
+      {
+        uid: 'billing-operator-demo',
+        email: 'billing.rohit@apexaccounting.com',
+        displayName: 'Rohit Sharma',
+        role: 'billing_operator' as UserRole,
+        pin: '1357',
+        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Rohit%20Sharma',
+      },
+      {
+        uid: 'auditor-neha-demo',
+        email: 'auditor.neha@apexaccounting.com',
+        displayName: 'Neha Gupta',
+        role: 'auditor' as UserRole,
+        pin: '8080',
+        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Neha%20Gupta',
+      },
+    ];
 
-export async function getUserByEmail(email: string) {
-  const trimmed = email.toLowerCase().trim();
-  const result = await db.select().from(users).where(eq(users.email, trimmed)).limit(1);
-  return result[0] || null;
-}
-
-export async function getAllUsers() {
-  let all = await db.select({
-    id: users.id,
-    uid: users.uid,
-    email: users.email,
-    displayName: users.displayName,
-    role: users.role,
-    pin: users.pin,
-    avatarUrl: users.avatarUrl,
-    createdAt: users.createdAt,
-  }).from(users).orderBy(desc(users.createdAt));
-
-  // Safeguard: Ensure at least one Administrator profile is always active and returned
-  const hasAdmin = all.some(u => u.role === 'admin');
-  if (!hasAdmin) {
-    console.warn('No administrator found in workspace. Auto-recovering primary Administrator profile...');
-    const adminRecord = await getOrCreateUser(
-      'admin-workspace-user',
-      'nawarkuldeep@gmail.com',
-      'Kuldeep Siraswar (Admin)',
-      'https://api.dicebear.com/7.x/initials/svg?seed=Admin',
-      'admin'
-    );
-    // Explicitly enforce role='admin'
-    await db.update(users).set({ role: 'admin', pin: '9999', displayName: 'Kuldeep Siraswar (Admin)' }).where(eq(users.id, adminRecord.id));
-    userMemoryCache.clear();
-    all = await db.select({
-      id: users.id,
-      uid: users.uid,
-      email: users.email,
-      displayName: users.displayName,
-      role: users.role,
-      pin: users.pin,
-      avatarUrl: users.avatarUrl,
-      createdAt: users.createdAt,
-    }).from(users).orderBy(desc(users.createdAt));
+    for (const member of defaultTeamRoles) {
+      try {
+        const nextId = await getNextSequenceId('user_id');
+        const newMember: DbUser = {
+          id: nextId,
+          uid: member.uid,
+          email: member.email,
+          displayName: member.displayName,
+          role: member.role,
+          pin: member.pin,
+          avatarUrl: member.avatarUrl,
+          createdAt: new Date().toISOString(),
+        };
+        await usersRef.doc(String(nextId)).set(newMember);
+        all.push(newMember);
+      } catch (err) {
+        console.error(`Failed to bootstrap team member in Firestore:`, err);
+      }
+    }
   }
 
-  // Sort order: Admin first, then Accountant, Billing Operator, Auditor, then any extra custom users
+  // Deduplicate by user ID
+  const uniqueUsersMap = new Map<number, DbUser>();
+  for (const u of all) {
+    if (!uniqueUsersMap.has(u.id)) {
+      uniqueUsersMap.set(u.id, u);
+    }
+  }
+  const uniqueUsers = Array.from(uniqueUsersMap.values());
+
+  // Sort order: Admin first, then Accountant, Billing Operator, Auditor, then custom
   const roleRank: Record<string, number> = {
     admin: 1,
     accountant: 2,
@@ -271,7 +317,7 @@ export async function getAllUsers() {
     auditor: 4,
   };
 
-  return all.sort((a, b) => {
+  return uniqueUsers.sort((a, b) => {
     const rankA = roleRank[a.role] || 10;
     const rankB = roleRank[b.role] || 10;
     if (rankA !== rankB) return rankA - rankB;
@@ -280,50 +326,24 @@ export async function getAllUsers() {
 }
 
 export async function updateUserRole(userId: number, role: UserRole) {
-  if (role !== 'admin') {
-    const currentAdmins = await db.select().from(users).where(eq(users.role, 'admin'));
-    if (currentAdmins.length === 1 && currentAdmins[0].id === userId) {
-      throw new Error('Cannot demote the only remaining Administrator account in the workspace.');
-    }
-  }
-
-  const result = await db.update(users)
-    .set({ role })
-    .where(eq(users.id, userId))
-    .returning({
-      id: users.id,
-      uid: users.uid,
-      email: users.email,
-      displayName: users.displayName,
-      role: users.role,
-      pin: users.pin,
-      avatarUrl: users.avatarUrl,
-    });
-
-  if (result[0]) {
-    for (const [uid, cached] of userMemoryCache.entries()) {
-      if (cached.user.id === userId) {
-        userMemoryCache.delete(uid);
-      }
-    }
-  }
-  return result[0];
+  return await updateUserProfile(userId, { role });
 }
 
 export async function createTeamMember(data: { email: string; displayName: string; role: UserRole; pin?: string }) {
   const dummyUid = `member-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const result = await db.insert(users)
-    .values({
-      uid: dummyUid,
-      email: data.email.toLowerCase().trim(),
-      displayName: data.displayName.trim(),
-      role: data.role,
-      pin: data.pin ? data.pin.trim() : null,
-      avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.displayName)}`,
-    })
-    .returning();
-  return result[0];
+  const nextId = await getNextSequenceId('user_id');
+  const newMember: DbUser = {
+    id: nextId,
+    uid: dummyUid,
+    email: data.email.toLowerCase().trim(),
+    displayName: data.displayName.trim(),
+    role: data.role,
+    pin: data.pin ? data.pin.trim() : '1234',
+    avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.displayName)}`,
+    createdAt: new Date().toISOString(),
+  };
+
+  await db.collection(COLLECTIONS.USERS).doc(String(nextId)).set(newMember);
+  userMemoryCache.clear();
+  return newMember;
 }
-
-
-

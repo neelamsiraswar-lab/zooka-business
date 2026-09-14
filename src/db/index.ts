@@ -1,318 +1,243 @@
 // src/db/index.ts
-import 'dotenv/config';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool, PoolConfig } from 'pg';
-import * as schema from './schema.ts';
-import { ensureDatabaseTablesExist } from './initSchema.ts';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  writeBatch,
+  runTransaction,
+  WhereFilterOp,
+  OrderByDirection,
+  QueryConstraint,
+} from 'firebase/firestore';
+import firebaseConfig from '../../firebase-applet-config.json';
 
-// Global connection pool caching to persist across hot-reloads and serverless invocations (Vercel)
-declare global {
-  var _postgresPool: Pool | undefined;
-}
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const rawFirestore = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
 
-const isServerless = Boolean(
-  process.env.VERCEL ||
-  process.env.VERCEL_ENV ||
-  process.env.NOW_REGION ||
-  process.env.AWS_LAMBDA_FUNCTION_NAME ||
-  process.env.LAMBDA_TASK_ROOT ||
-  process.env.SERVERLESS
-);
+// Collection names constants
+export const COLLECTIONS = {
+  USERS: 'users',
+  COMPANY_PROFILES: 'company_profiles',
+  PARTIES: 'parties',
+  INVENTORY_ITEMS: 'inventory_items',
+  INVOICES: 'invoices',
+  EXPENSES: 'expenses',
+  PAYMENTS: 'payments',
+  JOURNAL_ENTRIES: 'journal_entries',
+  CHEQUE_BOOKS: 'cheque_books',
+  CHEQUES: 'cheques',
+  BANK_STATEMENTS: 'bank_statements',
+  ACTIVITY_LOGS: 'activity_logs',
+  COUNTERS: 'counters',
+} as const;
 
-/**
- * Creates or retrieves the cached PostgreSQL / Supabase connection pool.
- */
-export const createPool = (): Pool => {
-  if (!global._postgresPool) {
-    // 1. Connection string resolution (Supabase / PostgreSQL)
-    let connectionString =
-      process.env.SUPABASE_DATABASE_URL ||
-      process.env.SUPABASE_DB_URL ||
-      process.env.DATABASE_URL ||
-      process.env.POSTGRES_URL ||
-      process.env.POSTGRES_PRISMA_URL ||
-      process.env.POSTGRES_URL_NON_POOLING ||
-      process.env.SQL_DATABASE_URL ||
-      '';
+// Compatible wrapper around Firebase Web SDK
+class QueryBuilder {
+  private colName: string;
+  private constraints: QueryConstraint[] = [];
 
-    // 2. Individual parameter resolution
-    let host =
-      process.env.SUPABASE_HOST ||
-      process.env.DB_HOST ||
-      process.env.POSTGRES_HOST ||
-      process.env.SQL_HOST ||
-      '';
-
-    const user =
-      process.env.SUPABASE_USER ||
-      process.env.DB_USER ||
-      process.env.POSTGRES_USER ||
-      process.env.SQL_USER ||
-      process.env.SQL_ADMIN_USER ||
-      'postgres';
-
-    const password =
-      process.env.SUPABASE_PASSWORD ||
-      process.env.DB_PASSWORD ||
-      process.env.POSTGRES_PASSWORD ||
-      process.env.SQL_PASSWORD ||
-      process.env.SQL_ADMIN_PASSWORD ||
-      '';
-
-    const database =
-      process.env.SUPABASE_DB_NAME ||
-      process.env.DB_NAME ||
-      process.env.POSTGRES_DATABASE ||
-      process.env.SQL_DB_NAME ||
-      'postgres';
-
-    const port = process.env.SUPABASE_PORT
-      ? parseInt(process.env.SUPABASE_PORT, 10)
-      : process.env.SQL_PORT
-      ? parseInt(process.env.SQL_PORT, 10)
-      : process.env.DB_PORT
-      ? parseInt(process.env.DB_PORT, 10)
-      : 5432;
-
-    // Check if host is a Unix socket (legacy or local socket)
-    const isUnixSocket = host.startsWith('/') && !host.includes('://');
-
-    if (!host && !connectionString) {
-      if (process.env.NODE_ENV === 'production' || isServerless) {
-        console.warn(
-          '⚠️ [Database] Neither DATABASE_URL nor SUPABASE_DATABASE_URL is configured in environment variables. ' +
-          'Please set DATABASE_URL (e.g. from your Supabase Project Settings > Database > Connection string).'
-        );
-      }
-      host = 'localhost';
-    }
-
-    // Sanitize connectionString if provided:
-    // 1. If password contains unencoded '@', percent-encode it
-    // 2. Strip sslmode parameter so pg doesn't throw SELF_SIGNED_CERT_IN_CHAIN on Supabase poolers
-    if (connectionString) {
-      const match = connectionString.match(/^(postgres(?:ql)?:\/\/)([^:]+):(.*)@([^@/]+)(.*)$/);
-      if (match) {
-        const [, proto, u, rawPass, h, rest] = match;
-        const encodedPass = rawPass.includes('%') ? rawPass : encodeURIComponent(rawPass);
-        connectionString = `${proto}${u}:${encodedPass}@${h}${rest}`;
-      }
-      connectionString = connectionString.replace(/[?&]sslmode=[^&]+/g, '');
-    }
-
-    // SSL Configuration:
-    // Supabase cloud databases ALWAYS require SSL with { rejectUnauthorized: false }
-    let ssl: boolean | { rejectUnauthorized: boolean } | undefined = undefined;
-
-    if (isUnixSocket) {
-      ssl = false;
-    } else if (process.env.DB_SSL === 'false' || process.env.SQL_SSL === 'false') {
-      ssl = false;
-    } else if (process.env.DB_SSL === 'true' || process.env.SQL_SSL === 'true') {
-      ssl = { rejectUnauthorized: false };
-    } else if (connectionString) {
-      if (connectionString.includes('sslmode=disable')) {
-        ssl = false;
-      } else {
-        // Default to SSL enabled for remote connection strings (Supabase, Neon, etc.)
-        ssl = { rejectUnauthorized: false };
-      }
-    } else {
-      // Discrete host: auto-enable SSL for any remote host (e.g. *.supabase.co, *.supabase.com, AWS, etc.)
-      if (host !== 'localhost' && !host.startsWith('127.')) {
-        ssl = { rejectUnauthorized: false };
-      }
-    }
-
-    // Pool capacity sizing
-    const poolMax = process.env.DB_POOL_MAX
-      ? parseInt(process.env.DB_POOL_MAX, 10)
-      : isServerless
-      ? 2
-      : 10;
-
-    const poolConfig: PoolConfig = connectionString
-      ? {
-          connectionString,
-          max: poolMax,
-          connectionTimeoutMillis: 15000,
-          idleTimeoutMillis: 15000,
-          ...(ssl !== undefined ? { ssl } : {}),
-        }
-      : {
-          host,
-          port,
-          user,
-          password,
-          database,
-          max: poolMax,
-          connectionTimeoutMillis: 15000,
-          idleTimeoutMillis: 15000,
-          ...(ssl !== undefined ? { ssl } : {}),
-        };
-
-    global._postgresPool = new Pool(poolConfig);
-
-    // Prevent unhandled pool-level errors from crashing the Node.js process
-    global._postgresPool.on('error', (err) => {
-      console.error('Unexpected error on idle PostgreSQL/Supabase pool client:', err);
-    });
+  constructor(colName: string, constraints: QueryConstraint[] = []) {
+    this.colName = colName;
+    this.constraints = [...constraints];
   }
 
-  return global._postgresPool;
-};
+  where(field: string, op: WhereFilterOp, value: any) {
+    return new QueryBuilder(this.colName, [...this.constraints, where(field, op, value)]);
+  }
 
-// Create or retrieve the pool instance
-export const pool = createPool();
+  orderBy(field: string, direction: OrderByDirection = 'asc') {
+    return new QueryBuilder(this.colName, [...this.constraints, orderBy(field, direction)]);
+  }
 
-// Initialize Drizzle ORM with the connection pool and database schema
-export const db = drizzle(pool, { schema });
+  limit(count: number) {
+    return new QueryBuilder(this.colName, [...this.constraints, limit(count)]);
+  }
 
-/**
- * Diagnostic helper to test the database connection and return descriptive troubleshooting info
- */
-export async function testDatabaseDiagnostics(): Promise<{
-  connected: boolean;
-  provider: 'Supabase PostgreSQL' | 'PostgreSQL';
-  responseTimeMs: number;
-  config: {
-    connectionType: 'connection_string' | 'tcp' | 'unix_socket';
-    hostSanitized: string;
-    database: string;
-    user: string;
-    sslEnabled: boolean;
-    isServerless: boolean;
-    isSupabase: boolean;
-  };
-  serverInfo?: {
-    database: string;
-    user: string;
-    version: string;
-    timestamp: string;
-    tableCount: number;
-  };
-  error?: {
-    code?: string;
-    message: string;
-    troubleshooting: string;
-  };
-}> {
-  const p = createPool();
-  const startTime = Date.now();
-
-  const connectionString =
-    process.env.SUPABASE_DATABASE_URL ||
-    process.env.SUPABASE_DB_URL ||
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.POSTGRES_PRISMA_URL ||
-    process.env.SQL_DATABASE_URL ||
-    '';
-
-  const host =
-    process.env.SUPABASE_HOST ||
-    process.env.DB_HOST ||
-    process.env.POSTGRES_HOST ||
-    process.env.SQL_HOST ||
-    'localhost';
-
-  const isSupabase =
-    connectionString.includes('supabase.co') ||
-    connectionString.includes('supabase.com') ||
-    host.includes('supabase.co') ||
-    host.includes('supabase.com') ||
-    Boolean(process.env.SUPABASE_URL);
-
-  const baseConfig = {
-    connectionType: (connectionString ? 'connection_string' : host.startsWith('/') ? 'unix_socket' : 'tcp') as 'connection_string' | 'tcp' | 'unix_socket',
-    hostSanitized: connectionString
-      ? connectionString.replace(/:[^:@]+@/, ':****@')
-      : host,
-    database: process.env.SUPABASE_DB_NAME || process.env.DB_NAME || process.env.SQL_DB_NAME || 'postgres',
-    user: process.env.SUPABASE_USER || process.env.DB_USER || process.env.SQL_USER || 'postgres',
-    sslEnabled: process.env.DB_SSL !== 'false' && process.env.SQL_SSL !== 'false',
-    isServerless,
-    isSupabase,
-  };
-
-  try {
-    const client = await p.connect();
-    try {
-      const pingResult = await client.query(`
-        SELECT 
-          NOW() as current_time, 
-          current_database() as db_name, 
-          current_user as user_name, 
-          version() as pg_version;
-      `);
-
-      const tablesResult = await client.query(`
-        SELECT COUNT(*)::int as count 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public';
-      `);
-
-      const row = pingResult.rows[0];
-      const tableCount = tablesResult.rows[0]?.count || 0;
-
-      return {
-        connected: true,
-        provider: isSupabase ? 'Supabase PostgreSQL' : 'PostgreSQL',
-        responseTimeMs: Date.now() - startTime,
-        config: baseConfig,
-        serverInfo: {
-          database: row.db_name,
-          user: row.user_name,
-          version: row.pg_version,
-          timestamp: row.current_time,
-          tableCount,
-        },
-      };
-    } finally {
-      client.release();
-    }
-  } catch (err: any) {
-    const errorMsg = err?.message || String(err);
-    const errorCode = err?.code;
-    let troubleshooting = 'Check your Supabase/PostgreSQL database credentials and network settings.';
-
-    if (errorCode === 'ECONNREFUSED') {
-      troubleshooting =
-        'Connection refused on ' +
-        (baseConfig.hostSanitized || 'localhost') +
-        '. Ensure DATABASE_URL is set in your environment variables (e.g., in Vercel project settings or .env file).';
-    } else if (errorCode === 'ETIMEDOUT') {
-      troubleshooting =
-        'Connection timed out. If using Supabase with IPv4-only networks or serverless platforms, use the Supabase Transaction Pooler connection string (port 6543) or Session Pooler (port 5432).';
-    } else if (errorCode === '28P01') {
-      troubleshooting =
-        'Password authentication failed. Please verify that your Supabase database password in DATABASE_URL is correct.';
-    } else if (errorCode === '3D000') {
-      troubleshooting =
-        'Database does not exist. In Supabase, the default database name is always "postgres".';
-    } else if (errorCode === '28000' || errorMsg.includes('no pg_hba.conf entry')) {
-      troubleshooting =
-        'SSL is required for Supabase. Ensure ?sslmode=require is appended to your connection string.';
-    }
-
+  async get() {
+    const colRef = collection(rawFirestore, this.colName);
+    const q = this.constraints.length > 0 ? query(colRef, ...this.constraints) : colRef;
+    const snap = await getDocs(q);
     return {
-      connected: false,
-      provider: isSupabase ? 'Supabase PostgreSQL' : 'PostgreSQL',
-      responseTimeMs: Date.now() - startTime,
-      config: baseConfig,
-      error: {
-        code: errorCode,
-        message: errorMsg,
-        troubleshooting,
-      },
+      empty: snap.empty,
+      size: snap.size,
+      docs: snap.docs.map((d) => ({
+        id: d.id,
+        exists: d.exists(),
+        data: () => d.data(),
+        ref: new DocRefWrapper(this.colName, d.id),
+      })),
     };
   }
 }
 
-/**
- * Initialize database tables if missing (idempotent)
- */
-export async function initializeDatabaseSchema() {
-  const p = createPool();
-  return ensureDatabaseTablesExist(p);
+export class DocRefWrapper {
+  public colName: string;
+  public docId: string;
+
+  constructor(colName: string, docId: string) {
+    this.colName = colName;
+    this.docId = String(docId);
+  }
+
+  get id() {
+    return this.docId;
+  }
+
+  get rawRef() {
+    return doc(rawFirestore, this.colName, this.docId);
+  }
+
+  get ref() {
+    return this;
+  }
+
+  async get() {
+    const snap = await getDoc(this.rawRef);
+    return {
+      id: snap.id,
+      exists: snap.exists(),
+      data: () => snap.data(),
+      ref: this,
+    };
+  }
+
+  async set(data: any, options?: { merge?: boolean }) {
+    await setDoc(this.rawRef, data, options || {});
+    return this;
+  }
+
+  async update(data: any) {
+    await updateDoc(this.rawRef, data);
+    return this;
+  }
+
+  async delete() {
+    await deleteDoc(this.rawRef);
+  }
+}
+
+class BatchWrapper {
+  private batch = writeBatch(rawFirestore);
+
+  private getRef(target: any) {
+    if (target?.rawRef) return target.rawRef;
+    if (target?.ref?.rawRef) return target.ref.rawRef;
+    if (target?.ref?.id && target?.ref?.colName) {
+      return doc(rawFirestore, target.ref.colName, String(target.ref.id));
+    }
+    if (target?.id && target?.colName) {
+      return doc(rawFirestore, target.colName, String(target.id));
+    }
+    return target;
+  }
+
+  set(docWrapper: any, data: any, options?: { merge?: boolean }) {
+    const targetRef = this.getRef(docWrapper);
+    this.batch.set(targetRef, data, options || {});
+    return this;
+  }
+
+  update(docWrapper: any, data: any) {
+    const targetRef = this.getRef(docWrapper);
+    this.batch.update(targetRef, data);
+    return this;
+  }
+
+  delete(docWrapper: any) {
+    const targetRef = this.getRef(docWrapper);
+    this.batch.delete(targetRef);
+    return this;
+  }
+
+  async commit() {
+    await this.batch.commit();
+  }
+}
+
+export const db = {
+  collection(name: string) {
+    return {
+      doc(id: string | number) {
+        return new DocRefWrapper(name, String(id));
+      },
+      where(field: string, op: WhereFilterOp, value: any) {
+        return new QueryBuilder(name).where(field, op, value);
+      },
+      orderBy(field: string, direction?: OrderByDirection) {
+        return new QueryBuilder(name).orderBy(field, direction);
+      },
+      limit(count: number) {
+        return new QueryBuilder(name).limit(count);
+      },
+      async get() {
+        return new QueryBuilder(name).get();
+      },
+    };
+  },
+
+  batch() {
+    return new BatchWrapper();
+  },
+
+  async runTransaction<T>(updateFunction: (transaction: any) => Promise<T>): Promise<T> {
+    return await runTransaction(rawFirestore, async (txn) => {
+      const txnWrapper = {
+        async get(docWrapper: any) {
+          const rawRef = docWrapper?.rawRef || docWrapper?.ref?.rawRef || docWrapper;
+          const snap = await txn.get(rawRef);
+          return {
+            id: snap.id,
+            exists: snap.exists(),
+            data: () => snap.data(),
+          };
+        },
+        set(docWrapper: any, data: any, options?: { merge?: boolean }) {
+          const rawRef = docWrapper?.rawRef || docWrapper?.ref?.rawRef || docWrapper;
+          txn.set(rawRef, data, options || {});
+          return this;
+        },
+        update(docWrapper: any, data: any) {
+          const rawRef = docWrapper?.rawRef || docWrapper?.ref?.rawRef || docWrapper;
+          txn.update(rawRef, data);
+          return this;
+        },
+        delete(docWrapper: any) {
+          const rawRef = docWrapper?.rawRef || docWrapper?.ref?.rawRef || docWrapper;
+          txn.delete(rawRef);
+          return this;
+        },
+      };
+      return await updateFunction(txnWrapper);
+    });
+  },
+};
+
+// Helper to get next sequential integer ID atomically for any entity in Firestore
+export async function getNextSequenceId(sequenceName: string): Promise<number> {
+  try {
+    const counterRef = db.collection(COLLECTIONS.COUNTERS).doc(sequenceName);
+    const result = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(counterRef);
+      let nextVal = 1;
+      if (snapshot.exists) {
+        nextVal = ((snapshot.data()?.currentValue as number) || 0) + 1;
+      }
+      transaction.set(counterRef, { currentValue: nextVal, updatedAt: new Date().toISOString() }, { merge: true });
+      return nextVal;
+    });
+    return result;
+  } catch (err) {
+    // Fallback if transaction fails
+    return Date.now() + Math.floor(Math.random() * 1000);
+  }
 }

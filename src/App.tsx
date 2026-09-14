@@ -1067,7 +1067,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
         <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mb-3" />
-        <span className="text-sm font-medium">Securing Supabase & Firebase Connection...</span>
+        <span className="text-sm font-medium">Securing Cloud SQL & Firebase Connection...</span>
       </div>
     );
   }

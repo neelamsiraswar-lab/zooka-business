@@ -28,7 +28,6 @@ import {
   ShieldAlert,
   Palette,
   Eye,
-  EyeOff,
   LayoutTemplate,
   Layers,
   Type,
@@ -116,7 +115,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   onClearMasterLedger,
   loading,
 }) => {
-  const { getToken, profile, refreshProfile } = useAuth();
+  const { getToken, profile, refreshProfile, signInAsUser } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const tabsScrollRef = useRef<HTMLDivElement>(null);
 
@@ -147,8 +146,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<UserRole>('accountant');
-  const [invitePin, setInvitePin] = useState('2222');
-  const [showInvitePin, setShowInvitePin] = useState(false);
+  const [invitePin, setInvitePin] = useState('1234');
   const [inviting, setInviting] = useState(false);
   const [updatingMemberId, setUpdatingMemberId] = useState<number | null>(null);
   const [matrixSearch, setMatrixSearch] = useState('');
@@ -159,7 +157,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [editMemberEmail, setEditMemberEmail] = useState('');
   const [editMemberRole, setEditMemberRole] = useState<UserRole>('accountant');
   const [editMemberPin, setEditMemberPin] = useState('');
-  const [showEditMemberPin, setShowEditMemberPin] = useState(false);
   const [editMemberAvatar, setEditMemberAvatar] = useState('');
   const [savingEditMember, setSavingEditMember] = useState(false);
   const [editMemberError, setEditMemberError] = useState<string | null>(null);
@@ -171,7 +168,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 
   // Role Switch Security PINs State
   const [rolePins, setRolePins] = useState<RolePinConfig>(DEFAULT_ROLE_PINS);
-  const [showRolePins, setShowRolePins] = useState(false);
   const [loadingPins, setLoadingPins] = useState(false);
   const [savingPins, setSavingPins] = useState(false);
   const [pinsSaveSuccess, setPinsSaveSuccess] = useState(false);
@@ -268,13 +264,13 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           email: inviteEmail.trim(),
           displayName: inviteName.trim(),
           role: inviteRole,
-          pin: invitePin.trim() || DEFAULT_ROLE_PINS[inviteRole] || '9999',
+          pin: invitePin.trim() || DEFAULT_ROLE_PINS[inviteRole] || '1234',
         }),
       });
       if (res.ok) {
         setInviteEmail('');
         setInviteName('');
-        setInvitePin(DEFAULT_ROLE_PINS[inviteRole] || '2222');
+        setInvitePin('1234');
         setShowInviteModal(false);
         await fetchTeamMembers();
       } else {
@@ -322,7 +318,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     setEditMemberName(member.displayName || '');
     setEditMemberEmail(member.email || '');
     setEditMemberRole((member.role as UserRole) || 'accountant');
-    setEditMemberPin(member.pin || DEFAULT_ROLE_PINS[(member.role as UserRole) || 'accountant'] || '9999');
+    setEditMemberPin(member.pin || DEFAULT_ROLE_PINS[(member.role as UserRole) || 'accountant'] || '1234');
     setEditMemberAvatar(member.avatarUrl || '');
     setEditMemberError(null);
   };
@@ -355,7 +351,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           displayName: editMemberName.trim(),
           email: editMemberEmail.trim(),
           role: editMemberRole,
-          pin: editMemberPin.trim() || DEFAULT_ROLE_PINS[editMemberRole] || '9999',
+          pin: editMemberPin.trim() || DEFAULT_ROLE_PINS[editMemberRole] || '1234',
           avatarUrl: editMemberAvatar.trim(),
         }),
       });
@@ -1430,7 +1426,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed max-w-xl">
-                    When enabled, the system verifies your existing vouchers in Supabase database. If an invoice or bill with the
+                    When enabled, the system verifies your existing vouchers in Cloud SQL. If an invoice or bill with the
                     exact same number already exists, saving is blocked with a clear warning and collision details.
                   </p>
                 </div>
@@ -2369,7 +2365,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
             ) : (
               <Lock className="w-4 h-4 text-slate-500" />
             )}
-            <span>{loading ? 'Saving to Supabase...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
+            <span>{loading ? 'Saving to Cloud SQL...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
           </button>
         </div>
       </form>
@@ -2426,8 +2422,8 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                               ACTIVE
                             </span>
                           ) : (
-                            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 flex items-center gap-1">
-                              <Lock className="w-2.5 h-2.5" /> PIN Protected
+                            <span className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                              PIN: {currentRolePin}
                             </span>
                           )}
                         </div>
@@ -2471,23 +2467,13 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                     </h4>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {canManageRoles
-                        ? 'As an Administrator, you can configure unique 4-digit PINs for each role.'
+                        ? 'As an Administrator, you can configure unique 4-digit PINs for each role or use the Master Supervisor PIN.'
                         : 'View active role security PINs used for testing and role transitions (Only Administrators can edit PINs).'}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                  {canManageRoles && (
-                    <button
-                      type="button"
-                      onClick={() => setShowRolePins(!showRolePins)}
-                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition cursor-pointer"
-                    >
-                      {showRolePins ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      <span>{showRolePins ? 'Mask' : 'Reveal'}</span>
-                    </button>
-                  )}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
                   {pinsSaveSuccess && (
                     <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
                       <Check className="w-3.5 h-3.5" /> PINs Saved!
@@ -2512,16 +2498,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
               </div>
 
               {/* Grid of PIN Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 {/* Admin PIN */}
                 <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-purple-400">Administrator</span>
-                    <span className="text-[10px] text-slate-500 font-medium">Privileged</span>
+                    <span className="text-[10px] text-slate-500">Default: 9999</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
-                      type={showRolePins ? 'text' : 'password'}
+                      type="text"
                       maxLength={4}
                       pattern="[0-9]*"
                       disabled={!canManageRoles}
@@ -2533,17 +2519,24 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                       className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickSwitchRole('admin')}
+                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
+                  >
+                    Test Admin Switch
+                  </button>
                 </div>
 
                 {/* Accountant PIN */}
                 <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-blue-400">Accountant</span>
-                    <span className="text-[10px] text-slate-500 font-medium">Standard</span>
+                    <span className="text-[10px] text-slate-500">Default: 2222</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
-                      type={showRolePins ? 'text' : 'password'}
+                      type="text"
                       maxLength={4}
                       pattern="[0-9]*"
                       disabled={!canManageRoles}
@@ -2555,17 +2548,24 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                       className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickSwitchRole('accountant')}
+                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
+                  >
+                    Test Accountant Switch
+                  </button>
                 </div>
 
                 {/* Billing Operator PIN */}
                 <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-amber-400">Billing Operator</span>
-                    <span className="text-[10px] text-slate-500 font-medium">Standard</span>
+                    <span className="text-[10px] text-slate-500">Default: 1111</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
-                      type={showRolePins ? 'text' : 'password'}
+                      type="text"
                       maxLength={4}
                       pattern="[0-9]*"
                       disabled={!canManageRoles}
@@ -2577,17 +2577,24 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                       className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickSwitchRole('billing_operator')}
+                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
+                  >
+                    Test Billing Switch
+                  </button>
                 </div>
 
                 {/* Auditor PIN */}
                 <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-emerald-400">Auditor</span>
-                    <span className="text-[10px] text-slate-500 font-medium">Read-Only</span>
+                    <span className="text-[10px] text-slate-500">Default: 3333</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
-                      type={showRolePins ? 'text' : 'password'}
+                      type="text"
                       maxLength={4}
                       pattern="[0-9]*"
                       disabled={!canManageRoles}
@@ -2598,6 +2605,41 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                       }}
                       className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
                     />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickSwitchRole('auditor')}
+                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
+                  >
+                    Test Auditor Switch
+                  </button>
+                </div>
+
+                {/* Master Supervisor PIN */}
+                <div className="bg-purple-950/40 border border-purple-800/40 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-300 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-purple-400" />
+                      Master PIN
+                    </span>
+                    <span className="text-[10px] text-purple-400/80">Default: 1234</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      maxLength={4}
+                      pattern="[0-9]*"
+                      disabled={!canManageRoles}
+                      value={rolePins.master}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                        setRolePins((p) => ({ ...p, master: val }));
+                      }}
+                      className="w-full bg-slate-900 border border-purple-500/50 focus:border-purple-400 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-purple-200 tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
+                    />
+                  </div>
+                  <div className="text-[10px] text-center text-purple-400/70 font-medium py-1">
+                    Universal Override PIN
                   </div>
                 </div>
               </div>
@@ -2657,7 +2699,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                         const mRole = (member.role as UserRole) || 'accountant';
                         const mConfig = ROLE_CONFIG[mRole] || ROLE_CONFIG.accountant;
                         const isSelf = member.id === profile?.id;
-                        const memberPin = member.pin || DEFAULT_ROLE_PINS[mRole] || '9999';
+                        const memberPin = member.pin || DEFAULT_ROLE_PINS[mRole] || '1234';
                         return (
                           <tr key={member.id} className="hover:bg-slate-800/30 transition">
                             <td className="py-3 font-medium text-slate-200 flex items-center gap-2">
@@ -2687,9 +2729,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                               </span>
                             </td>
                             <td className="py-3">
-                              <span className="inline-flex items-center gap-1.5 font-mono text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[11px]">
+                              <span className="inline-flex items-center gap-1 font-mono text-slate-300 bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[11px]">
                                 <KeyRound className="w-3 h-3 text-amber-400" />
-                                <span>••••</span>
+                                {memberPin}
                               </span>
                             </td>
                             <td className="py-3">
@@ -3089,7 +3131,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                   onChange={(e) => {
                     const newRole = e.target.value as UserRole;
                     setInviteRole(newRole);
-                    setInvitePin(DEFAULT_ROLE_PINS[newRole] || '2222');
+                    setInvitePin(DEFAULT_ROLE_PINS[newRole] || '1234');
                   }}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                 >
@@ -3105,32 +3147,25 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                   <label className="block font-medium text-slate-300">4-Digit Security PIN / Password *</label>
                   <button
                     type="button"
-                    onClick={() => setInvitePin(DEFAULT_ROLE_PINS[inviteRole] || '2222')}
+                    onClick={() => setInvitePin(DEFAULT_ROLE_PINS[inviteRole] || '1234')}
                     className="text-[10px] text-emerald-400 hover:underline cursor-pointer"
                   >
-                    Use Role Default
+                    Use Role Default ({DEFAULT_ROLE_PINS[inviteRole] || '1234'})
                   </button>
                 </div>
-                <div className="relative flex items-center">
+                <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
                     <KeyRound className="w-4 h-4 text-amber-400" />
                   </span>
                   <input
-                    type={showInvitePin ? 'text' : 'password'}
+                    type="text"
                     required
                     maxLength={4}
                     value={invitePin}
                     onChange={(e) => setInvitePin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                    placeholder="••••"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-10 py-2.5 text-white focus:outline-none focus:border-emerald-500 font-mono tracking-widest text-sm"
+                    placeholder="1234"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 font-mono tracking-widest text-sm"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowInvitePin(!showInvitePin)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
-                  >
-                    {showInvitePin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">User will enter this 4-digit PIN to authenticate on the login screen.</p>
               </div>
@@ -3238,32 +3273,25 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                   <label className="block font-medium text-slate-300">4-Digit Access PIN / Password *</label>
                   <button
                     type="button"
-                    onClick={() => setEditMemberPin(DEFAULT_ROLE_PINS[editMemberRole] || '2222')}
+                    onClick={() => setEditMemberPin(DEFAULT_ROLE_PINS[editMemberRole] || '1234')}
                     className="text-[10px] text-blue-400 hover:underline cursor-pointer"
                   >
-                    Reset to Role Default
+                    Reset to Role Default ({DEFAULT_ROLE_PINS[editMemberRole] || '1234'})
                   </button>
                 </div>
-                <div className="relative flex items-center">
+                <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
                     <KeyRound className="w-4 h-4 text-amber-400" />
                   </span>
                   <input
-                    type={showEditMemberPin ? 'text' : 'password'}
+                    type="text"
                     required
                     maxLength={4}
                     value={editMemberPin}
                     onChange={(e) => setEditMemberPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                    placeholder="••••"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-10 py-2.5 text-white focus:outline-none focus:border-blue-500 font-mono tracking-widest text-sm"
+                    placeholder="1234"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white focus:outline-none focus:border-blue-500 font-mono tracking-widest text-sm"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowEditMemberPin(!showEditMemberPin)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
-                  >
-                    {showEditMemberPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">Allows the user to authenticate into their account using this 4-digit PIN.</p>
               </div>

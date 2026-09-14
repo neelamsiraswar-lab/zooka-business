@@ -15,10 +15,11 @@ import {
   User,
   Lock,
   KeyRound,
+  UserCheck,
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_CONFIG, UserRole } from '../lib/permissions';
+import { ROLE_CONFIG, UserRole, getRoleDefaultPin } from '../lib/permissions';
 
 interface TopHeaderProps {
   isCollapsed: boolean;
@@ -155,7 +156,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           type="button"
           id="header-refresh-sync-btn"
           onClick={onRefresh}
-          title="Sync books now with Supabase database"
+          title="Sync books now with Cloud SQL"
           className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 hover:text-emerald-400 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin text-emerald-400' : ''}`} />

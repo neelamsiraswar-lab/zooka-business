@@ -1,14 +1,11 @@
-import { db } from './index.ts';
-import {
-  users,
-  companyProfiles,
-} from './schema.ts';
-import { eq } from 'drizzle-orm';
+// src/db/seed.ts
+import { db, COLLECTIONS, getNextSequenceId } from './index.ts';
+import { DbUser } from './users.ts';
 
 const activeSeedPromises = new Map<number, Promise<void>>();
 const alreadySeededUserIds = new Set<number>();
 
-export async function seedDemoDataForUser(userRecord: typeof users.$inferSelect) {
+export async function seedDemoDataForUser(userRecord: DbUser) {
   if (alreadySeededUserIds.has(userRecord.id)) {
     return;
   }
@@ -18,20 +15,20 @@ export async function seedDemoDataForUser(userRecord: typeof users.$inferSelect)
 
   const seedTask = (async () => {
     try {
-      // Check if ANY workspace company profile already exists in the database
-      const existingProfiles = await db
-        .select()
-        .from(companyProfiles)
-        .limit(1);
+      // Check if ANY workspace company profile already exists in Firestore
+      const companyRef = db.collection(COLLECTIONS.COMPANY_PROFILES);
+      const existingProfilesSnap = await companyRef.limit(1).get();
 
-      if (existingProfiles.length > 0) {
+      if (!existingProfilesSnap.empty) {
         alreadySeededUserIds.add(userRecord.id);
         return;
       }
 
       // Initialize clean workspace company profile if completely empty
       const initialBusinessName = 'T.M ELECTRICAL';
-      await db.insert(companyProfiles).values({
+      const profileId = await getNextSequenceId('company_profile_id');
+      const defaultProfile = {
+        id: profileId,
         userId: userRecord.id,
         businessName: initialBusinessName,
         tradeName: initialBusinessName,
@@ -45,22 +42,46 @@ export async function seedDemoDataForUser(userRecord: typeof users.$inferSelect)
         accountNumber: '39485019284',
         ifscCode: 'SBIN0001824',
         upiId: '8005594714@pthdfc',
+        invoiceNumberingMode: 'automatic',
+        invoicePrefix: 'INV/2026-27/',
+        invoiceSuffix: '',
+        nextInvoiceNumber: 1,
+        invoicePadding: 3,
+        preventDuplicateInvoiceNo: true,
+        purchaseNumberingMode: 'automatic',
+        purchasePrefix: 'PUR/2026-27/',
+        nextPurchaseNumber: 1,
+        receiptPrefix: 'REC/2026-27/',
+        nextReceiptNumber: 1,
+        paymentPrefix: 'PAY/2026-27/',
+        nextPaymentNumber: 1,
+        journalPrefix: 'JV/2026-27/',
+        nextJournalNumber: 1,
+        contraPrefix: 'CONTRA/2026-27/',
+        nextContraNumber: 1,
         invoiceDesignTemplate: 'classic',
         invoiceColorTheme: 'rose',
+        invoiceHeaderTitle: 'TAX INVOICE',
+        invoiceSubtitle: 'ORIGINAL FOR RECIPIENT',
+        invoiceShowLogo: true,
+        invoiceLogoUrl: '',
+        invoiceShowBankDetails: true,
+        invoiceShowUpiQr: true,
+        invoiceShowAuthorizedSignatory: true,
+        invoiceSignatoryLabel: 'Authorized Signatory',
+        invoiceSignatureUrl: '',
+        invoiceShowHsnSummary: true,
+        invoiceShowTerms: true,
         defaultTerms: '1. Goods once sold will not be accepted back.\n2. Interest @ 18% p.a. will be levied if payment not made within due date.\n3. Subject to local state jurisdiction.',
         defaultNotes: 'Thank you for your business!',
-        nextInvoiceNumber: 1,
-        nextPurchaseNumber: 1,
-        nextReceiptNumber: 1,
-        nextPaymentNumber: 1,
-        nextJournalNumber: 1,
-        nextContraNumber: 1,
-      });
+        updatedAt: new Date().toISOString(),
+      };
 
-      console.log(`Initialized workspace company profile for user ${userRecord.email}`);
+      await companyRef.doc(String(profileId)).set(defaultProfile);
+      console.log(`Initialized workspace company profile in Firestore for user ${userRecord.email}`);
       alreadySeededUserIds.add(userRecord.id);
     } catch (err) {
-      console.error(`Error in seedDemoDataForUser for user ${userRecord.id}:`, err);
+      console.error(`Error in seedDemoDataForUser in Firestore for user ${userRecord.id}:`, err);
     }
   })();
 

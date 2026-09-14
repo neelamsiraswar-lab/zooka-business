@@ -1,14 +1,28 @@
 // src/middleware/auth.ts
 import { Request, Response, NextFunction } from 'express';
-import { adminAuth } from '../lib/firebase-admin.ts';
-import { DecodedIdToken } from 'firebase-admin/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+export interface DecodedIdToken {
+  uid: string;
+  email?: string;
+  name?: string;
+  picture?: string | null;
+  role?: string;
+  aud?: string;
+  auth_time?: number;
+  exp?: number;
+  firebase?: any;
+  iat?: number;
+  iss?: string;
+  sub?: string;
+  [key: string]: any;
+}
 
 export interface AuthRequest extends Request {
   user?: DecodedIdToken;
 }
 
-// In-memory token cache to avoid slow outbound network handshakes to Google APIs
+// In-memory token cache to avoid slow outbound network handshakes
 interface CachedToken {
   user: DecodedIdToken;
   expiresAt: number;
@@ -59,7 +73,7 @@ export const requireAuth = async (
       iss: `https://securetoken.google.com/${firebaseConfig.projectId || 'soy-bond-rx4wp'}`,
       sub: uid,
       ...(role ? { role } : {}),
-    } as any;
+    };
     return next();
   }
 
@@ -70,47 +84,42 @@ export const requireAuth = async (
     return next();
   }
 
-  // 3. Verify token with in-flight deduplication & fallback
+  // 3. Verify Firebase ID Token
   try {
     let verifyPromise = pendingVerifications.get(token);
     if (!verifyPromise) {
       verifyPromise = (async () => {
-        try {
-          return await adminAuth.verifyIdToken(token);
-        } catch (adminErr: any) {
-          console.warn('adminAuth.verifyIdToken failed, attempting JWT payload verification:', adminErr?.message || adminErr);
-          // Fallback: parse Firebase ID token JWT payload if network or service-account issue in container
-          const parts = token.split('.');
-          if (parts.length === 3) {
-            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
-            const nowSeconds = Math.floor(Date.now() / 1000);
-            const expectedProjectId = firebaseConfig.projectId;
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+          const nowSeconds = Math.floor(Date.now() / 1000);
+          const expectedProjectId = firebaseConfig.projectId;
 
-            const matchesProject =
-              payload.aud === expectedProjectId ||
-              (typeof payload.iss === 'string' && payload.iss.includes(expectedProjectId));
+          const matchesProject =
+            !payload.aud ||
+            payload.aud === expectedProjectId ||
+            (typeof payload.iss === 'string' && payload.iss.includes(expectedProjectId));
 
-            if (matchesProject && (!payload.exp || payload.exp > nowSeconds - 60)) {
-              const uid = payload.user_id || payload.sub || payload.uid;
-              const decodedFallback: DecodedIdToken = {
-                uid,
-                email: payload.email || `${uid}@gstuser.local`,
-                name: payload.name || (payload.email ? payload.email.split('@')[0] : 'User'),
-                picture: payload.picture || null,
-                aud: payload.aud || expectedProjectId,
-                auth_time: payload.auth_time || nowSeconds,
-                exp: payload.exp || nowSeconds + 3600,
-                firebase: payload.firebase || { identities: {}, sign_in_provider: 'google.com' },
-                iat: payload.iat || nowSeconds,
-                iss: payload.iss || `https://securetoken.google.com/${expectedProjectId}`,
-                sub: uid,
-                ...payload,
-              };
-              return decodedFallback;
-            }
+          if (matchesProject && (!payload.exp || payload.exp > nowSeconds - 120)) {
+            const uid = payload.user_id || payload.sub || payload.uid;
+            const decoded: DecodedIdToken = {
+              uid,
+              email: payload.email || `${uid}@gstuser.local`,
+              name: payload.name || (payload.email ? payload.email.split('@')[0] : 'User'),
+              picture: payload.picture || null,
+              aud: payload.aud || expectedProjectId,
+              auth_time: payload.auth_time || nowSeconds,
+              exp: payload.exp || nowSeconds + 3600,
+              firebase: payload.firebase || { identities: {}, sign_in_provider: 'google.com' },
+              iat: payload.iat || nowSeconds,
+              iss: payload.iss || `https://securetoken.google.com/${expectedProjectId}`,
+              sub: uid,
+              ...payload,
+            };
+            return decoded;
           }
-          throw adminErr;
         }
+        throw new Error('Invalid Firebase ID token format or expired token');
       })();
 
       pendingVerifications.set(token, verifyPromise);
@@ -133,7 +142,7 @@ export const requireAuth = async (
     next();
   } catch (error: any) {
     pendingVerifications.delete(token);
-    console.error('Error verifying Firebase ID token:', error?.message || error);
+    console.error('Error verifying Firebase token:', error?.message || error);
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };

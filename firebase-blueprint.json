@@ -1,0 +1,349 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered workspace user profile with role-based access permissions and security PIN",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Numeric user ID" },
+        "uid": { "type": "string", "description": "Firebase Auth UID", "maxLength": 128 },
+        "email": { "type": "string", "description": "User email address", "maxLength": 256 },
+        "displayName": { "type": "string", "description": "Full name or display name", "maxLength": 128 },
+        "role": { "type": "string", "description": "User role: admin, accountant, auditor, billing_operator", "enum": ["admin", "accountant", "auditor", "billing_operator"] },
+        "pin": { "type": "string", "description": "4-digit security PIN for role switching", "maxLength": 16 },
+        "avatarUrl": { "type": "string", "description": "Avatar image URL", "maxLength": 512 },
+        "createdAt": { "type": "string", "description": "Creation timestamp ISO string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "CompanyProfile": {
+      "title": "CompanyProfile",
+      "description": "Company tax, bank, GSTIN, and voucher series configurations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Company profile ID" },
+        "userId": { "type": "number", "description": "Owner user ID" },
+        "businessName": { "type": "string", "description": "Business legal name", "maxLength": 256 },
+        "tradeName": { "type": "string", "description": "Trade name", "maxLength": 256 },
+        "gstin": { "type": "string", "description": "GSTIN number", "maxLength": 15 },
+        "stateCode": { "type": "string", "description": "2-digit GST state code", "maxLength": 2 },
+        "stateName": { "type": "string", "description": "GST state name", "maxLength": 64 },
+        "address": { "type": "string", "description": "Full business address", "maxLength": 512 },
+        "phone": { "type": "string", "description": "Contact phone", "maxLength": 32 },
+        "email": { "type": "string", "description": "Contact email", "maxLength": 256 },
+        "bankName": { "type": "string", "description": "Bank name", "maxLength": 128 },
+        "accountNumber": { "type": "string", "description": "Bank account number", "maxLength": 64 },
+        "ifscCode": { "type": "string", "description": "IFSC code", "maxLength": 16 },
+        "upiId": { "type": "string", "description": "UPI VPA ID", "maxLength": 128 },
+        "invoiceNumberingMode": { "type": "string", "enum": ["automatic", "manual"] },
+        "invoicePrefix": { "type": "string", "maxLength": 32 },
+        "nextInvoiceNumber": { "type": "number" },
+        "purchasePrefix": { "type": "string", "maxLength": 32 },
+        "nextPurchaseNumber": { "type": "number" },
+        "receiptPrefix": { "type": "string", "maxLength": 32 },
+        "nextReceiptNumber": { "type": "number" },
+        "paymentPrefix": { "type": "string", "maxLength": 32 },
+        "nextPaymentNumber": { "type": "number" },
+        "journalPrefix": { "type": "string", "maxLength": 32 },
+        "nextJournalNumber": { "type": "number" },
+        "contraPrefix": { "type": "string", "maxLength": 32 },
+        "nextContraNumber": { "type": "number" },
+        "invoiceDesignTemplate": { "type": "string", "maxLength": 32 },
+        "invoiceColorTheme": { "type": "string", "maxLength": 32 },
+        "defaultTerms": { "type": "string", "maxLength": 2048 },
+        "defaultNotes": { "type": "string", "maxLength": 1024 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["businessName", "gstin", "stateCode", "stateName", "address"]
+    },
+    "Party": {
+      "title": "Party",
+      "description": "Customer or Vendor ledger account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "partyType": { "type": "string", "enum": ["customer", "vendor"] },
+        "name": { "type": "string", "maxLength": 256 },
+        "gstin": { "type": "string", "maxLength": 15 },
+        "stateCode": { "type": "string", "maxLength": 2 },
+        "stateName": { "type": "string", "maxLength": 64 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "email": { "type": "string", "maxLength": 256 },
+        "address": { "type": "string", "maxLength": 512 },
+        "openingBalance": { "type": "string", "maxLength": 32 },
+        "balanceType": { "type": "string", "enum": ["dr", "cr"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["partyType", "name"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Product or stock item with HSN code and GST rate",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "name": { "type": "string", "maxLength": 256 },
+        "sku": { "type": "string", "maxLength": 64 },
+        "hsnCode": { "type": "string", "maxLength": 16 },
+        "unit": { "type": "string", "maxLength": 16 },
+        "sellingPrice": { "type": "string", "maxLength": 32 },
+        "purchasePrice": { "type": "string", "maxLength": 32 },
+        "gstRate": { "type": "string", "maxLength": 16 },
+        "openingStock": { "type": "string", "maxLength": 32 },
+        "currentStock": { "type": "string", "maxLength": 32 },
+        "minStockAlert": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "hsnCode", "sellingPrice", "purchasePrice", "gstRate"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Sales invoice, purchase voucher, or tax bill with line items",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "partyId": { "type": "number" },
+        "voucherType": { "type": "string", "enum": ["sales", "purchase", "receipt", "payment", "journal"] },
+        "invoiceNumber": { "type": "string", "maxLength": 64 },
+        "invoiceDate": { "type": "string", "maxLength": 32 },
+        "dueDate": { "type": "string", "maxLength": 32 },
+        "partyName": { "type": "string", "maxLength": 256 },
+        "partyGstin": { "type": "string", "maxLength": 15 },
+        "placeOfSupply": { "type": "string", "maxLength": 8 },
+        "isInterstate": { "type": "boolean" },
+        "subtotal": { "type": "string", "maxLength": 32 },
+        "cgstTotal": { "type": "string", "maxLength": 32 },
+        "sgstTotal": { "type": "string", "maxLength": 32 },
+        "igstTotal": { "type": "string", "maxLength": 32 },
+        "taxTotal": { "type": "string", "maxLength": 32 },
+        "discountTotal": { "type": "string", "maxLength": 32 },
+        "grandTotal": { "type": "string", "maxLength": 32 },
+        "paidAmount": { "type": "string", "maxLength": 32 },
+        "paymentStatus": { "type": "string", "enum": ["paid", "partial", "unpaid"] },
+        "paymentMode": { "type": "string", "maxLength": 32 },
+        "notes": { "type": "string", "maxLength": 2048 },
+        "termsAndConditions": { "type": "string", "maxLength": 2048 },
+        "ewayBillNumber": { "type": "string", "maxLength": 64 },
+        "saleType": { "type": "string", "maxLength": 32 },
+        "taxMode": { "type": "string", "enum": ["exclusive", "inclusive"] },
+        "status": { "type": "string", "enum": ["active", "cancelled"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["voucherType", "invoiceNumber", "invoiceDate", "partyName", "placeOfSupply", "grandTotal"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Operating and indirect expense record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "category": { "type": "string", "maxLength": 64 },
+        "amount": { "type": "string", "maxLength": 32 },
+        "date": { "type": "string", "maxLength": 32 },
+        "paymentMode": { "type": "string", "maxLength": 32 },
+        "referenceNumber": { "type": "string", "maxLength": 64 },
+        "vendorName": { "type": "string", "maxLength": 256 },
+        "gstin": { "type": "string", "maxLength": 15 },
+        "gstPaid": { "type": "string", "maxLength": 32 },
+        "itcEligible": { "type": "boolean" },
+        "receiptUrl": { "type": "string", "maxLength": 512 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["category", "amount", "date"]
+    },
+    "PaymentVoucher": {
+      "title": "PaymentVoucher",
+      "description": "Money Receipt or Payment voucher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "voucherType": { "type": "string", "enum": ["receipt", "payment"] },
+        "voucherNumber": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 32 },
+        "partyId": { "type": "number" },
+        "partyName": { "type": "string", "maxLength": 256 },
+        "partyType": { "type": "string", "enum": ["customer", "vendor"] },
+        "amount": { "type": "string", "maxLength": 32 },
+        "paymentMode": { "type": "string", "maxLength": 32 },
+        "accountType": { "type": "string", "enum": ["bank", "cash"] },
+        "bankName": { "type": "string", "maxLength": 128 },
+        "referenceNumber": { "type": "string", "maxLength": 64 },
+        "invoiceId": { "type": "number" },
+        "invoiceNumber": { "type": "string", "maxLength": 64 },
+        "notes": { "type": "string", "maxLength": 1024 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["voucherType", "voucherNumber", "date", "partyName", "amount"]
+    },
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "Double entry accounting voucher (Debit/Credit)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "entryType": { "type": "string", "maxLength": 32 },
+        "voucherNumber": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 32 },
+        "referenceNumber": { "type": "string", "maxLength": 64 },
+        "debitAccount": { "type": "string", "maxLength": 128 },
+        "creditAccount": { "type": "string", "maxLength": 128 },
+        "debitPartyId": { "type": "number" },
+        "creditPartyId": { "type": "number" },
+        "amount": { "type": "string", "maxLength": 32 },
+        "narration": { "type": "string", "maxLength": 1024 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["entryType", "voucherNumber", "date", "debitAccount", "creditAccount", "amount", "narration"]
+    },
+    "ChequeBook": {
+      "title": "ChequeBook",
+      "description": "Cheque book register",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "bankName": { "type": "string", "maxLength": 128 },
+        "accountNumber": { "type": "string", "maxLength": 64 },
+        "bookName": { "type": "string", "maxLength": 128 },
+        "seriesPrefix": { "type": "string", "maxLength": 16 },
+        "startNumber": { "type": "number" },
+        "endNumber": { "type": "number" },
+        "totalLeaves": { "type": "number" },
+        "usedLeaves": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "exhausted", "surrendered"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["bankName", "bookName", "startNumber", "endNumber", "totalLeaves"]
+    },
+    "Cheque": {
+      "title": "Cheque",
+      "description": "Inward or outward bank cheque transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "chequeBookId": { "type": "number" },
+        "chequeType": { "type": "string", "enum": ["inward", "outward"] },
+        "chequeNumber": { "type": "string", "maxLength": 32 },
+        "chequeDate": { "type": "string", "maxLength": 32 },
+        "amount": { "type": "string", "maxLength": 32 },
+        "partyId": { "type": "number" },
+        "payeeName": { "type": "string", "maxLength": 256 },
+        "bankName": { "type": "string", "maxLength": 128 },
+        "branchName": { "type": "string", "maxLength": 128 },
+        "ifscCode": { "type": "string", "maxLength": 16 },
+        "depositBank": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["in_hand", "deposited", "cleared", "bounced", "cancelled", "stopped"] },
+        "isPdc": { "type": "boolean" },
+        "isAccountPayee": { "type": "boolean" },
+        "depositDate": { "type": "string", "maxLength": 32 },
+        "clearanceDate": { "type": "string", "maxLength": 32 },
+        "bounceDate": { "type": "string", "maxLength": 32 },
+        "bounceReason": { "type": "string", "maxLength": 256 },
+        "bounceCharges": { "type": "string", "maxLength": 32 },
+        "voucherId": { "type": "number" },
+        "invoiceId": { "type": "number" },
+        "referenceNumber": { "type": "string", "maxLength": 64 },
+        "remarks": { "type": "string", "maxLength": 1024 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["chequeType", "chequeNumber", "chequeDate", "amount", "payeeName", "bankName"]
+    },
+    "BankStatement": {
+      "title": "BankStatement",
+      "description": "Uploaded bank statement for automated reconciliation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "bankName": { "type": "string", "maxLength": 128 },
+        "accountNumber": { "type": "string", "maxLength": 64 },
+        "fileName": { "type": "string", "maxLength": 256 },
+        "statementStartDate": { "type": "string", "maxLength": 32 },
+        "statementEndDate": { "type": "string", "maxLength": 32 },
+        "openingBalance": { "type": "string", "maxLength": 32 },
+        "closingBalance": { "type": "string", "maxLength": 32 },
+        "totalCredits": { "type": "string", "maxLength": 32 },
+        "totalDebits": { "type": "string", "maxLength": 32 },
+        "transactionsCount": { "type": "number" },
+        "reconciledCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["bankName", "fileName"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Audit and activity trail of user actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" },
+        "userId": { "type": "number" },
+        "userEmail": { "type": "string", "maxLength": 256 },
+        "action": { "type": "string", "maxLength": 64 },
+        "entityType": { "type": "string", "maxLength": 64 },
+        "entityId": { "type": "string", "maxLength": 64 },
+        "details": { "type": "string", "maxLength": 1024 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "userEmail", "action", "entityType"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of workspace user profiles and role assignments"
+    },
+    "/company_profiles/{profileId}": {
+      "schema": "CompanyProfile",
+      "description": "Company tax, GSTIN, and voucher series configurations"
+    },
+    "/parties/{partyId}": {
+      "schema": "Party",
+      "description": "Customer and vendor ledger master data"
+    },
+    "/inventory_items/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Inventory stock items with HSN codes and tax rates"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Sales and purchase vouchers with line items and GST computations"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Operating expense vouchers"
+    },
+    "/payments/{paymentId}": {
+      "schema": "PaymentVoucher",
+      "description": "Receipt and Payment vouchers"
+    },
+    "/journal_entries/{entryId}": {
+      "schema": "JournalEntry",
+      "description": "Double entry journal vouchers"
+    },
+    "/cheque_books/{bookId}": {
+      "schema": "ChequeBook",
+      "description": "Cheque book leaves register"
+    },
+    "/cheques/{chequeId}": {
+      "schema": "Cheque",
+      "description": "Inward and outward bank cheques register"
+    },
+    "/bank_statements/{statementId}": {
+      "schema": "BankStatement",
+      "description": "Uploaded bank statements for auto reconciliation"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Audit trail of workspace activities"
+    }
+  }
+}
