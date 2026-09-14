@@ -58,6 +58,21 @@ import {
   getRoleDefaultPin,
 } from '../lib/permissions';
 import { RoleSwitchPinModal } from './RoleSwitchPinModal';
+import {
+  getWorkspaceRolePins,
+  saveWorkspaceRolePins,
+  getAllUsers,
+  createTeamMember,
+  updateUserRole,
+  updateUserProfile,
+  deleteUser,
+} from '../db/users';
+import {
+  getFullDataBackup,
+  restoreDataFromBackup,
+  checkInvoiceNumberDuplicate,
+  logActivity,
+} from '../db/dataService';
 
 interface CompanySettingsViewProps {
   company: CompanyProfile | null;
@@ -175,16 +190,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 
   const fetchRolePins = async () => {
     try {
-      const idToken = await getToken();
-      if (!idToken) return;
       setLoadingPins(true);
-      const res = await fetch('/api/role-pins', {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRolePins(data);
-      }
+      const pins = await getWorkspaceRolePins(profile?.id);
+      setRolePins(pins);
     } catch (e) {
       console.error('Fetch role pins error:', e);
     } finally {
@@ -194,28 +202,22 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 
   const handleSaveRolePins = async () => {
     try {
-      const idToken = await getToken();
-      if (!idToken) return;
       setSavingPins(true);
-      const res = await fetch('/api/role-pins', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(rolePins),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRolePins(data);
-        setPinsSaveSuccess(true);
-        setTimeout(() => setPinsSaveSuccess(false), 3000);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Failed to save role PIN configuration');
-      }
-    } catch (e) {
+      const updated = await saveWorkspaceRolePins(rolePins);
+      setRolePins(updated);
+      setPinsSaveSuccess(true);
+      await logActivity(
+        profile?.id || 1,
+        profile?.email || 'user',
+        'UPDATE_ROLE_PINS',
+        'system',
+        String(profile?.id || 1),
+        'Updated Role Switch Security PINs'
+      );
+      setTimeout(() => setPinsSaveSuccess(false), 3000);
+    } catch (e: any) {
       console.error('Save role PINs error:', e);
+      alert(e.message || 'Failed to save role PIN configuration');
     } finally {
       setSavingPins(false);
     }
@@ -223,16 +225,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 
   const fetchTeamMembers = async () => {
     try {
-      const idToken = await getToken();
-      if (!idToken) return;
       setLoadingTeam(true);
-      const res = await fetch('/api/users', {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setTeamMembers(data || []);
-      }
+      const list = await getAllUsers();
+      setTeamMembers(list || []);
     } catch (e) {
       console.error('Fetch team members error:', e);
     } finally {
@@ -251,34 +246,29 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     e.preventDefault();
     if (!inviteEmail.trim() || !inviteName.trim()) return;
     try {
-      const idToken = await getToken();
-      if (!idToken) return;
       setInviting(true);
-      const res = await fetch('/api/users/invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          email: inviteEmail.trim(),
-          displayName: inviteName.trim(),
-          role: inviteRole,
-          pin: invitePin.trim() || DEFAULT_ROLE_PINS[inviteRole] || '1234',
-        }),
+      const member = await createTeamMember({
+        email: inviteEmail.trim(),
+        displayName: inviteName.trim(),
+        role: inviteRole,
+        pin: invitePin.trim() || DEFAULT_ROLE_PINS[inviteRole] || '1234',
       });
-      if (res.ok) {
-        setInviteEmail('');
-        setInviteName('');
-        setInvitePin('1234');
-        setShowInviteModal(false);
-        await fetchTeamMembers();
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Failed to add team member');
-      }
-    } catch (e) {
+      await logActivity(
+        profile?.id || 1,
+        profile?.email || 'user',
+        'INVITE_TEAM_MEMBER',
+        'user',
+        String(member.id),
+        `Added team member ${member.displayName} (${member.email}) with role ${member.role.toUpperCase()}`
+      );
+      setInviteEmail('');
+      setInviteName('');
+      setInvitePin('1234');
+      setShowInviteModal(false);
+      await fetchTeamMembers();
+    } catch (e: any) {
       console.error('Invite member error:', e);
+      alert(e.message || 'Failed to add team member');
     } finally {
       setInviting(false);
     }
@@ -286,28 +276,25 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 
   const handleUpdateMemberRole = async (targetUserId: number, newRole: UserRole) => {
     try {
-      const idToken = await getToken();
-      if (!idToken) return;
       setUpdatingMemberId(targetUserId);
-      const res = await fetch(`/api/users/${targetUserId}/role`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ role: newRole }),
-      });
-      if (res.ok) {
+      const updated = await updateUserRole(targetUserId, newRole);
+      if (updated) {
+        await logActivity(
+          profile?.id || 1,
+          profile?.email || 'user',
+          'UPDATE_USER_ROLE',
+          'user',
+          String(targetUserId),
+          `Updated role for ${updated.displayName || updated.email} to ${newRole.toUpperCase()}`
+        );
         await fetchTeamMembers();
         if (targetUserId === profile?.id) {
           await refreshProfile();
         }
-      } else {
-        const err = await res.json();
-        alert(err.error || 'Failed to update user role');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Update user role error:', e);
+      alert(e.message || 'Failed to update user role');
     } finally {
       setUpdatingMemberId(null);
     }
@@ -336,35 +323,31 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     }
 
     try {
-      const idToken = await getToken();
-      if (!idToken) return;
       setSavingEditMember(true);
       setEditMemberError(null);
 
-      const res = await fetch(`/api/users/${editingMember.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          displayName: editMemberName.trim(),
-          email: editMemberEmail.trim(),
-          role: editMemberRole,
-          pin: editMemberPin.trim() || DEFAULT_ROLE_PINS[editMemberRole] || '1234',
-          avatarUrl: editMemberAvatar.trim(),
-        }),
+      const updated = await updateUserProfile(editingMember.id, {
+        displayName: editMemberName.trim(),
+        email: editMemberEmail.trim(),
+        role: editMemberRole,
+        pin: editMemberPin.trim() || DEFAULT_ROLE_PINS[editMemberRole] || '1234',
+        avatarUrl: editMemberAvatar.trim(),
       });
 
-      if (res.ok) {
+      if (updated) {
+        await logActivity(
+          profile?.id || 1,
+          profile?.email || 'user',
+          'EDIT_USER_PROFILE',
+          'user',
+          String(editingMember.id),
+          `Admin edited profile for ${updated.displayName || updated.email} (Role: ${updated.role})`
+        );
         setEditingMember(null);
         await fetchTeamMembers();
         if (editingMember.id === profile?.id) {
           await refreshProfile();
         }
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setEditMemberError(err.error || 'Failed to update user profile');
       }
     } catch (e: any) {
       setEditMemberError(e.message || 'Error updating user profile');
@@ -377,24 +360,21 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     if (!deletingMember) return;
 
     try {
-      const idToken = await getToken();
-      if (!idToken) return;
       setDeletingMemberLoading(true);
       setDeleteMemberError(null);
 
-      const res = await fetch(`/api/users/${deletingMember.id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
+      const deleted = await deleteUser(deletingMember.id, profile?.id || 1);
+      if (deleted) {
+        await logActivity(
+          profile?.id || 1,
+          profile?.email || 'user',
+          'DELETE_USER_PROFILE',
+          'user',
+          String(deletingMember.id),
+          `Admin deleted user profile ${deletingMember.displayName || deletingMember.email}`
+        );
         setDeletingMember(null);
         await fetchTeamMembers();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setDeleteMemberError(err.error || 'Failed to delete user profile');
       }
     } catch (e: any) {
       setDeleteMemberError(e.message || 'Error deleting user profile');
@@ -417,54 +397,49 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 
   const handleSaveUserProfile = async (e?: React.SyntheticEvent) => {
     e?.preventDefault?.();
-    const idToken = await getToken();
-    if (!idToken) return;
+    if (!profile?.id) return;
     setSavingUser(true);
     setUserSaveSuccess(false);
     try {
-      const res = await fetch('/api/user/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ displayName: userDisplayName }),
-      });
-      if (res.ok) {
-        await refreshProfile();
-        setUserSaveSuccess(true);
-        setTimeout(() => setUserSaveSuccess(false), 3000);
-      } else {
-        alert('Failed to update user profile and role');
-      }
+      await updateUserProfile(profile.id, { displayName: userDisplayName });
+      await logActivity(
+        profile.id,
+        profile.email,
+        'UPDATE_PROFILE',
+        'user',
+        String(profile.id),
+        `User updated display name to: ${userDisplayName}`
+      );
+      await refreshProfile();
+      setUserSaveSuccess(true);
+      setTimeout(() => setUserSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Update profile error:', err);
-      alert('Error updating user profile');
+      alert('Failed to update user profile');
     } finally {
       setSavingUser(false);
     }
   };
 
   const handleDownloadBackup = async () => {
-    const idToken = await getToken();
-    if (!idToken) return;
     setBackupLoading(true);
     try {
-      const res = await fetch('/api/settings/backup', {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(json, null, 2));
-        const downloadAnchor = document.createElement('a');
-        downloadAnchor.setAttribute('href', dataStr);
-        downloadAnchor.setAttribute('download', `accounting_backup_${new Date().toISOString().split('T')[0]}.json`);
-        document.body.appendChild(downloadAnchor);
-        downloadAnchor.click();
-        downloadAnchor.remove();
-      } else {
-        alert('Failed to generate data backup');
-      }
+      const backupData = await getFullDataBackup(profile?.id);
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(backupData, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute('href', dataStr);
+      downloadAnchor.setAttribute('download', `accounting_backup_${new Date().toISOString().split('T')[0]}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      await logActivity(
+        profile?.id || 1,
+        profile?.email || 'user',
+        'BACKUP_DATA',
+        'system',
+        'backup',
+        'Downloaded JSON data backup snapshot'
+      );
     } catch (err) {
       console.error('Download backup error:', err);
       alert('Error downloading backup file');
@@ -488,26 +463,19 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         const jsonContent = event.target?.result as string;
         const parsedData = JSON.parse(jsonContent);
 
-        const idToken = await getToken();
-        if (!idToken) return;
-
         setBackupLoading(true);
-        const res = await fetch('/api/settings/restore', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify(parsedData),
-        });
+        await restoreDataFromBackup(parsedData, profile?.id || 1);
+        await logActivity(
+          profile?.id || 1,
+          profile?.email || 'user',
+          'RESTORE_DATA',
+          'system',
+          'backup',
+          'Restored data from uploaded JSON snapshot'
+        );
 
-        if (res.ok) {
-          alert('Data backup restored successfully!');
-          window.location.reload();
-        } else {
-          const err = await res.json().catch(() => ({}));
-          alert('Failed to restore backup: ' + (err?.error || 'Server error'));
-        }
+        alert('Data backup restored successfully!');
+        window.location.reload();
       } catch (err: any) {
         console.error('Restore error:', err);
         alert('Invalid JSON backup file or restore failed.');
@@ -817,25 +785,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     setTestingDuplicate(true);
     setTestResult(null);
     try {
-      const token = await getToken();
-      const res = await fetch(`/api/invoices/check-duplicate?number=${encodeURIComponent(testNumber.trim())}`, {
-        headers: {
-          Authorization: `Bearer ${token || ''}`,
-        },
+      const data = await checkInvoiceNumberDuplicate(profile?.id || 1, testNumber.trim());
+      setTestResult({
+        checked: true,
+        isDuplicate: data.isDuplicate,
+        details: data.existing,
       });
-      if (res.ok) {
-        const data = await res.json();
-        setTestResult({
-          checked: true,
-          isDuplicate: data.isDuplicate,
-          details: data.existing,
-        });
-      } else {
-        setTestResult({
-          checked: true,
-          isDuplicate: false,
-        });
-      }
     } catch (err) {
       console.error('Test duplicate error:', err);
     } finally {
@@ -1426,7 +1381,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-slate-400 leading-relaxed max-w-xl">
-                    When enabled, the system verifies your existing vouchers in Cloud SQL. If an invoice or bill with the
+                    When enabled, the system verifies your existing vouchers in Cloud Firestore. If an invoice or bill with the
                     exact same number already exists, saving is blocked with a clear warning and collision details.
                   </p>
                 </div>
@@ -2365,7 +2320,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
             ) : (
               <Lock className="w-4 h-4 text-slate-500" />
             )}
-            <span>{loading ? 'Saving to Cloud SQL...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
+            <span>{loading ? 'Saving to Cloud Firestore...' : canEditCompany ? 'Save All Settings' : 'Settings Locked (Read-Only)'}</span>
           </button>
         </div>
       </form>

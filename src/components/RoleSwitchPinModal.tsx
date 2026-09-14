@@ -19,6 +19,9 @@ import {
   DEFAULT_ROLE_PINS,
   getRoleDefaultPin,
 } from '../lib/permissions';
+import { useAuth } from '../context/AuthContext';
+import { verifyAndSwitchRole } from '../db/users';
+import { logActivity } from '../db/dataService';
 
 interface RoleSwitchPinModalProps {
   isOpen: boolean;
@@ -37,6 +40,7 @@ export const RoleSwitchPinModal: React.FC<RoleSwitchPinModalProps> = ({
   onSuccess,
   getToken,
 }) => {
+  const { profile, refreshProfile } = useAuth();
   const [pin, setPin] = useState<string>('');
   const [showPin, setShowPin] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,38 +75,25 @@ export const RoleSwitchPinModal: React.FC<RoleSwitchPinModalProps> = ({
     setError(null);
 
     try {
-      const idToken = await getToken();
-      if (!idToken) {
-        setError('Authentication session expired. Please refresh.');
-        setSubmitting(false);
-        return;
-      }
+      const userId = profile?.id || 1;
+      await verifyAndSwitchRole(userId, targetRole, finalPin);
+      await logActivity(
+        userId,
+        profile?.email || 'user',
+        'UPDATE_USER_ROLE',
+        'user',
+        String(userId),
+        `Switched active role to ${targetRole.toUpperCase()}`
+      );
 
-      const res = await fetch('/api/users/switch-role', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          role: targetRole,
-          pin: finalPin,
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data.error || 'Incorrect Security PIN. Please try again.');
-        setPin('');
-        inputRef.current?.focus();
-      } else {
-        onSuccess();
-        onClose();
-      }
+      await refreshProfile();
+      onSuccess();
+      onClose();
     } catch (err: any) {
       console.error('Role switch PIN verification error:', err);
-      setError(err?.message || 'Failed to authorize role switch');
+      setError(err?.message || 'Incorrect Security PIN. Please try again.');
+      setPin('');
+      inputRef.current?.focus();
     } finally {
       setSubmitting(false);
     }

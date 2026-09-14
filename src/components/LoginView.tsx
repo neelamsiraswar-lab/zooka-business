@@ -29,6 +29,7 @@ import {
   DEFAULT_ROLE_PINS,
   getRoleDefaultPin,
 } from '../lib/permissions';
+import { getAllUsers, getOrCreateUser, updateUserProfile } from '../db/users';
 
 interface RegisteredWorkspaceUser {
   id: number;
@@ -77,31 +78,38 @@ export const LoginView: React.FC = () => {
   const handleRestoreAdmin = async () => {
     setRestoringAdmin(true);
     try {
-      const res = await fetch('/api/public/restore-admin', { method: 'POST' });
-      if (res.ok) {
-        await fetchRegisteredUsers(true);
-      }
+      const adminRecord = await getOrCreateUser(
+        'admin-workspace-user',
+        'nawarkuldeep@gmail.com',
+        'Kuldeep Siraswar (Admin)',
+        'https://api.dicebear.com/7.x/initials/svg?seed=Admin',
+        'admin'
+      );
+      await updateUserProfile(adminRecord.id, {
+        role: 'admin',
+        displayName: 'Kuldeep Siraswar (Admin)',
+        email: 'nawarkuldeep@gmail.com',
+        pin: '9999',
+      });
+      await fetchRegisteredUsers(true);
     } catch (err) {
-      console.error('Failed to restore admin profile:', err);
+      console.error('Failed to restore admin profile in Cloud Firestore:', err);
     } finally {
       setRestoringAdmin(false);
     }
   };
 
-  // Fetch all registered workspace users from API
+  // Fetch all registered workspace users from Firestore
   const fetchRegisteredUsers = useCallback(async (showLoading = false) => {
     if (showLoading) setLoadingUsers(true);
     try {
-      const res = await fetch('/api/public/users');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setRegisteredUsers(data);
-          setLastSyncTime(new Date());
-        }
+      const usersList = await getAllUsers();
+      if (Array.isArray(usersList)) {
+        setRegisteredUsers(usersList as any);
+        setLastSyncTime(new Date());
       }
     } catch (err) {
-      console.warn('Could not auto-fetch registered users from server:', err);
+      console.warn('Could not auto-fetch registered users from Cloud Firestore:', err);
     } finally {
       if (showLoading) setLoadingUsers(false);
     }
@@ -220,7 +228,7 @@ export const LoginView: React.FC = () => {
         <div className="hidden md:flex items-center gap-3">
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Cloud SQL PostgreSQL Active</span>
+            <span>Google Cloud Firestore Active</span>
           </div>
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/20 text-[11px] text-teal-300 font-medium">
             <Users className="w-3.5 h-3.5 text-teal-400" />
@@ -276,7 +284,7 @@ export const LoginView: React.FC = () => {
                   <span className="text-xs font-bold text-white">Dynamic User Management</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-snug">
-                  Live team directory synchronized directly with PostgreSQL. Admin manages all permissions.
+                  Live team directory synchronized directly with Google Cloud Firestore. Admin manages all permissions.
                 </p>
               </div>
 

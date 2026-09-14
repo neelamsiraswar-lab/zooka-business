@@ -80,6 +80,45 @@ class QueryBuilder {
   }
 }
 
+export function sanitizeFirestoreData(data: any, isMerge = false): any {
+  if (data === undefined) return isMerge ? undefined : null;
+  if (data === null || typeof data !== 'object') return data;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeFirestoreData(item, isMerge));
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) {
+      if (!isMerge) {
+        clean[key] = null;
+      }
+    } else {
+      const sanitized = sanitizeFirestoreData(value, isMerge);
+      if (sanitized !== undefined) {
+        clean[key] = sanitized;
+      }
+    }
+  }
+  return clean;
+}
+
+export function sanitizeFirestoreUpdate(data: any): any {
+  if (data === null || typeof data !== 'object') return data;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeFirestoreData(item, true));
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      const sanitized = sanitizeFirestoreData(value, true);
+      if (sanitized !== undefined) {
+        clean[key] = sanitized;
+      }
+    }
+  }
+  return clean;
+}
+
 export class DocRefWrapper {
   public colName: string;
   public docId: string;
@@ -112,12 +151,15 @@ export class DocRefWrapper {
   }
 
   async set(data: any, options?: { merge?: boolean }) {
-    await setDoc(this.rawRef, data, options || {});
+    const isMerge = !!options?.merge;
+    const cleanData = sanitizeFirestoreData(data, isMerge);
+    await setDoc(this.rawRef, cleanData, options || {});
     return this;
   }
 
   async update(data: any) {
-    await updateDoc(this.rawRef, data);
+    const cleanData = sanitizeFirestoreUpdate(data);
+    await updateDoc(this.rawRef, cleanData);
     return this;
   }
 
@@ -143,13 +185,16 @@ class BatchWrapper {
 
   set(docWrapper: any, data: any, options?: { merge?: boolean }) {
     const targetRef = this.getRef(docWrapper);
-    this.batch.set(targetRef, data, options || {});
+    const isMerge = !!options?.merge;
+    const cleanData = sanitizeFirestoreData(data, isMerge);
+    this.batch.set(targetRef, cleanData, options || {});
     return this;
   }
 
   update(docWrapper: any, data: any) {
     const targetRef = this.getRef(docWrapper);
-    this.batch.update(targetRef, data);
+    const cleanData = sanitizeFirestoreUpdate(data);
+    this.batch.update(targetRef, cleanData);
     return this;
   }
 
@@ -203,12 +248,15 @@ export const db = {
         },
         set(docWrapper: any, data: any, options?: { merge?: boolean }) {
           const rawRef = docWrapper?.rawRef || docWrapper?.ref?.rawRef || docWrapper;
-          txn.set(rawRef, data, options || {});
+          const isMerge = !!options?.merge;
+          const cleanData = sanitizeFirestoreData(data, isMerge);
+          txn.set(rawRef, cleanData, options || {});
           return this;
         },
         update(docWrapper: any, data: any) {
           const rawRef = docWrapper?.rawRef || docWrapper?.ref?.rawRef || docWrapper;
-          txn.update(rawRef, data);
+          const cleanData = sanitizeFirestoreUpdate(data);
+          txn.update(rawRef, cleanData);
           return this;
         },
         delete(docWrapper: any) {

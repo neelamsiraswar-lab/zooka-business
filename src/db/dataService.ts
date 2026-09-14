@@ -182,17 +182,20 @@ export async function checkInvoiceNumberDuplicate(
 ) {
   const trimmed = (invoiceNumber || '').trim().toLowerCase();
   if (!trimmed) {
-    return { isDuplicate: false };
+    return { isDuplicate: false, existing: null };
   }
 
   const snap = await db.collection(COLLECTIONS.INVOICES).get();
-  const duplicate = snap.docs.some((doc) => {
+  const duplicateDoc = snap.docs.find((doc) => {
     const data = doc.data();
     if (excludeInvoiceId && data.id === excludeInvoiceId) return false;
     return (data.invoiceNumber || '').trim().toLowerCase() === trimmed;
   });
 
-  return { isDuplicate: duplicate };
+  return {
+    isDuplicate: Boolean(duplicateDoc),
+    existing: duplicateDoc ? duplicateDoc.data() : null,
+  };
 }
 
 // Parties (Customers & Vendors)
@@ -249,7 +252,17 @@ export async function getParties(userId?: number) {
   });
 }
 
-export async function createParty(userId: number, data: any) {
+export async function createParty(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const partyId = await getNextSequenceId('party_id');
   const party = {
     id: partyId,
@@ -282,7 +295,7 @@ export async function editParty(partyId: number, userId: number, data: any) {
   return updated;
 }
 
-export async function deleteParty(partyId: number, userId?: number) {
+export async function deleteParty(partyId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.PARTIES).doc(String(partyId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -297,7 +310,17 @@ export async function getInventory(userId?: number) {
   return snap.docs.map((doc) => doc.data());
 }
 
-export async function createInventoryItem(userId: number, data: any) {
+export async function createInventoryItem(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const itemId = await getNextSequenceId('inventory_item_id');
   const item = {
     id: itemId,
@@ -351,7 +374,7 @@ export async function adjustInventoryStock(itemId: number, userIdOrDelta: number
   return { ...itemData, currentStock: newStockStr, id: itemId };
 }
 
-export async function deleteInventoryItem(itemId: number, userId?: number) {
+export async function deleteInventoryItem(itemId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(String(itemId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -470,7 +493,7 @@ export async function editInvoiceWithItems(invoiceId: number, userId: number, in
   return updatedInvoice;
 }
 
-export async function deleteInvoice(invoiceId: number, userId?: number) {
+export async function deleteInvoice(invoiceId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.INVOICES).doc(String(invoiceId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -485,6 +508,9 @@ export async function deleteInvoice(invoiceId: number, userId?: number) {
     }
   }
   await docRef.delete();
+  if (userName) {
+    await logActivity(Number(userId) || 1, userName, 'DELETE', 'INVOICE', String(invoiceId), `Deleted voucher ${inv?.invoiceNumber || ''}`);
+  }
   return inv;
 }
 
@@ -494,14 +520,24 @@ export async function getExpenses(userId?: number) {
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function createExpense(userId: number, data: any) {
+export async function createExpense(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const expenseId = await getNextSequenceId('expense_id');
   const expense = {
     id: expenseId,
     userId,
-    category: data.category,
-    amount: String(data.amount),
-    date: data.date,
+    category: data.category || 'Other Expenses',
+    amount: String(data.amount || '0.00'),
+    date: data.date || data.expenseDate || new Date().toISOString().split('T')[0],
     paymentMode: data.paymentMode || 'cash',
     referenceNumber: data.referenceNumber || null,
     vendorName: data.vendorName || null,
@@ -509,7 +545,7 @@ export async function createExpense(userId: number, data: any) {
     gstPaid: String(data.gstPaid || '0.00'),
     itcEligible: !!data.itcEligible,
     receiptUrl: data.receiptUrl || null,
-    description: data.description || null,
+    description: data.description || data.notes || null,
     createdAt: new Date().toISOString(),
   };
 
@@ -526,7 +562,7 @@ export async function editExpense(expenseId: number, userId: number, data: any) 
   return updated;
 }
 
-export async function deleteExpense(expenseId: number, userId?: number) {
+export async function deleteExpense(expenseId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.EXPENSES).doc(String(expenseId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -635,7 +671,17 @@ export async function getNextJournalVoucherNumber(userId: number, entryType: str
   return { prefix, counter, formattedNumber: candidate };
 }
 
-export async function createJournalEntry(userId: number, data: any) {
+export async function createJournalEntry(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const entryId = await getNextSequenceId('journal_entry_id');
   const entry = {
     id: entryId,
@@ -666,7 +712,7 @@ export async function editJournalEntry(entryId: number, userId: number, data: an
   return updated;
 }
 
-export async function deleteJournalEntry(entryId: number, userId?: number) {
+export async function deleteJournalEntry(entryId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(String(entryId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -681,7 +727,17 @@ export async function getChequeBooks(userId?: number) {
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function createChequeBook(userId: number, data: any) {
+export async function createChequeBook(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const bookId = await getNextSequenceId('cheque_book_id');
   const startNum = Number(data.startNumber);
   const endNum = Number(data.endNumber);
@@ -715,7 +771,7 @@ export async function editChequeBook(bookId: number, userId: number, data: any) 
   return updated;
 }
 
-export async function deleteChequeBook(bookId: number, userId?: number) {
+export async function deleteChequeBook(bookId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.CHEQUE_BOOKS).doc(String(bookId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -730,7 +786,17 @@ export async function getCheques(userId?: number) {
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function createCheque(userId: number, data: any) {
+export async function createCheque(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const chequeId = await getNextSequenceId('cheque_id');
   const cheque = {
     id: chequeId,
@@ -774,7 +840,17 @@ export async function editCheque(chequeId: number, userId: number, data: any) {
   return updated;
 }
 
-export async function updateChequeStatus(chequeId: number, userId: number, statusData: any) {
+export async function updateChequeStatus(chequeId: number, statusDataOrUserId: any, userIdOrStatusData?: any, userName?: string) {
+  let userId = 1;
+  let statusData: any = {};
+  if (typeof statusDataOrUserId === 'object' && statusDataOrUserId !== null) {
+    statusData = statusDataOrUserId;
+    userId = Number(userIdOrStatusData) || 1;
+  } else {
+    userId = Number(statusDataOrUserId) || 1;
+    statusData = userIdOrStatusData || {};
+  }
+
   const docRef = db.collection(COLLECTIONS.CHEQUES).doc(String(chequeId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -783,7 +859,7 @@ export async function updateChequeStatus(chequeId: number, userId: number, statu
   return updated;
 }
 
-export async function deleteCheque(chequeId: number, userId?: number) {
+export async function deleteCheque(chequeId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.CHEQUES).doc(String(chequeId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -805,7 +881,17 @@ export async function getBankStatementById(statementId: number, userId?: number)
   return snap.data();
 }
 
-export async function createBankStatement(userId: number, data: any) {
+export async function createBankStatement(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const statementId = await getNextSequenceId('bank_statement_id');
   const transactions = (data.transactions || []).map((t: any, idx: number) => ({
     ...t,
@@ -836,7 +922,17 @@ export async function createBankStatement(userId: number, data: any) {
   return statement;
 }
 
-export async function updateBankStatement(statementId: number, userId: number, data: any) {
+export async function updateBankStatement(statementId: number, dataOrUserId: any, userIdOrData?: any, userName?: string) {
+  let userId = 1;
+  let data: any = {};
+  if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
+    data = dataOrUserId;
+    userId = Number(userIdOrData) || 1;
+  } else {
+    userId = Number(dataOrUserId) || 1;
+    data = userIdOrData || {};
+  }
+
   const docRef = db.collection(COLLECTIONS.BANK_STATEMENTS).doc(String(statementId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -845,7 +941,7 @@ export async function updateBankStatement(statementId: number, userId: number, d
   return updated;
 }
 
-export async function deleteBankStatement(statementId: number, userId?: number) {
+export async function deleteBankStatement(statementId: number, userId?: number, userName?: string) {
   const docRef = db.collection(COLLECTIONS.BANK_STATEMENTS).doc(String(statementId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
@@ -1059,7 +1155,18 @@ export async function getFullDataBackup(userId?: number) {
   };
 }
 
-export async function restoreDataFromBackup(backupData: any, userId: number) {
+export async function restoreDataFromBackup(backupDataOrUserId: any, userIdOrBackupData: any) {
+  let backupData: any;
+  let userId: number;
+
+  if (typeof backupDataOrUserId === 'object' && backupDataOrUserId !== null) {
+    backupData = backupDataOrUserId;
+    userId = Number(userIdOrBackupData) || 1;
+  } else {
+    userId = Number(backupDataOrUserId) || 1;
+    backupData = userIdOrBackupData;
+  }
+
   if (!backupData || typeof backupData !== 'object') {
     throw new Error('Invalid backup JSON payload');
   }
@@ -1122,4 +1229,145 @@ export async function clearMasterLedger(userId: number) {
   await invBatch.commit();
 
   return { success: true };
+}
+
+// ==========================================
+// SPA Client Convenience Wrappers & Aggregators
+// ==========================================
+
+export async function getAppData(userId?: number) {
+  const [
+    company,
+    parties,
+    inventory,
+    invoices,
+    expenses,
+    payments,
+    journalEntries,
+    cheques,
+    chequeBooks,
+    bankStatements,
+    summary,
+    activityLogs,
+  ] = await Promise.all([
+    getCompanyProfile(userId),
+    getParties(userId),
+    getInventory(userId),
+    getInvoices(userId),
+    getExpenses(userId),
+    getPayments(userId),
+    getJournalEntries(userId),
+    getCheques(userId),
+    getChequeBooks(userId),
+    getBankStatements(userId),
+    getFinancialSummary(userId),
+    getActivityLogs(userId, 50),
+  ]);
+
+  return {
+    company,
+    parties,
+    inventory,
+    invoices,
+    expenses,
+    payments,
+    journalEntries,
+    cheques,
+    chequeBooks,
+    bankStatements,
+    summary,
+    activityLogs,
+    activity: activityLogs,
+  };
+}
+
+export async function createInvoice(payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  const res = await createInvoiceWithItems(uid, payload, payload?.items || []);
+  if (userName) {
+    await logActivity(uid, userName, 'CREATE', 'INVOICE', String(res?.id || ''), `Created invoice ${payload?.invoiceNumber || ''}`);
+  }
+  return res;
+}
+
+export async function updateInvoice(invoiceId: number, payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  const res = await editInvoiceWithItems(invoiceId, uid, payload, payload?.items || []);
+  if (userName) {
+    await logActivity(uid, userName, 'UPDATE', 'INVOICE', String(invoiceId), `Updated invoice ${payload?.invoiceNumber || ''}`);
+  }
+  return res;
+}
+
+export async function updateExpense(expenseId: number, payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return editExpense(expenseId, uid, payload);
+}
+
+export async function createPayment(payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return createPaymentVoucher(uid, payload);
+}
+
+export async function deletePayment(paymentId: number, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return deletePaymentVoucher(paymentId, uid);
+}
+
+export async function updateJournalEntry(entryId: number, payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return editJournalEntry(entryId, uid, payload);
+}
+
+export async function updateParty(partyId: number, payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return editParty(partyId, uid, payload);
+}
+
+export async function updateInventoryItem(itemId: number, payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return editInventoryItem(itemId, uid, payload);
+}
+
+export async function adjustStock(itemId: number, newStock: number, reason: string, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  const docRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(String(itemId));
+  const snap = await docRef.get();
+  if (snap.exists) {
+    await docRef.update({
+      currentStock: String(newStock),
+      updatedAt: new Date().toISOString(),
+    });
+    await logActivity(uid, userName || 'User', 'ADJUST_STOCK', 'INVENTORY', String(itemId), `Stock adjusted to ${newStock}. Reason: ${reason}`);
+  }
+}
+
+export async function saveCompanyProfile(payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return upsertCompanyProfile(uid, payload);
+}
+
+export async function clearAllMasterLedgers(userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return clearMasterLedger(uid);
+}
+
+export async function updateCheque(chequeId: number, payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return editCheque(chequeId, uid, payload);
+}
+
+export async function updateChequeBook(bookId: number, payload: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return editChequeBook(bookId, uid, payload);
+}
+
+export async function reconcileBankTransaction(statementId: number, transactionId: string, matchData: any, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return reconcileBankStatementTransaction(statementId, transactionId, uid, matchData);
+}
+
+export async function unreconcileBankTransaction(statementId: number, transactionId: string, userId?: number, userName?: string) {
+  const uid = Number(userId) || 1;
+  return unreconcileBankStatementTransaction(statementId, transactionId, uid);
 }

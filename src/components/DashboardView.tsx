@@ -102,7 +102,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Executive Accounting Dashboard</h1>
             <span className="text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
-              Live Cloud SQL Sync
+              Live Cloud Firestore Sync
             </span>
           </div>
           <p className="text-sm text-slate-400 mt-1">

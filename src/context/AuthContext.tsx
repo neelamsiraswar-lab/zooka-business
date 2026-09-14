@@ -11,6 +11,8 @@ import {
 import { auth, googleAuthProvider } from '../lib/firebase';
 import { UserProfile } from '../types';
 import { UserRole } from '../lib/permissions';
+import { getOrCreateUser, updateUserProfile, updateUserRole } from '../db/users';
+import { seedDemoDataForUser } from '../db/seed';
 
 export const DEMO_RBAC_PERSONAS: Record<UserRole, {
   uid: string;
@@ -95,43 +97,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
   const isAuthenticatingRef = useRef(false);
 
-  const fetchProfile = async (idToken: string, retries = 3, delay = 1000) => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const res = await fetch('/api/user/me', {
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-          },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setProfile(data);
-          setUser((prev: any) =>
-            prev ? { ...prev, role: data.role, displayName: data.displayName || prev.displayName } : prev
-          );
-          const savedDevUser = localStorage.getItem(DEV_USER_KEY);
-          if (savedDevUser) {
-            try {
-              const parsed = JSON.parse(savedDevUser);
-              parsed.role = data.role;
-              if (data.displayName) parsed.displayName = data.displayName;
-              localStorage.setItem(DEV_USER_KEY, JSON.stringify(parsed));
-              const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(parsed))))}`;
-              localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-              setToken(devTokenString);
-            } catch (e) {
-              // ignore
-            }
-          }
-          return;
+  const fetchProfile = async (idToken?: string) => {
+    try {
+      let uid = 'demo-user';
+      let email = 'nawarkuldeep@gmail.com';
+      let displayName: string | null = 'Kuldeep Siraswar (Admin)';
+      let photoURL: string | null = 'https://api.dicebear.com/7.x/initials/svg?seed=Admin';
+      let initialRole: UserRole | undefined = undefined;
+
+      if (idToken && idToken.startsWith('dev-token-')) {
+        try {
+          const raw = decodeURIComponent(escape(atob(idToken.replace('dev-token-', ''))));
+          const parsed = JSON.parse(raw);
+          uid = parsed.uid || uid;
+          email = parsed.email || email;
+          displayName = parsed.displayName || displayName;
+          photoURL = parsed.photoURL || photoURL;
+          initialRole = parsed.role;
+        } catch (e) {
+          // ignore
         }
-      } catch (err) {
-        if (i === retries - 1) {
-          console.error('Failed to load user profile:', err);
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
+      } else if (auth.currentUser) {
+        uid = auth.currentUser.uid;
+        email = auth.currentUser.email || `${uid}@gstuser.local`;
+        displayName = auth.currentUser.displayName || null;
+        photoURL = auth.currentUser.photoURL || null;
+      } else if (user) {
+        uid = user.uid || uid;
+        email = user.email || email;
+        displayName = user.displayName || null;
+        photoURL = user.photoURL || null;
+        initialRole = (user as any)?.role;
       }
+
+      const dbUser = await getOrCreateUser(uid, email, displayName, photoURL, initialRole);
+      await seedDemoDataForUser(dbUser);
+      setProfile(dbUser);
+      setUser((prev: any) =>
+        prev ? { ...prev, role: dbUser.role, displayName: dbUser.displayName || prev.displayName } : dbUser
+      );
+    } catch (err) {
+      console.error('Failed to load user profile directly from Cloud Firestore:', err);
     }
   };
 

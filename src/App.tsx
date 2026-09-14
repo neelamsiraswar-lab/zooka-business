@@ -37,6 +37,41 @@ import {
   UserRole,
   ROLE_CONFIG,
 } from './lib/permissions';
+import {
+  getAppData,
+  createInvoice,
+  updateInvoice,
+  deleteInvoice,
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  createPayment,
+  deletePayment,
+  createJournalEntry,
+  updateJournalEntry,
+  deleteJournalEntry,
+  createParty,
+  updateParty,
+  deleteParty,
+  createInventoryItem,
+  updateInventoryItem,
+  deleteInventoryItem,
+  adjustStock,
+  saveCompanyProfile,
+  clearAllMasterLedgers,
+  createCheque,
+  updateCheque,
+  updateChequeStatus,
+  deleteCheque,
+  createChequeBook,
+  updateChequeBook,
+  deleteChequeBook,
+  createBankStatement,
+  updateBankStatement,
+  deleteBankStatement,
+  reconcileBankTransaction,
+  unreconcileBankTransaction,
+} from './db/dataService';
 
 export default function App() {
   const { user, profile, token, loading: authLoading, logout, getToken } = useAuth();
@@ -116,100 +151,27 @@ export default function App() {
     // If a request is already in-flight, avoid duplicate burst
     if (isFetchingDataRef.current) return;
 
-    const idToken = await getToken();
-    if (!idToken) return;
-
     isFetchingDataRef.current = true;
     if (!isSilent) setDataLoading(true);
 
     try {
-      const headers = { Authorization: `Bearer ${idToken}` };
-
-      // Primary strategy: Consolidated single HTTP request (fast, atomic, zero race conditions)
-      try {
-        const appDataRes = await fetch('/api/app-data', { headers });
-        if (appDataRes.ok) {
-          const data = await appDataRes.json();
-          if (data.summary) setSummary(data.summary);
-          if (Array.isArray(data.invoices)) setInvoices(data.invoices);
-          if (Array.isArray(data.payments)) setPayments(data.payments);
-          if (Array.isArray(data.cheques)) setCheques(data.cheques);
-          if (Array.isArray(data.chequeBooks)) setChequeBooks(data.chequeBooks);
-          if (Array.isArray(data.journalEntries)) setJournalEntries(data.journalEntries);
-          if (Array.isArray(data.expenses)) setExpenses(data.expenses);
-          if (Array.isArray(data.bankStatements)) setBankStatements(data.bankStatements);
-          if (Array.isArray(data.parties)) setParties(data.parties);
-          if (Array.isArray(data.inventory)) setInventory(data.inventory);
-          if (data.company) setCompany(data.company);
-          if (Array.isArray(data.activity)) setActivityLogs(data.activity);
-          setSyncError(null);
-          return;
-        }
-      } catch (singleReqErr) {
-        console.warn('Consolidated /api/app-data call encountered error, trying fallback endpoints:', singleReqErr);
-      }
-
-      // Secondary fallback strategy: Individual endpoints with Promise.allSettled
-      // Prevents 1 failed endpoint from failing the entire application
-      const results = await Promise.allSettled([
-        fetch('/api/dashboard/summary', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/invoices', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/payments', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/cheques', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/cheque-books', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/journal-entries', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/expenses', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/parties', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/inventory', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/company', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/activity', { headers }).then(r => r.ok ? r.json() : null),
-        fetch('/api/bank-statements', { headers }).then(r => r.ok ? r.json() : null),
-      ]);
-
-      const [sumVal, invVal, payVal, chqVal, chqBkVal, jvVal, expVal, parVal, itmVal, comVal, actVal, stmtVal] = results;
-
-      if (sumVal.status === 'fulfilled' && sumVal.value) {
-        setSummary((prev) => (JSON.stringify(prev) === JSON.stringify(sumVal.value) ? prev : sumVal.value));
-      }
-      if (invVal.status === 'fulfilled' && invVal.value) {
-        setInvoices((prev) => (JSON.stringify(prev) === JSON.stringify(invVal.value) ? prev : invVal.value));
-      }
-      if (payVal.status === 'fulfilled' && payVal.value) {
-        setPayments((prev) => (JSON.stringify(prev) === JSON.stringify(payVal.value) ? prev : payVal.value));
-      }
-      if (chqVal.status === 'fulfilled' && chqVal.value) {
-        setCheques((prev) => (JSON.stringify(prev) === JSON.stringify(chqVal.value) ? prev : chqVal.value));
-      }
-      if (chqBkVal.status === 'fulfilled' && chqBkVal.value) {
-        setChequeBooks((prev) => (JSON.stringify(prev) === JSON.stringify(chqBkVal.value) ? prev : chqBkVal.value));
-      }
-      if (jvVal.status === 'fulfilled' && jvVal.value) {
-        setJournalEntries((prev) => (JSON.stringify(prev) === JSON.stringify(jvVal.value) ? prev : jvVal.value));
-      }
-      if (expVal.status === 'fulfilled' && expVal.value) {
-        setExpenses((prev) => (JSON.stringify(prev) === JSON.stringify(expVal.value) ? prev : expVal.value));
-      }
-      if (parVal.status === 'fulfilled' && parVal.value) {
-        setParties((prev) => (JSON.stringify(prev) === JSON.stringify(parVal.value) ? prev : parVal.value));
-      }
-      if (itmVal.status === 'fulfilled' && itmVal.value) {
-        setInventory((prev) => (JSON.stringify(prev) === JSON.stringify(itmVal.value) ? prev : itmVal.value));
-      }
-      if (comVal.status === 'fulfilled' && comVal.value) {
-        setCompany((prev) => (JSON.stringify(prev) === JSON.stringify(comVal.value) ? prev : comVal.value));
-      }
-      if (actVal.status === 'fulfilled' && actVal.value) {
-        setActivityLogs((prev) => (JSON.stringify(prev) === JSON.stringify(actVal.value) ? prev : actVal.value));
-      }
-      if (stmtVal.status === 'fulfilled' && stmtVal.value) {
-        setBankStatements((prev) => (JSON.stringify(prev) === JSON.stringify(stmtVal.value) ? prev : stmtVal.value));
-      }
-
+      const data = await getAppData(profile?.id || 1);
+      if (data.summary) setSummary(data.summary);
+      if (Array.isArray(data.invoices)) setInvoices(data.invoices);
+      if (Array.isArray(data.payments)) setPayments(data.payments);
+      if (Array.isArray(data.cheques)) setCheques(data.cheques);
+      if (Array.isArray(data.chequeBooks)) setChequeBooks(data.chequeBooks);
+      if (Array.isArray(data.journalEntries)) setJournalEntries(data.journalEntries);
+      if (Array.isArray(data.expenses)) setExpenses(data.expenses);
+      if (Array.isArray(data.bankStatements)) setBankStatements(data.bankStatements);
+      if (Array.isArray(data.parties)) setParties(data.parties);
+      if (Array.isArray(data.inventory)) setInventory(data.inventory);
+      if (data.company) setCompany(data.company);
+      if (Array.isArray(data.activity)) setActivityLogs(data.activity);
       setSyncError(null);
     } catch (err: any) {
-      console.error('Failed to load application data:', err);
-      // Keep existing loaded data, only mark error banner if no data loaded at all
-      setSyncError(err?.message || 'Network connection issue');
+      console.error('Failed to load application data from Firestore:', err);
+      setSyncError(err?.message || 'Database connection issue');
     } finally {
       isFetchingDataRef.current = false;
       if (!isSilent) setDataLoading(false);
@@ -241,36 +203,18 @@ export default function App() {
 
   // Handler: Save Invoice (Create or Edit)
   const handleSaveInvoice = async (invoicePayload: any, invoiceId?: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const url = invoiceId ? `/api/invoices/${invoiceId}` : '/api/invoices';
-      const method = invoiceId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(invoicePayload),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success(invoiceId ? 'Voucher updated successfully' : 'Voucher created successfully');
+      if (invoiceId) {
+        await updateInvoice(invoiceId, invoicePayload, profile?.id || 1, profile?.name || 'User');
       } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Voucher Error',
-          message: `Failed to ${invoiceId ? 'update' : 'create'} voucher: ` + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
+        await createInvoice(invoicePayload, profile?.id || 1, profile?.name || 'User');
       }
-    } catch (err) {
+      await loadData();
+      dialog.toast.success(invoiceId ? 'Voucher updated successfully' : 'Voucher created successfully');
+    } catch (err: any) {
       console.error('Save invoice error:', err);
-      dialog.alert({ title: 'Error', message: 'An unexpected error occurred while saving voucher.', variant: 'danger' });
+      dialog.alert({ title: 'Voucher Error', message: `Failed to ${invoiceId ? 'update' : 'create'} voucher: ` + (err?.message || err), variant: 'danger' });
     } finally {
       setDataLoading(false);
     }
@@ -278,31 +222,18 @@ export default function App() {
 
   // Handler: Delete Invoice / Voucher
   const handleDeleteInvoice = async (invoiceId: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Voucher deleted successfully');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Delete Failed',
-          message: 'Failed to delete voucher: ' + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
-      }
-    } catch (err) {
+      await deleteInvoice(invoiceId, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Voucher deleted successfully');
+    } catch (err: any) {
       console.error('Delete invoice error:', err);
+      dialog.alert({
+        title: 'Delete Failed',
+        message: 'Failed to delete voucher: ' + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -310,35 +241,22 @@ export default function App() {
 
   // Handler: Save Expense (Create or Edit)
   const handleSaveExpense = async (expensePayload: any, expenseId?: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const url = expenseId ? `/api/expenses/${expenseId}` : '/api/expenses';
-      const method = expenseId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(expensePayload),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success(expenseId ? 'Expense updated' : 'Expense recorded');
+      if (expenseId) {
+        await updateExpense(expenseId, expensePayload, profile?.id || 1, profile?.name || 'User');
       } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Expense Error',
-          message: `Failed to ${expenseId ? 'update' : 'save'} expense: ` + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
+        await createExpense(expensePayload, profile?.id || 1, profile?.name || 'User');
       }
-    } catch (err) {
+      await loadData();
+      dialog.toast.success(expenseId ? 'Expense updated' : 'Expense recorded');
+    } catch (err: any) {
       console.error('Save expense error:', err);
+      dialog.alert({
+        title: 'Expense Error',
+        message: `Failed to ${expenseId ? 'update' : 'save'} expense: ` + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -346,31 +264,18 @@ export default function App() {
 
   // Handler: Delete Expense
   const handleDeleteExpense = async (expenseId: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/expenses/${expenseId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Expense deleted');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Delete Failed',
-          message: 'Failed to delete expense: ' + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
-      }
-    } catch (err) {
+      await deleteExpense(expenseId, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Expense deleted');
+    } catch (err: any) {
       console.error('Delete expense error:', err);
+      dialog.alert({
+        title: 'Delete Failed',
+        message: 'Failed to delete expense: ' + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -378,33 +283,18 @@ export default function App() {
 
   // Handler: Save Payment / Receipt Voucher
   const handleSavePayment = async (paymentData: any) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch('/api/payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(paymentData),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Payment voucher recorded successfully');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Voucher Error',
-          message: 'Failed to save voucher: ' + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
-      }
-    } catch (err) {
+      await createPayment(paymentData, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Payment voucher recorded successfully');
+    } catch (err: any) {
       console.error('Save payment voucher error:', err);
+      dialog.alert({
+        title: 'Voucher Error',
+        message: 'Failed to save voucher: ' + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -412,31 +302,18 @@ export default function App() {
 
   // Handler: Delete Payment / Receipt Voucher
   const handleDeletePayment = async (paymentId: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/payments/${paymentId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Voucher deleted');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Delete Error',
-          message: 'Failed to delete voucher: ' + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
-      }
-    } catch (err) {
+      await deletePayment(paymentId, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Voucher deleted');
+    } catch (err: any) {
       console.error('Delete payment voucher error:', err);
+      dialog.alert({
+        title: 'Delete Error',
+        message: 'Failed to delete voucher: ' + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -444,30 +321,17 @@ export default function App() {
 
   // Handler: Save Journal Voucher / Contra / Adjusting Entry
   const handleSaveJournalEntry = async (entryPayload: any, entryId?: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const url = entryId ? `/api/journal-entries/${entryId}` : '/api/journal-entries';
-      const method = entryId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(entryPayload),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success(entryId ? 'Journal voucher updated successfully' : 'Journal entry recorded');
-        return await res.json();
+      let result;
+      if (entryId) {
+        result = await updateJournalEntry(entryId, entryPayload, profile?.id || 1, profile?.name || 'User');
       } else {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to save journal voucher (${res.status})`);
+        result = await createJournalEntry(entryPayload, profile?.id || 1, profile?.name || 'User');
       }
+      await loadData();
+      dialog.toast.success(entryId ? 'Journal voucher updated successfully' : 'Journal entry recorded');
+      return result;
     } catch (err: any) {
       console.error('Save journal entry error:', err);
       throw err;
@@ -478,31 +342,18 @@ export default function App() {
 
   // Handler: Delete Journal Voucher
   const handleDeleteJournalEntry = async (entryId: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/journal-entries/${entryId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Journal voucher deleted');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Delete Failed',
-          message: 'Failed to delete journal entry: ' + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
-      }
-    } catch (err) {
+      await deleteJournalEntry(entryId, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Journal voucher deleted');
+    } catch (err: any) {
       console.error('Delete journal entry error:', err);
+      dialog.alert({
+        title: 'Delete Failed',
+        message: 'Failed to delete journal entry: ' + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -510,24 +361,11 @@ export default function App() {
 
   // Handler: Add Party
   const handleAddParty = async (partyPayload: any) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch('/api/parties', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(partyPayload),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Party added successfully');
-      }
+      await createParty(partyPayload, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Party added successfully');
     } catch (err) {
       console.error('Party create error:', err);
     } finally {
@@ -537,24 +375,11 @@ export default function App() {
 
   // Handler: Edit Party
   const handleEditParty = async (partyId: number, partyPayload: any) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/parties/${partyId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(partyPayload),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Party updated');
-      }
+      await updateParty(partyId, partyPayload, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Party updated');
     } catch (err) {
       console.error('Party edit error:', err);
     } finally {
@@ -564,31 +389,18 @@ export default function App() {
 
   // Handler: Delete Party
   const handleDeleteParty = async (partyId: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/parties/${partyId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Party deleted successfully');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Delete Failed',
-          message: 'Failed to delete party: ' + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
-      }
-    } catch (err) {
+      await deleteParty(partyId, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Party deleted successfully');
+    } catch (err: any) {
       console.error('Delete party error:', err);
+      dialog.alert({
+        title: 'Delete Failed',
+        message: 'Failed to delete party: ' + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -596,24 +408,11 @@ export default function App() {
 
   // Handler: Add Stock Item
   const handleAddItem = async (itemPayload: any) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch('/api/inventory', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(itemPayload),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Product/Item added');
-      }
+      await createInventoryItem(itemPayload, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Product/Item added');
     } catch (err) {
       console.error('Item create error:', err);
     } finally {
@@ -623,24 +422,11 @@ export default function App() {
 
   // Handler: Edit Stock Item
   const handleEditItem = async (itemId: number, itemPayload: any) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/inventory/${itemId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(itemPayload),
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Item updated');
-      }
+      await updateInventoryItem(itemId, itemPayload, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Item updated');
     } catch (err) {
       console.error('Item update error:', err);
     } finally {
@@ -650,31 +436,18 @@ export default function App() {
 
   // Handler: Delete Stock Item
   const handleDeleteItem = async (itemId: number) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/inventory/${itemId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
-        await loadData();
-        dialog.toast.success('Item deleted');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Delete Failed',
-          message: 'Failed to delete item: ' + (err?.error || `Server returned ${res.status}`),
-          variant: 'danger',
-        });
-      }
-    } catch (err) {
+      await deleteInventoryItem(itemId, profile?.id || 1, profile?.name || 'User');
+      await loadData();
+      dialog.toast.success('Item deleted');
+    } catch (err: any) {
       console.error('Item delete error:', err);
+      dialog.alert({
+        title: 'Delete Failed',
+        message: 'Failed to delete item: ' + (err?.message || err),
+        variant: 'danger',
+      });
     } finally {
       setDataLoading(false);
     }
@@ -682,23 +455,10 @@ export default function App() {
 
   // Handler: Adjust / Audit Stock
   const handleAdjustStock = async (itemId: number, newStock: number, reason: string) => {
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/inventory/${itemId}/stock`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ currentStock: newStock, reason }),
-      });
-
-      if (res.ok) {
-        await loadData();
-      }
+      await adjustStock(itemId, newStock, reason, profile?.id || 1, profile?.name || 'User');
+      await loadData();
     } catch (err) {
       console.error('Stock adjust error:', err);
     } finally {
@@ -708,40 +468,12 @@ export default function App() {
 
   // Handler: Save Company Settings
   const handleSaveCompany = async (companyPayload: any) => {
-    const idToken = await getToken();
-    if (!idToken) {
-      throw new Error('Authentication token not available. Please sign in again.');
-    }
-
     setDataLoading(true);
     try {
-      const res = await fetch('/api/company', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(companyPayload),
-      });
-
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          throw new Error('Server returned an invalid response. Please try again.');
-        }
-        const savedCompany = await res.json();
-        setCompany(savedCompany);
-        await loadData(true);
-        return savedCompany;
-      } else {
-        const contentType = res.headers.get('content-type') || '';
-        let errorMessage = `Failed to update company settings (${res.status})`;
-        if (contentType.includes('application/json')) {
-          const errJson = await res.json().catch(() => ({}));
-          if (errJson?.error) errorMessage = errJson.error;
-        }
-        throw new Error(errorMessage);
-      }
+      const savedCompany = await saveCompanyProfile(companyPayload, profile?.id || 1, profile?.name || 'User');
+      setCompany(savedCompany);
+      await loadData(true);
+      return savedCompany;
     } catch (err) {
       console.error('Company save error:', err);
       throw err;
@@ -761,29 +493,11 @@ export default function App() {
     });
     if (!confirmed) return;
 
-    const idToken = await getToken();
-    if (!idToken) return;
-
     setDataLoading(true);
     try {
-      const res = await fetch('/api/settings/clear-ledger', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (res.ok) {
-        await loadData(true);
-        dialog.toast.success('All master ledgers and transactions cleared successfully');
-      } else {
-        const err = await res.json().catch(() => ({}));
-        dialog.alert({
-          title: 'Error',
-          message: err?.error || 'Failed to clear master ledger',
-          variant: 'danger',
-        });
-      }
+      await clearAllMasterLedgers(profile?.id || 1, profile?.name || 'User');
+      await loadData(true);
+      dialog.toast.success('All master ledgers and transactions cleared successfully');
     } catch (err: any) {
       console.error('Clear ledger error:', err);
       dialog.alert({
@@ -798,25 +512,12 @@ export default function App() {
 
   // Handler: Save Cheque (Create / Edit)
   const handleSaveCheque = async (chequeData: Partial<Cheque>, chequeId?: number) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     setDataLoading(true);
     try {
-      const url = chequeId ? `/api/cheques/${chequeId}` : '/api/cheques';
-      const method = chequeId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(chequeData),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to save cheque (${res.status})`);
+      if (chequeId) {
+        await updateCheque(chequeId, chequeData, profile?.id || 1, profile?.name || 'User');
+      } else {
+        await createCheque(chequeData, profile?.id || 1, profile?.name || 'User');
       }
       await loadData(true);
     } finally {
@@ -826,24 +527,9 @@ export default function App() {
 
   // Handler: Update Cheque Status (Deposit / Clear / Bounce)
   const handleUpdateChequeStatus = async (chequeId: number, statusData: any) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/cheques/${chequeId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(statusData),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to update cheque status (${res.status})`);
-      }
+      await updateChequeStatus(chequeId, statusData, profile?.id || 1, profile?.name || 'User');
       await loadData(true);
     } finally {
       setDataLoading(false);
@@ -852,22 +538,9 @@ export default function App() {
 
   // Handler: Delete Cheque
   const handleDeleteCheque = async (chequeId: number) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/cheques/${chequeId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to delete cheque (${res.status})`);
-      }
+      await deleteCheque(chequeId, profile?.id || 1, profile?.name || 'User');
       await loadData(true);
     } finally {
       setDataLoading(false);
@@ -876,25 +549,12 @@ export default function App() {
 
   // Handler: Save Cheque Book (Create / Edit)
   const handleSaveChequeBook = async (bookData: Partial<ChequeBook>, bookId?: number) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     setDataLoading(true);
     try {
-      const url = bookId ? `/api/cheque-books/${bookId}` : '/api/cheque-books';
-      const method = bookId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(bookData),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to save cheque book (${res.status})`);
+      if (bookId) {
+        await updateChequeBook(bookId, bookData, profile?.id || 1, profile?.name || 'User');
+      } else {
+        await createChequeBook(bookData, profile?.id || 1, profile?.name || 'User');
       }
       await loadData(true);
     } finally {
@@ -904,22 +564,9 @@ export default function App() {
 
   // Handler: Delete Cheque Book
   const handleDeleteChequeBook = async (bookId: number) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/cheque-books/${bookId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to delete cheque book (${res.status})`);
-      }
+      await deleteChequeBook(bookId, profile?.id || 1, profile?.name || 'User');
       await loadData(true);
     } finally {
       setDataLoading(false);
@@ -928,27 +575,14 @@ export default function App() {
 
   // Handler: Save Bank Statement (Create / Update)
   const handleSaveStatement = async (statementPayload: any, statementId?: number) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     setDataLoading(true);
     try {
-      const url = statementId ? `/api/bank-statements/${statementId}` : '/api/bank-statements';
-      const method = statementId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(statementPayload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to save bank statement (${res.status})`);
+      let saved;
+      if (statementId) {
+        saved = await updateBankStatement(statementId, statementPayload, profile?.id || 1, profile?.name || 'User');
+      } else {
+        saved = await createBankStatement(statementPayload, profile?.id || 1, profile?.name || 'User');
       }
-      const saved = await res.json();
       dialog.toast.success(statementId ? 'Bank statement updated' : 'Bank statement imported successfully');
       await loadData(true);
       return saved;
@@ -967,22 +601,9 @@ export default function App() {
 
   // Handler: Delete Bank Statement
   const handleDeleteStatement = async (statementId: number) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     setDataLoading(true);
     try {
-      const res = await fetch(`/api/bank-statements/${statementId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Failed to delete statement (${res.status})`);
-      }
+      await deleteBankStatement(statementId, profile?.id || 1, profile?.name || 'User');
       dialog.toast.success('Bank statement removed');
       await loadData(true);
     } catch (err: any) {
@@ -1003,23 +624,8 @@ export default function App() {
     transactionId: string,
     matchData: any
   ) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     try {
-      const res = await fetch(`/api/bank-statements/${statementId}/reconcile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ transactionId, matchData }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || 'Failed to reconcile transaction');
-      }
+      await reconcileBankTransaction(statementId, transactionId, matchData, profile?.id || 1, profile?.name || 'User');
       dialog.toast.success('Transaction matched & reconciled');
       await loadData(true);
     } catch (err: any) {
@@ -1034,23 +640,8 @@ export default function App() {
 
   // Handler: Unreconcile Single Transaction
   const handleUnreconcileTransaction = async (statementId: number, transactionId: string) => {
-    const idToken = await getToken();
-    if (!idToken) throw new Error('Authentication required');
-
     try {
-      const res = await fetch(`/api/bank-statements/${statementId}/unreconcile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ transactionId }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || 'Failed to unmatch transaction');
-      }
+      await unreconcileBankTransaction(statementId, transactionId, profile?.id || 1, profile?.name || 'User');
       dialog.toast.success('Transaction unlinked');
       await loadData(true);
     } catch (err: any) {
@@ -1067,7 +658,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
         <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mb-3" />
-        <span className="text-sm font-medium">Securing Cloud SQL & Firebase Connection...</span>
+        <span className="text-sm font-medium">Securing Google Cloud Firestore Connection...</span>
       </div>
     );
   }
@@ -1369,7 +960,7 @@ export default function App() {
             <div className="flex items-center gap-3">
               <span className="font-mono text-emerald-400 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                PostgreSQL Cloud Connected
+                Cloud Firestore Connected
               </span>
               <span>|</span>
               <span>Place of Supply: {company?.stateName || 'Maharashtra'} ({company?.stateCode || '27'})</span>

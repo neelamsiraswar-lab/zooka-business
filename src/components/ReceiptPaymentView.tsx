@@ -8,6 +8,7 @@ import {
   Invoice,
   CompanyProfile,
 } from '../types';
+import { getNextPaymentVoucherNumber } from '../db/dataService';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -64,7 +65,7 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
   initialInvoiceId,
   onNavigateToInvoices,
 }) => {
-  const { profile } = useAuth();
+  const { profile, getToken } = useAuth();
   const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
 
   const canCreate = hasPermission(currentUserRole, 'payments:create');
@@ -112,19 +113,12 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
   // Auto-fetch next voucher number when opening modal or switching type
   const fetchNextNumber = async (type: 'receipt' | 'payment') => {
     try {
-      const res = await fetch(`/api/payments/next-number?type=${type}`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('gst_token') || ''}`,
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.formattedNumber) {
-          setVoucherNumber(data.formattedNumber);
-        }
+      const data = await getNextPaymentVoucherNumber(profile?.id || 1, type);
+      if (data && data.formattedNumber) {
+        setVoucherNumber(data.formattedNumber);
       }
     } catch (err) {
-      console.warn('Failed to get next voucher number from server:', err);
+      console.warn('Failed to get next voucher number directly from Cloud Firestore:', err);
       const prefix = type === 'receipt' ? 'REC/2026-27/' : 'PAY/2026-27/';
       setVoucherNumber(`${prefix}001`);
     }
