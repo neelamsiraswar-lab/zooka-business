@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
 import {
   requireRoles,
@@ -82,7 +83,7 @@ import {
 } from './src/db/dataService.ts';
 
 const app = express();
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // CORS headers for local, preview, and Vercel deployments
 app.use((req, res, next) => {
@@ -1479,7 +1480,16 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // Resolve dist path robustly across both local bundling and production container roots
+    const possibleDistPaths = [
+      path.join(process.cwd(), 'dist'),
+      path.resolve(__dirname),
+      path.resolve(__dirname, 'dist'),
+      path.resolve(process.cwd()),
+    ];
+
+    const distPath = possibleDistPaths.find((p) => fs.existsSync(path.join(p, 'index.html'))) || possibleDistPaths[0];
+
     app.use(express.static(distPath));
 
     // Fallback 404 for unhandled API calls in production
@@ -1488,7 +1498,12 @@ async function startServer() {
     });
 
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(200).send('<!DOCTYPE html><html><body><h1>Application Starting...</h1></body></html>');
+      }
     });
   }
 
