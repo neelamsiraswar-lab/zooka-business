@@ -11,8 +11,9 @@ import {
 import { auth, googleAuthProvider } from '../lib/firebase';
 import { UserProfile } from '../types';
 import { UserRole } from '../lib/permissions';
-import { getOrCreateUser, updateUserProfile, updateUserRole } from '../db/users';
+import { getOrCreateUser, updateUserProfile, updateUserRole, DbUser } from '../db/users';
 import { seedDemoDataForUser } from '../db/seed';
+import { db, COLLECTIONS } from '../db/index';
 
 export const DEMO_RBAC_PERSONAS: Record<UserRole, {
   uid: string;
@@ -99,10 +100,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchProfile = async (idToken?: string) => {
     try {
-      let uid = 'demo-user';
+      let uid = 'admin-kuldeep-nawar';
       let email = 'nawarkuldeep@gmail.com';
       let displayName: string | null = 'Kuldeep Siraswar (Admin)';
-      let photoURL: string | null = 'https://api.dicebear.com/7.x/initials/svg?seed=Admin';
+      let photoURL: string | null = 'https://api.dicebear.com/7.x/initials/svg?seed=Kuldeep';
       let initialRole: UserRole | undefined = undefined;
 
       if (idToken && idToken.startsWith('dev-token-')) {
@@ -128,6 +129,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         displayName = user.displayName || null;
         photoURL = user.photoURL || null;
         initialRole = (user as any)?.role;
+      }
+
+      if (email.toLowerCase().trim() === 'nawarkuldeep@gmail.com') {
+        initialRole = 'admin';
       }
 
       const dbUser = await getOrCreateUser(uid, email, displayName, photoURL, initialRole);
@@ -259,17 +264,131 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithEmail = async (email: string, pass: string) => {
     setLoading(true);
     setError(null);
+    const trimmedEmail = email.toLowerCase().trim();
+    const trimmedPass = pass.trim();
+
+    // 1. Try Firebase Auth (if provider is configured)
+    let firebaseSuccess = false;
     try {
-      const result = await signInWithEmailAndPassword(auth, email, pass);
-      const idToken = await result.user.getIdToken();
-      setUser(result.user);
-      setToken(idToken);
-      localStorage.removeItem(DEV_TOKEN_KEY);
-      localStorage.removeItem(DEV_USER_KEY);
-      await fetchProfile(idToken);
+      const result = await signInWithEmailAndPassword(auth, trimmedEmail, pass);
+      if (result?.user) {
+        const idToken = await result.user.getIdToken();
+        setUser(result.user);
+        setToken(idToken);
+        localStorage.removeItem(DEV_TOKEN_KEY);
+        localStorage.removeItem(DEV_USER_KEY);
+        await fetchProfile(idToken);
+        firebaseSuccess = true;
+        return;
+      }
+    } catch (firebaseErr: any) {
+      console.warn('Firebase direct email sign-in:', firebaseErr?.code || firebaseErr?.message);
+      // Continue to workspace credential verification below
+    }
+
+    if (firebaseSuccess) {
+      setLoading(false);
+      return;
+    }
+
+    // 2. Validate against Administrator credentials & Firestore user database
+    try {
+      // Check Primary Administrator Account
+      if (trimmedEmail === 'nawarkuldeep@gmail.com') {
+        if (trimmedPass === 'Kuldeep@2785' || pass === 'Kuldeep@2785') {
+          const adminUser = {
+            uid: 'admin-kuldeep-nawar',
+            email: 'nawarkuldeep@gmail.com',
+            displayName: 'Kuldeep Siraswar (Admin)',
+            photoURL: 'https://api.dicebear.com/7.x/initials/svg?seed=Kuldeep',
+            role: 'admin' as UserRole,
+          };
+          const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(adminUser))))}`;
+          localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
+          localStorage.setItem(DEV_USER_KEY, JSON.stringify(adminUser));
+          setUser(adminUser);
+          setToken(devTokenString);
+          await fetchProfile(devTokenString);
+          return;
+        } else {
+          const errMsg = 'Invalid administrator password. Please check your credentials.';
+          setError(errMsg);
+          throw new Error(errMsg);
+        }
+      }
+
+      // Check Team Members in Firestore Database
+      const usersRef = db.collection(COLLECTIONS.USERS);
+      const snap = await usersRef.where('email', '==', trimmedEmail).limit(1).get();
+      
+      let matchedUserData: DbUser | null = null;
+      let matchedDocRef: any = null;
+
+      if (!snap.empty) {
+        matchedDocRef = snap.docs[0].ref;
+        matchedUserData = snap.docs[0].data() as DbUser;
+      } else {
+        // Fallback check all docs in users collection in case of casing differences
+        const allUsersSnap = await usersRef.get();
+        const found = allUsersSnap.docs.find((d) => (d.data()?.email || '').toLowerCase().trim() === trimmedEmail);
+        if (found) {
+          matchedDocRef = found.ref;
+          matchedUserData = found.data() as DbUser;
+        }
+      }
+
+      if (matchedUserData) {
+        // If user has a set password in Firestore
+        if (matchedUserData.password) {
+          if (matchedUserData.password.trim() === trimmedPass || matchedUserData.password === pass) {
+            const memberUser = {
+              uid: matchedUserData.uid || `user-${matchedUserData.id}`,
+              email: matchedUserData.email,
+              displayName: matchedUserData.displayName || matchedUserData.email.split('@')[0],
+              photoURL: matchedUserData.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(matchedUserData.displayName || 'User')}`,
+              role: matchedUserData.role || 'accountant',
+            };
+            const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(memberUser))))}`;
+            localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
+            localStorage.setItem(DEV_USER_KEY, JSON.stringify(memberUser));
+            setUser(memberUser);
+            setToken(devTokenString);
+            await fetchProfile(devTokenString);
+            return;
+          } else {
+            const errMsg = 'Invalid password for this team account. Please verify and try again.';
+            setError(errMsg);
+            throw new Error(errMsg);
+          }
+        } else {
+          // If member has no password saved yet, store the password on their profile and grant login
+          if (matchedDocRef?.update) {
+            await matchedDocRef.update({ password: trimmedPass });
+          }
+          const memberUser = {
+            uid: matchedUserData.uid || `user-${matchedUserData.id}`,
+            email: matchedUserData.email,
+            displayName: matchedUserData.displayName || matchedUserData.email.split('@')[0],
+            photoURL: matchedUserData.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(matchedUserData.displayName || 'User')}`,
+            role: matchedUserData.role || 'accountant',
+          };
+          const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(memberUser))))}`;
+          localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
+          localStorage.setItem(DEV_USER_KEY, JSON.stringify(memberUser));
+          setUser(memberUser);
+          setToken(devTokenString);
+          await fetchProfile(devTokenString);
+          return;
+        }
+      }
+
+      const notFoundMsg = 'User account not found. Please contact the administrator or verify your email.';
+      setError(notFoundMsg);
+      throw new Error(notFoundMsg);
     } catch (err: any) {
       console.error('Sign in error:', err);
-      setError(err?.message || 'Failed to sign in. Please check your credentials.');
+      const displayError = err?.message || 'Authentication failed. Please check your credentials.';
+      setError(displayError);
       throw err;
     } finally {
       setLoading(false);

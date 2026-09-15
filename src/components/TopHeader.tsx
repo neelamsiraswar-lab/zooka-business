@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_CONFIG, UserRole, getRoleDefaultPin } from '../lib/permissions';
+import { ROLE_CONFIG, UserRole } from '../lib/permissions';
 
 interface TopHeaderProps {
   isCollapsed: boolean;
@@ -252,7 +252,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               {/* Security & Access Info */}
               <div className="px-1 py-0.5 text-[11px] text-slate-400 flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>User roles and PINs are managed exclusively by Workspace Administrators.</span>
+                <span>User roles and permissions are managed exclusively by Workspace Administrators.</span>
               </div>
 
               {/* Logout Option */}

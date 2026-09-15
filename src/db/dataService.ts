@@ -1,5 +1,6 @@
 // src/db/dataService.ts
 import { db, COLLECTIONS, getNextSequenceId } from './index.ts';
+import { CompanyProfile } from '../types.ts';
 
 // Activity Logger
 export async function logActivity(
@@ -40,70 +41,24 @@ export async function getActivityLogs(userId?: number, limit = 50) {
 }
 
 // Company Profile
-export async function getCompanyProfile(userId?: number) {
+export async function getCompanyProfile(userId?: number): Promise<CompanyProfile | null> {
   try {
     const profilesRef = db.collection(COLLECTIONS.COMPANY_PROFILES);
     const snap = await profilesRef.get();
-    const list = snap.docs.map((doc) => doc.data());
+    const list = snap.docs.map((doc) => doc.data() as CompanyProfile);
 
-    // Prioritize configured company profile (with GSTIN or non-empty business name)
+    // Return genuine configured company profile from Firestore if one exists
     const configured = list.find(
-      (p: any) => p.gstin || (p.businessName && p.businessName !== 'My Enterprise' && p.businessName !== 'Enterprise Billing')
-    ) || list[0];
+      (p: any) => p && (p.businessName || p.gstin)
+    ) || (list.length > 0 ? list[0] : null);
 
     if (configured) return configured;
   } catch (err) {
     console.error('Error getting company profile from Firestore:', err);
   }
 
-  // return clean default company profile
-  return {
-    id: 1,
-    businessName: 'T.M ELECTRICAL',
-    tradeName: 'T.M ELECTRICAL',
-    gstin: '08IRRPZ8566K1ZD',
-    stateCode: '08',
-    stateName: 'Rajasthan',
-    address: 'INFRONT OF BIJLI GHAR, NH21 HALENA',
-    phone: '+91 8005594714',
-    email: 'sonusaini5500@gmail.com',
-    bankName: 'State Bank of India',
-    accountNumber: '39485019284',
-    ifscCode: 'SBIN0001824',
-    upiId: '8005594714@pthdfc',
-    invoiceNumberingMode: 'automatic',
-    invoicePrefix: 'INV/2026-27/',
-    invoiceSuffix: '',
-    nextInvoiceNumber: 1,
-    invoicePadding: 3,
-    preventDuplicateInvoiceNo: true,
-    purchaseNumberingMode: 'automatic',
-    purchasePrefix: 'PUR/2026-27/',
-    nextPurchaseNumber: 1,
-    receiptPrefix: 'REC/2026-27/',
-    nextReceiptNumber: 1,
-    paymentPrefix: 'PAY/2026-27/',
-    nextPaymentNumber: 1,
-    journalPrefix: 'JV/2026-27/',
-    nextJournalNumber: 1,
-    contraPrefix: 'CONTRA/2026-27/',
-    nextContraNumber: 1,
-    invoiceDesignTemplate: 'classic',
-    invoiceColorTheme: 'rose',
-    invoiceHeaderTitle: 'TAX INVOICE',
-    invoiceSubtitle: 'ORIGINAL FOR RECIPIENT',
-    invoiceShowLogo: true,
-    invoiceLogoUrl: '',
-    invoiceShowBankDetails: true,
-    invoiceShowUpiQr: true,
-    invoiceShowAuthorizedSignatory: true,
-    invoiceSignatoryLabel: 'Authorized Signatory',
-    invoiceSignatureUrl: '',
-    invoiceShowHsnSummary: true,
-    invoiceShowTerms: true,
-    defaultTerms: '1. Goods once sold will not be accepted back.\n2. Interest @ 18% p.a. will be levied if payment not made within due date.\n3. Subject to local state jurisdiction.',
-    defaultNotes: 'Thank you for your business!',
-  };
+  // Return null if no company profile exists in Firestore (strictly Firestore data only)
+  return null;
 }
 
 export async function upsertCompanyProfile(userId: number, data: any) {
@@ -138,14 +93,14 @@ export async function getNextAvailableInvoiceNumber(userId: number, voucherType:
   const company = await getCompanyProfile(userId);
   const isPurchase = voucherType === 'purchase';
   const mode = isPurchase
-    ? (company.purchaseNumberingMode || 'automatic')
-    : (company.invoiceNumberingMode || 'automatic');
+    ? (company?.purchaseNumberingMode || 'automatic')
+    : (company?.invoiceNumberingMode || 'automatic');
   const prefix = isPurchase
-    ? (company.purchasePrefix || 'PUR/2026-27/')
-    : (company.invoicePrefix || 'INV/2026-27/');
-  const suffix = isPurchase ? '' : (company.invoiceSuffix || '');
-  const padding = isPurchase ? 3 : (company.invoicePadding || 3);
-  let counter = isPurchase ? (company.nextPurchaseNumber || 1) : (company.nextInvoiceNumber || 1);
+    ? (company?.purchasePrefix || 'PUR/2026-27/')
+    : (company?.invoicePrefix || 'INV/2026-27/');
+  const suffix = isPurchase ? '' : (company?.invoiceSuffix || '');
+  const padding = isPurchase ? 3 : (company?.invoicePadding || 3);
+  let counter = isPurchase ? (company?.nextPurchaseNumber || 1) : (company?.nextInvoiceNumber || 1);
 
   // Fetch all existing invoice numbers for this voucherType
   const invoicesSnap = await db
@@ -583,9 +538,9 @@ export async function getPayments(userId?: number, voucherType?: string) {
 
 export async function getNextPaymentVoucherNumber(userId: number, voucherType: 'receipt' | 'payment') {
   const company = await getCompanyProfile(userId);
-  const prefix = voucherType === 'receipt' ? (company.receiptPrefix || 'REC/2026-27/') : (company.paymentPrefix || 'PAY/2026-27/');
+  const prefix = voucherType === 'receipt' ? (company?.receiptPrefix || 'REC/2026-27/') : (company?.paymentPrefix || 'PAY/2026-27/');
   const counterKey = voucherType === 'receipt' ? 'nextReceiptNumber' : 'nextPaymentNumber';
-  let counter = (company as any)[counterKey] || 1;
+  let counter = (company as any)?.[counterKey] || 1;
 
   const snap = await db.collection(COLLECTIONS.PAYMENTS).where('voucherType', '==', voucherType).get();
   const existingNumbers = new Set(snap.docs.map((d) => (d.data().voucherNumber || '').trim().toLowerCase()));
@@ -655,9 +610,9 @@ export async function getJournalEntries(userId?: number) {
 export async function getNextJournalVoucherNumber(userId: number, entryType: string) {
   const company = await getCompanyProfile(userId);
   const isContra = entryType === 'contra';
-  const prefix = isContra ? (company.contraPrefix || 'CONTRA/2026-27/') : (company.journalPrefix || 'JV/2026-27/');
+  const prefix = isContra ? (company?.contraPrefix || 'CONTRA/2026-27/') : (company?.journalPrefix || 'JV/2026-27/');
   const counterKey = isContra ? 'nextContraNumber' : 'nextJournalNumber';
-  let counter = (company as any)[counterKey] || 1;
+  let counter = (company as any)?.[counterKey] || 1;
 
   const snap = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get();
   const existingNumbers = new Set(snap.docs.map((d) => (d.data().voucherNumber || '').trim().toLowerCase()));

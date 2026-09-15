@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   Palette,
   Eye,
+  EyeOff,
   LayoutTemplate,
   Layers,
   Type,
@@ -39,7 +40,6 @@ import {
   Shield,
   Lock,
   UserPlus,
-  KeyRound,
   X,
   Pencil,
   UserX,
@@ -53,14 +53,8 @@ import {
   ROLE_CONFIG,
   PERMISSION_MATRIX_DATA,
   UserRole,
-  RolePinConfig,
-  DEFAULT_ROLE_PINS,
-  getRoleDefaultPin,
 } from '../lib/permissions';
-import { RoleSwitchPinModal } from './RoleSwitchPinModal';
 import {
-  getWorkspaceRolePins,
-  saveWorkspaceRolePins,
   getAllUsers,
   createTeamMember,
   updateUserRole,
@@ -160,8 +154,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [showInvitePassword, setShowInvitePassword] = useState(false);
   const [inviteRole, setInviteRole] = useState<UserRole>('accountant');
-  const [invitePin, setInvitePin] = useState('1234');
   const [inviting, setInviting] = useState(false);
   const [updatingMemberId, setUpdatingMemberId] = useState<number | null>(null);
   const [matrixSearch, setMatrixSearch] = useState('');
@@ -170,8 +165,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [editingMember, setEditingMember] = useState<any | null>(null);
   const [editMemberName, setEditMemberName] = useState('');
   const [editMemberEmail, setEditMemberEmail] = useState('');
+  const [editMemberPassword, setEditMemberPassword] = useState('');
+  const [showEditMemberPassword, setShowEditMemberPassword] = useState(false);
   const [editMemberRole, setEditMemberRole] = useState<UserRole>('accountant');
-  const [editMemberPin, setEditMemberPin] = useState('');
   const [editMemberAvatar, setEditMemberAvatar] = useState('');
   const [savingEditMember, setSavingEditMember] = useState(false);
   const [editMemberError, setEditMemberError] = useState<string | null>(null);
@@ -180,48 +176,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [deletingMember, setDeletingMember] = useState<any | null>(null);
   const [deletingMemberLoading, setDeletingMemberLoading] = useState(false);
   const [deleteMemberError, setDeleteMemberError] = useState<string | null>(null);
-
-  // Role Switch Security PINs State
-  const [rolePins, setRolePins] = useState<RolePinConfig>(DEFAULT_ROLE_PINS);
-  const [loadingPins, setLoadingPins] = useState(false);
-  const [savingPins, setSavingPins] = useState(false);
-  const [pinsSaveSuccess, setPinsSaveSuccess] = useState(false);
-  const [pinModalTargetRole, setPinModalTargetRole] = useState<UserRole | null>(null);
-
-  const fetchRolePins = async () => {
-    try {
-      setLoadingPins(true);
-      const pins = await getWorkspaceRolePins(profile?.id);
-      setRolePins(pins);
-    } catch (e) {
-      console.error('Fetch role pins error:', e);
-    } finally {
-      setLoadingPins(false);
-    }
-  };
-
-  const handleSaveRolePins = async () => {
-    try {
-      setSavingPins(true);
-      const updated = await saveWorkspaceRolePins(rolePins);
-      setRolePins(updated);
-      setPinsSaveSuccess(true);
-      await logActivity(
-        profile?.id || 1,
-        profile?.email || 'user',
-        'UPDATE_ROLE_PINS',
-        'system',
-        String(profile?.id || 1),
-        'Updated Role Switch Security PINs'
-      );
-      setTimeout(() => setPinsSaveSuccess(false), 3000);
-    } catch (e: any) {
-      console.error('Save role PINs error:', e);
-      alert(e.message || 'Failed to save role PIN configuration');
-    } finally {
-      setSavingPins(false);
-    }
-  };
 
   const fetchTeamMembers = async () => {
     try {
@@ -238,7 +192,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   useEffect(() => {
     if (activeTab === 'roles') {
       fetchTeamMembers();
-      fetchRolePins();
     }
   }, [activeTab]);
 
@@ -251,7 +204,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         email: inviteEmail.trim(),
         displayName: inviteName.trim(),
         role: inviteRole,
-        pin: invitePin.trim() || DEFAULT_ROLE_PINS[inviteRole] || '1234',
+        password: invitePassword.trim() || undefined,
       });
       await logActivity(
         profile?.id || 1,
@@ -263,7 +216,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       );
       setInviteEmail('');
       setInviteName('');
-      setInvitePin('1234');
+      setInvitePassword('');
       setShowInviteModal(false);
       await fetchTeamMembers();
     } catch (e: any) {
@@ -304,8 +257,8 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     setEditingMember(member);
     setEditMemberName(member.displayName || '');
     setEditMemberEmail(member.email || '');
+    setEditMemberPassword(member.password || '');
     setEditMemberRole((member.role as UserRole) || 'accountant');
-    setEditMemberPin(member.pin || DEFAULT_ROLE_PINS[(member.role as UserRole) || 'accountant'] || '1234');
     setEditMemberAvatar(member.avatarUrl || '');
     setEditMemberError(null);
   };
@@ -326,13 +279,17 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       setSavingEditMember(true);
       setEditMemberError(null);
 
-      const updated = await updateUserProfile(editingMember.id, {
+      const updateData: any = {
         displayName: editMemberName.trim(),
         email: editMemberEmail.trim(),
         role: editMemberRole,
-        pin: editMemberPin.trim() || DEFAULT_ROLE_PINS[editMemberRole] || '1234',
         avatarUrl: editMemberAvatar.trim(),
-      });
+      };
+      if (editMemberPassword.trim()) {
+        updateData.password = editMemberPassword.trim();
+      }
+
+      const updated = await updateUserProfile(editingMember.id, updateData);
 
       if (updated) {
         await logActivity(
@@ -383,9 +340,25 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     }
   };
 
-  const handleQuickSwitchRole = (targetRole: UserRole) => {
-    if (targetRole === currentUserRole) return;
-    setPinModalTargetRole(targetRole);
+  const handleQuickSwitchRole = async (targetRole: UserRole) => {
+    if (targetRole === currentUserRole || !profile?.id) return;
+    try {
+      await updateUserRole(profile.id, targetRole);
+      await logActivity(
+        profile.id,
+        profile.email,
+        'SWITCH_ACTIVE_ROLE',
+        'user',
+        String(profile.id),
+        `User switched active role to ${targetRole.toUpperCase()}`
+      );
+      await refreshProfile();
+      setUserSaveSuccess(true);
+      setTimeout(() => setUserSaveSuccess(false), 3000);
+    } catch (err: any) {
+      console.error('Failed to switch role:', err);
+      alert(err?.message || 'Failed to switch role');
+    }
   };
 
   useEffect(() => {
@@ -2326,16 +2299,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       </form>
       ) : (
         <div className="space-y-6 text-xs animate-fade-in">
-          {/* Quick Interactive Role Switcher with PIN */}
-          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-3">
+          {/* Role-Based Access Control (RBAC) Architecture Overview */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-purple-400" />
-                  Instant Role Switcher (Protected by PIN)
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  Role-Based Access Control (RBAC) &amp; Security Profiles
                 </h4>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Select any role to test. A 4-digit Security PIN is required before switching to ensure role-based privilege enforcement.
+                  Fine-grained corporate security privileges. Administrators can assign and switch roles without insecure PIN codes.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2344,417 +2317,207 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                 </span>
                 {userSaveSuccess && (
                   <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                    <Check className="w-3.5 h-3.5" /> Switched Role!
+                    <Check className="w-3.5 h-3.5" /> Role Updated!
                   </span>
                 )}
               </div>
             </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-                {(['admin', 'accountant', 'billing_operator', 'auditor'] as UserRole[]).map((roleKey) => {
-                  const conf = ROLE_CONFIG[roleKey];
-                  const isCurrent = currentUserRole === roleKey;
-                  const currentRolePin = rolePins[roleKey] || DEFAULT_ROLE_PINS[roleKey];
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+              {(['admin', 'accountant', 'billing_operator', 'auditor'] as UserRole[]).map((roleKey) => {
+                const conf = ROLE_CONFIG[roleKey];
+                const isCurrent = currentUserRole === roleKey;
 
-                  return (
-                    <button
-                      key={roleKey}
-                      type="button"
-                      onClick={() => handleQuickSwitchRole(roleKey)}
-                      className={`p-3.5 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between ${
-                        isCurrent
-                          ? 'bg-slate-800/90 border-purple-500 shadow-md shadow-purple-500/10 ring-1 ring-purple-500/50'
-                          : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className={`text-xs font-bold ${conf.textBadge}`}>
-                            {conf.title}
-                          </span>
-                          {isCurrent ? (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                              ACTIVE
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                              PIN: {currentRolePin}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">
-                          {conf.description}
-                        </p>
-                      </div>
-
-                      <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
-                        <span>{conf.allowedTabs.length} Tabs Allowed</span>
-                        <span className={`font-semibold flex items-center gap-1 ${isCurrent ? 'text-emerald-400' : 'text-purple-400'}`}>
-                          {isCurrent ? (
-                            'Current Identity'
-                          ) : (
-                            <>
-                              <Lock className="w-3 h-3" />
-                              <span>Enter PIN</span>
-                            </>
-                          )}
+                return (
+                  <button
+                    key={roleKey}
+                    type="button"
+                    onClick={() => handleQuickSwitchRole(roleKey)}
+                    className={`p-3.5 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between ${
+                      isCurrent
+                        ? 'bg-slate-800/90 border-emerald-500 shadow-md shadow-emerald-500/10 ring-1 ring-emerald-500/50'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className={`text-xs font-bold ${conf.textBadge}`}>
+                          {conf.title}
                         </span>
+                        {isCurrent ? (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            ACTIVE
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                            Switch Role
+                          </span>
+                        )}
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        {conf.description}
+                      </p>
+                    </div>
 
-            {/* Role Switch Security PINs Management */}
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      Role Switch Security PINs
-                      <span className="text-[10px] bg-slate-800 text-slate-400 font-mono px-2 py-0.5 rounded-full border border-slate-700">
-                        4-Digit Passcode
+                    <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-500">
+                      <span>{conf.allowedTabs.length} Tabs Allowed</span>
+                      <span className={`font-semibold flex items-center gap-1 ${isCurrent ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        {isCurrent ? 'Current Session' : 'Click to Activate'}
                       </span>
-                    </h4>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {canManageRoles
-                        ? 'As an Administrator, you can configure unique 4-digit PINs for each role or use the Master Supervisor PIN.'
-                        : 'View active role security PINs used for testing and role transitions (Only Administrators can edit PINs).'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  {pinsSaveSuccess && (
-                    <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                      <Check className="w-3.5 h-3.5" /> PINs Saved!
-                    </span>
-                  )}
-                  {canManageRoles && (
-                    <button
-                      type="button"
-                      onClick={handleSaveRolePins}
-                      disabled={savingPins}
-                      className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-md shadow-purple-600/20"
-                    >
-                      {savingPins ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Save className="w-3.5 h-3.5" />
-                      )}
-                      <span>Save Security PINs</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Grid of PIN Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                {/* Admin PIN */}
-                <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-purple-400">Administrator</span>
-                    <span className="text-[10px] text-slate-500">Default: 9999</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      maxLength={4}
-                      pattern="[0-9]*"
-                      disabled={!canManageRoles}
-                      value={rolePins.admin}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setRolePins((p) => ({ ...p, admin: val }));
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSwitchRole('admin')}
-                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
-                  >
-                    Test Admin Switch
+                    </div>
                   </button>
-                </div>
-
-                {/* Accountant PIN */}
-                <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-blue-400">Accountant</span>
-                    <span className="text-[10px] text-slate-500">Default: 2222</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      maxLength={4}
-                      pattern="[0-9]*"
-                      disabled={!canManageRoles}
-                      value={rolePins.accountant}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setRolePins((p) => ({ ...p, accountant: val }));
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSwitchRole('accountant')}
-                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
-                  >
-                    Test Accountant Switch
-                  </button>
-                </div>
-
-                {/* Billing Operator PIN */}
-                <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-400">Billing Operator</span>
-                    <span className="text-[10px] text-slate-500">Default: 1111</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      maxLength={4}
-                      pattern="[0-9]*"
-                      disabled={!canManageRoles}
-                      value={rolePins.billing_operator}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setRolePins((p) => ({ ...p, billing_operator: val }));
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSwitchRole('billing_operator')}
-                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
-                  >
-                    Test Billing Switch
-                  </button>
-                </div>
-
-                {/* Auditor PIN */}
-                <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-400">Auditor</span>
-                    <span className="text-[10px] text-slate-500">Default: 3333</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      maxLength={4}
-                      pattern="[0-9]*"
-                      disabled={!canManageRoles}
-                      value={rolePins.auditor}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setRolePins((p) => ({ ...p, auditor: val }));
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700/80 focus:border-purple-500 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-white tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickSwitchRole('auditor')}
-                    className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg text-[11px] font-semibold transition cursor-pointer border border-slate-700/50"
-                  >
-                    Test Auditor Switch
-                  </button>
-                </div>
-
-                {/* Master Supervisor PIN */}
-                <div className="bg-purple-950/40 border border-purple-800/40 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-purple-300 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-purple-400" />
-                      Master PIN
-                    </span>
-                    <span className="text-[10px] text-purple-400/80">Default: 1234</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      maxLength={4}
-                      pattern="[0-9]*"
-                      disabled={!canManageRoles}
-                      value={rolePins.master}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setRolePins((p) => ({ ...p, master: val }));
-                      }}
-                      className="w-full bg-slate-900 border border-purple-500/50 focus:border-purple-400 rounded-lg px-2.5 py-1.5 text-center font-mono text-sm font-bold text-purple-200 tracking-widest disabled:opacity-75 disabled:cursor-not-allowed"
-                    />
-                  </div>
-                  <div className="text-[10px] text-center text-purple-400/70 font-medium py-1">
-                    Universal Override PIN
-                  </div>
-                </div>
-              </div>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Team Members List (With Admin Role Assignment) */}
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                <div>
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <User className="w-4 h-4 text-emerald-400" />
-                    Workspace Team Members ({teamMembers.length})
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {canManageRoles
-                      ? 'As an Administrator, you can assign roles and invite collaborators.'
-                      : 'View collaborators registered on this workspace (Role assignment is Admin-only).'}
-                  </p>
-                </div>
-
-                {canManageRoles && (
-                  <button
-                    type="button"
-                    onClick={() => setShowInviteModal(true)}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-md shadow-emerald-600/20 self-start sm:self-auto"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    <span>Invite Team Member</span>
-                  </button>
-                )}
+          {/* Team Members List (With Admin Role Assignment) */}
+          <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <User className="w-4 h-4 text-emerald-400" />
+                  Workspace Team Members ({teamMembers.length})
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {canManageRoles
+                    ? 'As an Administrator, you can assign roles and manage access privileges.'
+                    : 'View collaborators registered on this workspace (Role assignment is Admin-only).'}
+                </p>
               </div>
 
-              {loadingTeam ? (
-                <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                  <span>Loading team members...</span>
-                </div>
-              ) : teamMembers.length === 0 ? (
-                <div className="py-6 text-center text-slate-500 text-xs">
-                  No other team members found. Click "Invite Team Member" to add one.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-400 font-semibold">
-                        <th className="pb-2.5">User</th>
-                        <th className="pb-2.5">Email</th>
-                        <th className="pb-2.5">Current Role</th>
-                        <th className="pb-2.5">Access PIN</th>
-                        <th className="pb-2.5">Role Change</th>
-                        <th className="pb-2.5 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60">
-                      {teamMembers.map((member) => {
-                        const mRole = (member.role as UserRole) || 'accountant';
-                        const mConfig = ROLE_CONFIG[mRole] || ROLE_CONFIG.accountant;
-                        const isSelf = member.id === profile?.id;
-                        const memberPin = member.pin || DEFAULT_ROLE_PINS[mRole] || '1234';
-                        return (
-                          <tr key={member.id} className="hover:bg-slate-800/30 transition">
-                            <td className="py-3 font-medium text-slate-200 flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[11px] font-bold text-emerald-400 shrink-0">
-                                {member.avatarUrl ? (
-                                  <img src={member.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                                ) : (
-                                  member.displayName?.[0]?.toUpperCase() || member.email?.[0]?.toUpperCase() || 'U'
-                                )}
-                              </div>
-                              <div>
-                                <div className="font-semibold text-white flex items-center gap-1.5">
-                                  <span>{member.displayName || 'User'}</span>
-                                  {isSelf && (
-                                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded">
-                                      YOU
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-[10px] text-slate-500 font-mono">ID #{member.id}</div>
-                              </div>
-                            </td>
-                            <td className="py-3 font-mono text-slate-400 text-[11px]">{member.email}</td>
-                            <td className="py-3">
-                              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${mConfig.bgBadge} ${mConfig.textBadge} ${mConfig.borderBadge}`}>
-                                {mConfig.title}
-                              </span>
-                            </td>
-                            <td className="py-3">
-                              <span className="inline-flex items-center gap-1 font-mono text-slate-300 bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[11px]">
-                                <KeyRound className="w-3 h-3 text-amber-400" />
-                                {memberPin}
-                              </span>
-                            </td>
-                            <td className="py-3">
-                              {canManageRoles ? (
-                                <select
-                                  value={mRole}
-                                  disabled={updatingMemberId === member.id}
-                                  onChange={(e) => handleUpdateMemberRole(member.id, e.target.value as UserRole)}
-                                  className="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-lg px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-emerald-500 cursor-pointer disabled:opacity-50"
-                                >
-                                  <option value="admin">Admin</option>
-                                  <option value="accountant">Senior Accountant</option>
-                                  <option value="billing_operator">Billing Operator</option>
-                                  <option value="auditor">Statutory Auditor</option>
-                                </select>
-                              ) : (
-                                <span className="text-[11px] text-slate-500 flex items-center gap-1">
-                                  <Lock className="w-3 h-3" /> Admin Managed
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {canEditUsers ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditMemberModal(member)}
-                                    title="Edit User Profile & Role"
-                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg transition cursor-pointer border border-slate-700/60"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5 text-blue-400" />
-                                  </button>
-                                ) : null}
-
-                                {canDeleteUsers ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!isSelf) {
-                                        setDeletingMember(member);
-                                        setDeleteMemberError(null);
-                                      }
-                                    }}
-                                    disabled={isSelf}
-                                    title={isSelf ? 'Cannot delete your own active session' : `Delete ${member.displayName || member.email}`}
-                                    className={`p-1.5 rounded-lg transition border ${
-                                      isSelf
-                                        ? 'bg-slate-900 text-slate-600 border-slate-800/80 cursor-not-allowed'
-                                        : 'bg-rose-950/30 hover:bg-rose-900/60 text-rose-400 hover:text-rose-300 border-rose-900/40 cursor-pointer'
-                                    }`}
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                ) : null}
-
-                                {!canEditUsers && !canDeleteUsers && (
-                                  <span className="text-[10px] text-slate-500 font-mono">-</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+              {canManageRoles && (
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(true)}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-md shadow-emerald-600/20 self-start sm:self-auto"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Invite Team Member</span>
+                </button>
               )}
             </div>
+
+            {loadingTeam ? (
+              <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                <span>Loading team members...</span>
+              </div>
+            ) : teamMembers.length === 0 ? (
+              <div className="py-6 text-center text-slate-500 text-xs">
+                No other team members found. Click "Invite Team Member" to add one.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 font-semibold">
+                      <th className="pb-2.5">User</th>
+                      <th className="pb-2.5">Email</th>
+                      <th className="pb-2.5">Current Role</th>
+                      <th className="pb-2.5">Role Change</th>
+                      <th className="pb-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {teamMembers.map((member) => {
+                      const mRole = (member.role as UserRole) || 'accountant';
+                      const mConfig = ROLE_CONFIG[mRole] || ROLE_CONFIG.accountant;
+                      const isSelf = member.id === profile?.id;
+                      return (
+                        <tr key={member.id} className="hover:bg-slate-800/30 transition">
+                          <td className="py-3 font-medium text-slate-200 flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[11px] font-bold text-emerald-400 shrink-0">
+                              {member.avatarUrl ? (
+                                <img src={member.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+                              ) : (
+                                member.displayName?.[0]?.toUpperCase() || member.email?.[0]?.toUpperCase() || 'U'
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-white flex items-center gap-1.5">
+                                <span>{member.displayName || 'User'}</span>
+                                {isSelf && (
+                                  <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded">
+                                    YOU
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono">ID #{member.id}</div>
+                            </div>
+                          </td>
+                          <td className="py-3 font-mono text-slate-400 text-[11px]">{member.email}</td>
+                          <td className="py-3">
+                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${mConfig.bgBadge} ${mConfig.textBadge} ${mConfig.borderBadge}`}>
+                              {mConfig.title}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            {canManageRoles ? (
+                              <select
+                                value={mRole}
+                                disabled={updatingMemberId === member.id}
+                                onChange={(e) => handleUpdateMemberRole(member.id, e.target.value as UserRole)}
+                                className="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-lg px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-emerald-500 cursor-pointer disabled:opacity-50"
+                              >
+                                <option value="admin">Admin</option>
+                                <option value="accountant">Senior Accountant</option>
+                                <option value="billing_operator">Billing Operator</option>
+                                <option value="auditor">Statutory Auditor</option>
+                              </select>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                                <Lock className="w-3 h-3" /> Admin Managed
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {canEditUsers ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openEditMemberModal(member)}
+                                  title="Edit User Profile & Role"
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg transition cursor-pointer border border-slate-700/60"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-blue-400" />
+                                </button>
+                              ) : null}
+
+                              {canDeleteUsers ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isSelf) {
+                                      setDeletingMember(member);
+                                      setDeleteMemberError(null);
+                                    }
+                                  }}
+                                  disabled={isSelf}
+                                  title={isSelf ? 'Cannot delete your own active session' : `Delete ${member.displayName || member.email}`}
+                                  className={`p-1.5 rounded-lg transition border ${
+                                    isSelf
+                                      ? 'bg-slate-900 text-slate-600 border-slate-800/80 cursor-not-allowed'
+                                      : 'bg-rose-950/30 hover:bg-rose-900/60 text-rose-400 hover:text-rose-300 border-rose-900/40 cursor-pointer'
+                                  }`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : null}
+
+                              {!canEditUsers && !canDeleteUsers && (
+                                <span className="text-[10px] text-slate-500 font-mono">-</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
             {/* Granular Permission Matrix Table */}
             <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
@@ -3080,13 +2843,38 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
               </div>
 
               <div>
+                <label className="block font-medium text-slate-300 mb-1">Password *</label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-4 h-4 text-emerald-400" />
+                  </span>
+                  <input
+                    type={showInvitePassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={invitePassword}
+                    onChange={(e) => setInvitePassword(e.target.value)}
+                    placeholder="Set member password (min 6 characters)"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-10 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowInvitePassword(!showInvitePassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
+                  >
+                    {showInvitePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">New team member will use this password and email to sign in.</p>
+              </div>
+
+              <div>
                 <label className="block font-medium text-slate-300 mb-1">Assigned Role</label>
                 <select
                   value={inviteRole}
                   onChange={(e) => {
                     const newRole = e.target.value as UserRole;
                     setInviteRole(newRole);
-                    setInvitePin(DEFAULT_ROLE_PINS[newRole] || '1234');
                   }}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                 >
@@ -3095,34 +2883,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                   <option value="billing_operator">Billing Operator (Invoices & Receipts)</option>
                   <option value="auditor">Statutory Auditor (Read-Only Books)</option>
                 </select>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-medium text-slate-300">4-Digit Security PIN / Password *</label>
-                  <button
-                    type="button"
-                    onClick={() => setInvitePin(DEFAULT_ROLE_PINS[inviteRole] || '1234')}
-                    className="text-[10px] text-emerald-400 hover:underline cursor-pointer"
-                  >
-                    Use Role Default ({DEFAULT_ROLE_PINS[inviteRole] || '1234'})
-                  </button>
-                </div>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                    <KeyRound className="w-4 h-4 text-amber-400" />
-                  </span>
-                  <input
-                    type="text"
-                    required
-                    maxLength={4}
-                    value={invitePin}
-                    onChange={(e) => setInvitePin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                    placeholder="1234"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 font-mono tracking-widest text-sm"
-                  />
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1">User will enter this 4-digit PIN to authenticate on the login screen.</p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
@@ -3224,31 +2984,28 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-medium text-slate-300">4-Digit Access PIN / Password *</label>
-                  <button
-                    type="button"
-                    onClick={() => setEditMemberPin(DEFAULT_ROLE_PINS[editMemberRole] || '1234')}
-                    className="text-[10px] text-blue-400 hover:underline cursor-pointer"
-                  >
-                    Reset to Role Default ({DEFAULT_ROLE_PINS[editMemberRole] || '1234'})
-                  </button>
-                </div>
+                <label className="block font-medium text-slate-300 mb-1">Update Login Password (Optional)</label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                    <KeyRound className="w-4 h-4 text-amber-400" />
+                    <Lock className="w-4 h-4 text-blue-400" />
                   </span>
                   <input
-                    type="text"
-                    required
-                    maxLength={4}
-                    value={editMemberPin}
-                    onChange={(e) => setEditMemberPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                    placeholder="1234"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-white focus:outline-none focus:border-blue-500 font-mono tracking-widest text-sm"
+                    type={showEditMemberPassword ? 'text' : 'password'}
+                    minLength={6}
+                    value={editMemberPassword}
+                    onChange={(e) => setEditMemberPassword(e.target.value)}
+                    placeholder="Leave blank to keep current password"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-10 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono text-xs"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditMemberPassword(!showEditMemberPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
+                  >
+                    {showEditMemberPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-1">Allows the user to authenticate into their account using this 4-digit PIN.</p>
+                <p className="text-[10px] text-slate-500 mt-1">Set a new password (min 6 characters) to update user login access.</p>
               </div>
 
               <div>
@@ -3374,20 +3131,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           </div>
         </div>
       )}
-
-      {/* Role Switch Security PIN Modal */}
-      <RoleSwitchPinModal
-        isOpen={Boolean(pinModalTargetRole)}
-        onClose={() => setPinModalTargetRole(null)}
-        targetRole={pinModalTargetRole}
-        currentRole={currentUserRole}
-        onSuccess={async () => {
-          await refreshProfile();
-          setUserSaveSuccess(true);
-          setTimeout(() => setUserSaveSuccess(false), 3000);
-        }}
-        getToken={getToken}
-      />
     </div>
   );
 };

@@ -1,6 +1,6 @@
 // src/db/users.ts
 import { db, COLLECTIONS, getNextSequenceId } from './index.ts';
-import { DEFAULT_ROLE_PINS, RolePinConfig, ROLE_CONFIG } from '../lib/permissions.ts';
+import { ROLE_CONFIG } from '../lib/permissions.ts';
 
 export type UserRole = 'admin' | 'accountant' | 'auditor' | 'billing_operator';
 
@@ -10,7 +10,7 @@ export interface DbUser {
   email: string;
   displayName: string;
   role: UserRole;
-  pin?: string | null;
+  password?: string | null;
   avatarUrl?: string | null;
   createdAt: string;
 }
@@ -24,9 +24,15 @@ export async function getOrCreateUser(
   avatarUrl?: string | null,
   initialRole?: UserRole
 ): Promise<DbUser> {
+  const normalizedEmail = email.toLowerCase().trim();
+  const isAdminEmail = normalizedEmail === 'nawarkuldeep@gmail.com';
+
   // Check memory cache first (valid for 5 minutes)
   const cached = userMemoryCache.get(uid);
   if (cached && cached.expiresAt > Date.now()) {
+    if (isAdminEmail && cached.user.role !== 'admin') {
+      cached.user.role = 'admin';
+    }
     return cached.user;
   }
 
@@ -37,33 +43,43 @@ export async function getOrCreateUser(
     if (!querySnapshot.empty) {
       const doc = querySnapshot.docs[0];
       const data = doc.data() as DbUser;
+      const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || data.role || 'accountant');
+      
       const userObj: DbUser = {
         id: typeof data.id === 'number' ? data.id : parseInt(doc.id) || 1,
         uid: data.uid || uid,
-        email: data.email || email,
-        displayName: data.displayName || displayName || email.split('@')[0],
-        role: data.role || initialRole || 'accountant',
-        pin: data.pin || null,
+        email: data.email || normalizedEmail,
+        displayName: data.displayName || displayName || normalizedEmail.split('@')[0],
+        role: targetRole,
         avatarUrl: data.avatarUrl || avatarUrl || null,
         createdAt: data.createdAt || new Date().toISOString(),
       };
+
+      if (data.role !== targetRole) {
+        await doc.ref.update({ role: targetRole });
+      }
+
       userMemoryCache.set(uid, { user: userObj, expiresAt: Date.now() + 5 * 60 * 1000 });
       return userObj;
     }
 
     // 2. Also check if user exists by email (to merge if needed)
-    const emailSnapshot = await usersRef.where('email', '==', email.toLowerCase().trim()).limit(1).get();
+    const emailSnapshot = await usersRef.where('email', '==', normalizedEmail).limit(1).get();
     if (!emailSnapshot.empty) {
       const doc = emailSnapshot.docs[0];
       const data = doc.data() as DbUser;
+      const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || data.role || 'accountant');
+      
       const updatedUser: DbUser = {
         ...data,
         uid,
+        role: targetRole,
         displayName: displayName || data.displayName,
         avatarUrl: avatarUrl || data.avatarUrl,
       };
       await doc.ref.update({
         uid,
+        role: targetRole,
         displayName: updatedUser.displayName,
         avatarUrl: updatedUser.avatarUrl,
       });
@@ -73,14 +89,14 @@ export async function getOrCreateUser(
 
     // 3. New user - allocate sequential ID and save to Firestore
     const nextId = await getNextSequenceId('user_id');
+    const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || 'accountant');
     const newUser: DbUser = {
       id: nextId,
       uid,
-      email: email.toLowerCase().trim(),
-      displayName: displayName || email.split('@')[0],
+      email: normalizedEmail,
+      displayName: displayName || (isAdminEmail ? 'Kuldeep Siraswar (Admin)' : normalizedEmail.split('@')[0]),
       avatarUrl: avatarUrl || null,
-      role: initialRole || (email === 'nawarkuldeep@gmail.com' ? 'admin' : 'accountant'),
-      pin: initialRole === 'admin' || email === 'nawarkuldeep@gmail.com' ? '9999' : '1234',
+      role: targetRole,
       createdAt: new Date().toISOString(),
     };
 
@@ -90,14 +106,14 @@ export async function getOrCreateUser(
   } catch (error) {
     console.error('getOrCreateUser Firestore error:', error);
     // In-memory fallback if Firestore cold-start
+    const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || 'accountant');
     const fallbackUser: DbUser = {
       id: 1,
       uid,
-      email,
-      displayName: displayName || email.split('@')[0],
+      email: normalizedEmail,
+      displayName: displayName || (isAdminEmail ? 'Kuldeep Siraswar (Admin)' : normalizedEmail.split('@')[0]),
       avatarUrl: avatarUrl || null,
-      role: initialRole || 'admin',
-      pin: '9999',
+      role: targetRole,
       createdAt: new Date().toISOString(),
     };
     return fallbackUser;
@@ -111,7 +127,7 @@ export async function updateUserProfile(
     role?: UserRole;
     avatarUrl?: string;
     email?: string;
-    pin?: string;
+    password?: string;
   }
 ) {
   const usersRef = db.collection(COLLECTIONS.USERS);
@@ -123,7 +139,7 @@ export async function updateUserProfile(
   if (data.role !== undefined) updatePayload.role = data.role;
   if (data.avatarUrl !== undefined) updatePayload.avatarUrl = data.avatarUrl;
   if (data.email !== undefined) updatePayload.email = data.email.toLowerCase().trim();
-  if (data.pin !== undefined) updatePayload.pin = data.pin.trim();
+  if (data.password !== undefined) updatePayload.password = data.password.trim();
 
   let updatedUser: DbUser;
 
@@ -173,7 +189,6 @@ export async function deleteUser(userId: number, reassignToUserId?: number) {
         email: data.email || '',
         displayName: data.displayName || 'User',
         role: data.role || 'accountant',
-        pin: data.pin || null,
         avatarUrl: data.avatarUrl || null,
         createdAt: data.createdAt || new Date().toISOString(),
       };
@@ -227,12 +242,14 @@ export async function getAllUsers(): Promise<DbUser[]> {
   const snapshot = await usersRef.get();
   let all: DbUser[] = snapshot.docs.map((doc) => {
     const data = doc.data();
+    const rawEmail = (data.email || '').toLowerCase().trim();
+    const isAdminEmail = rawEmail === 'nawarkuldeep@gmail.com';
     return {
       id: typeof data.id === 'number' ? data.id : parseInt(doc.id) || 1,
       uid: data.uid || doc.id,
       email: data.email || '',
-      displayName: data.displayName || data.email?.split('@')[0] || 'User',
-      role: data.role || 'accountant',
+      displayName: data.displayName || data.email?.split('@')[0] || (isAdminEmail ? 'Kuldeep Siraswar (Admin)' : 'User'),
+      role: isAdminEmail ? 'admin' : (data.role || 'accountant'),
       pin: data.pin || null,
       avatarUrl: data.avatarUrl || null,
       createdAt: data.createdAt || new Date().toISOString(),
@@ -241,65 +258,6 @@ export async function getAllUsers(): Promise<DbUser[]> {
 
   // Filter out any corrupted/empty records
   all = all.filter((u) => u.email && u.email.includes('@'));
-
-  // Bootstrap initial team ONLY IF the database is completely empty
-  if (all.length === 0) {
-    console.log('Bootstrapping initial workspace team members in Firestore...');
-    const defaultTeamRoles = [
-      {
-        uid: 'admin-workspace-user',
-        email: 'nawarkuldeep@gmail.com',
-        displayName: 'Kuldeep Siraswar (Admin)',
-        role: 'admin' as UserRole,
-        pin: '9999',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Admin',
-      },
-      {
-        uid: 'accountant-ca-kuldeep',
-        email: 'ca.kuldeep@apexaccounting.com',
-        displayName: 'CA Kuldeep Nawar',
-        role: 'accountant' as UserRole,
-        pin: '2468',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=CA%20Kuldeep%20Nawar',
-      },
-      {
-        uid: 'billing-operator-demo',
-        email: 'billing.rohit@apexaccounting.com',
-        displayName: 'Rohit Sharma',
-        role: 'billing_operator' as UserRole,
-        pin: '1357',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Rohit%20Sharma',
-      },
-      {
-        uid: 'auditor-neha-demo',
-        email: 'auditor.neha@apexaccounting.com',
-        displayName: 'Neha Gupta',
-        role: 'auditor' as UserRole,
-        pin: '8080',
-        avatarUrl: 'https://api.dicebear.com/7.x/initials/svg?seed=Neha%20Gupta',
-      },
-    ];
-
-    for (const member of defaultTeamRoles) {
-      try {
-        const nextId = await getNextSequenceId('user_id');
-        const newMember: DbUser = {
-          id: nextId,
-          uid: member.uid,
-          email: member.email,
-          displayName: member.displayName,
-          role: member.role,
-          pin: member.pin,
-          avatarUrl: member.avatarUrl,
-          createdAt: new Date().toISOString(),
-        };
-        await usersRef.doc(String(nextId)).set(newMember);
-        all.push(newMember);
-      } catch (err) {
-        console.error(`Failed to bootstrap team member in Firestore:`, err);
-      }
-    }
-  }
 
   // Deduplicate by user ID
   const uniqueUsersMap = new Map<number, DbUser>();
@@ -330,7 +288,7 @@ export async function updateUserRole(userId: number, role: UserRole) {
   return await updateUserProfile(userId, { role });
 }
 
-export async function createTeamMember(data: { email: string; displayName: string; role: UserRole; pin?: string }) {
+export async function createTeamMember(data: { email: string; displayName: string; role: UserRole; password?: string }) {
   const dummyUid = `member-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const nextId = await getNextSequenceId('user_id');
   const newMember: DbUser = {
@@ -339,7 +297,7 @@ export async function createTeamMember(data: { email: string; displayName: strin
     email: data.email.toLowerCase().trim(),
     displayName: data.displayName.trim(),
     role: data.role,
-    pin: data.pin ? data.pin.trim() : '1234',
+    password: data.password?.trim() || null,
     avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.displayName)}`,
     createdAt: new Date().toISOString(),
   };
@@ -347,93 +305,5 @@ export async function createTeamMember(data: { email: string; displayName: strin
   await db.collection(COLLECTIONS.USERS).doc(String(nextId)).set(newMember);
   userMemoryCache.clear();
   return newMember;
-}
-
-const LOCAL_STORAGE_PINS_KEY = 'workspace_role_pins_cache';
-
-export async function getWorkspaceRolePins(_userId?: number): Promise<RolePinConfig> {
-  try {
-    const docSnap = await db.collection(COLLECTIONS.COMPANY_PROFILES).doc('role_pins_config').get();
-    if (docSnap.exists) {
-      const data = docSnap.data();
-      const pins: RolePinConfig = {
-        admin: data.admin || DEFAULT_ROLE_PINS.admin,
-        accountant: data.accountant || DEFAULT_ROLE_PINS.accountant,
-        billing_operator: data.billing_operator || DEFAULT_ROLE_PINS.billing_operator,
-        auditor: data.auditor || DEFAULT_ROLE_PINS.auditor,
-        master: data.master || DEFAULT_ROLE_PINS.master,
-      };
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(LOCAL_STORAGE_PINS_KEY, JSON.stringify(pins));
-      }
-      return pins;
-    }
-  } catch (err) {
-    console.warn('Could not fetch role pins from Firestore, checking localStorage:', err);
-  }
-
-  if (typeof localStorage !== 'undefined') {
-    const cached = localStorage.getItem(LOCAL_STORAGE_PINS_KEY);
-    if (cached) {
-      try {
-        return { ...DEFAULT_ROLE_PINS, ...JSON.parse(cached) };
-      } catch {
-        // use default
-      }
-    }
-  }
-
-  return { ...DEFAULT_ROLE_PINS };
-}
-
-export async function saveWorkspaceRolePins(pins: Partial<RolePinConfig>): Promise<RolePinConfig> {
-  const current = await getWorkspaceRolePins();
-  const updated: RolePinConfig = {
-    admin: (pins.admin && String(pins.admin).trim()) || current.admin,
-    accountant: (pins.accountant && String(pins.accountant).trim()) || current.accountant,
-    billing_operator: (pins.billing_operator && String(pins.billing_operator).trim()) || current.billing_operator,
-    auditor: (pins.auditor && String(pins.auditor).trim()) || current.auditor,
-    master: (pins.master && String(pins.master).trim()) || current.master,
-  };
-
-  try {
-    await db.collection(COLLECTIONS.COMPANY_PROFILES).doc('role_pins_config').set(updated);
-  } catch (err) {
-    console.warn('Could not save role pins to Firestore doc, saving locally:', err);
-  }
-
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(LOCAL_STORAGE_PINS_KEY, JSON.stringify(updated));
-  }
-
-  return updated;
-}
-
-export async function verifyAndSwitchRole(userId: number, role: UserRole, enteredPin: string) {
-  const validRoles: UserRole[] = ['admin', 'accountant', 'auditor', 'billing_operator'];
-  if (!validRoles.includes(role)) {
-    throw new Error(`Invalid role. Must be one of: ${validRoles.join(', ')}`);
-  }
-
-  const roleTitle = ROLE_CONFIG[role]?.title || role;
-  const configuredPins = await getWorkspaceRolePins(userId);
-  const expectedRolePin = configuredPins[role];
-  const expectedMasterPin = configuredPins.master;
-
-  const pin = String(enteredPin || '').trim();
-  if (!pin) {
-    const err: any = new Error(`Security PIN required to switch to ${roleTitle}. Default PIN is ${expectedRolePin} (or Master PIN ${expectedMasterPin}).`);
-    err.expectedPin = expectedRolePin;
-    throw err;
-  }
-
-  if (pin !== expectedRolePin && pin !== expectedMasterPin) {
-    const err: any = new Error(`Incorrect Security PIN for ${roleTitle}. (Hint: Default PIN is ${expectedRolePin} or Master PIN ${expectedMasterPin})`);
-    err.expectedPin = expectedRolePin;
-    throw err;
-  }
-
-  const updated = await updateUserRole(userId, role);
-  return updated;
 }
 
