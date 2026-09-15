@@ -18,10 +18,11 @@ import {
   UserCheck,
   Dices,
   Sparkles,
+  Crown,
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_CONFIG, UserRole } from '../lib/permissions';
+import { ROLE_CONFIG, UserRole, isSuperAdmin } from '../lib/permissions';
 import { updateUserProfile } from '../db/users';
 
 interface TopHeaderProps {
@@ -33,6 +34,8 @@ interface TopHeaderProps {
   dataLoading: boolean;
   user: any;
   profile: any;
+  activeTab?: string;
+  onNavigateToSuperAdmin?: () => void;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -44,6 +47,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   dataLoading,
   user,
   profile,
+  activeTab,
+  onNavigateToSuperAdmin,
 }) => {
   const { logout, refreshProfile } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -133,7 +138,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         >
           <Menu className="w-5 h-5 text-emerald-400" />
           <span className="font-bold text-xs text-white truncate max-w-[160px] sm:max-w-xs">
-            {company?.businessName || 'TallyGST ERP'}
+            {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'TallyGST ERP')}
           </span>
         </button>
 
@@ -150,24 +155,51 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               <PanelLeftOpen className="w-4 h-4" />
             </button>
             <span className="font-bold text-xs text-white truncate">
-              {company?.businessName || 'TallyGST ERP'}
+              {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'TallyGST ERP')}
             </span>
-            {company?.gstin && (
-              <span className="text-[11px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                GSTIN: {company.gstin}
+            {activeTab === 'super_admin' ? (
+              <span className="text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                Multi-Tenant Master
               </span>
+            ) : (
+              company?.gstin && (
+                <span className="text-[11px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                  GSTIN: {company.gstin}
+                </span>
+              )
             )}
           </div>
         )}
       </div>
 
-      {/* Right side: Place of supply, Cloud sync status, Manual Refresh, User info */}
+      {/* Right side: Place of supply / Master control, Cloud sync status, Manual Refresh, User info */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Place of supply badge */}
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950 border border-slate-800 text-[11px] text-slate-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span>State: {company?.stateName || 'Maharashtra'} ({company?.stateCode || '27'})</span>
-        </div>
+        {/* If Super Admin is viewing a workspace, offer an instant Return to Super Admin button */}
+        {onNavigateToSuperAdmin && activeTab !== 'super_admin' && (isSuperAdmin(user, profile) || profile?.role === 'super_admin') && (
+          <button
+            type="button"
+            onClick={onNavigateToSuperAdmin}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition cursor-pointer"
+            title="Return to Super Administrator Console"
+          >
+            <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Super Admin Console</span>
+            <span className="sm:hidden">Super Admin</span>
+          </button>
+        )}
+
+        {/* Place of supply / Master Mode badge */}
+        {activeTab === 'super_admin' ? (
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300 font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span>Multi-Tenant Governance</span>
+          </div>
+        ) : (
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950 border border-slate-800 text-[11px] text-slate-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span>State: {company?.stateName || 'Maharashtra'} ({company?.stateCode || '27'})</span>
+          </div>
+        )}
 
         {/* Fullscreen Button */}
         <button
@@ -294,7 +326,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               {/* Security & Access Info */}
               <div className="px-1 py-0.5 text-[11px] text-slate-400 flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>User roles and permissions are managed exclusively by Workspace Administrators.</span>
+                <span>Multi-tenant governance and master controls enabled.</span>
               </div>
 
               {/* Logout Option */}

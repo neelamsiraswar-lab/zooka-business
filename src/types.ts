@@ -1,14 +1,59 @@
-export interface UserProfile {
-  id: number;
-  uid: string;
-  email: string;
-  displayName: string;
-  role: 'admin' | 'accountant' | 'auditor' | 'billing_operator';
-  avatarUrl?: string;
+export type SubscriptionPlanTier = 'starter' | 'professional' | 'enterprise' | string;
+export type SubscriptionBillingCycle = 'monthly' | 'annual';
+export type SubscriptionStatus = 'active' | 'trial' | 'past_due' | 'suspended' | 'cancelled' | 'expired';
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  tagline: string;
+  badge?: string;
+  popular?: boolean;
+  isBuiltIn?: boolean;
+  status: 'active' | 'archived' | 'draft';
+  monthlyPrice: number;
+  annualPrice: number;
+  monthlyEquivalentAnnual: number;
+  maxUsers: number; // -1 for unlimited
+  maxInvoicesPerMonth: number; // -1 for unlimited
+  maxLedgers: number; // -1 for unlimited
+  maxBranches: number; // -1 for unlimited
+  features: string[];
+  color: {
+    badge: string;
+    border: string;
+    gradient: string;
+    text: string;
+    accent: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export interface CompanyProfile {
-  id?: number;
+export interface SubscriptionInvoice {
+  id: string;
+  workspaceId: string;
+  invoiceNumber: string;
+  date: string;
+  plan: SubscriptionPlanTier;
+  billingCycle: SubscriptionBillingCycle;
+  baseAmount: number;
+  gstRate: number; // usually 18%
+  taxAmount: number;
+  totalAmount: number;
+  status: 'paid' | 'pending' | 'failed' | 'refunded';
+  paymentMethod: 'UPI' | 'Razorpay' | 'Bank Transfer' | 'Card' | 'Admin Grant';
+  transactionReference?: string;
+  periodStart: string;
+  periodEnd: string;
+  notes?: string;
+  pdfUrl?: string;
+}
+
+export interface Workspace {
+  id: string;
+  numericId?: number;
+  name: string;
+  slug?: string;
   businessName: string;
   tradeName?: string;
   gstin: string;
@@ -17,6 +62,61 @@ export interface CompanyProfile {
   address: string;
   phone?: string;
   email?: string;
+  bankName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  upiId?: string;
+  ownerEmail: string;
+  ownerName?: string;
+  plan: SubscriptionPlanTier;
+  status: 'active' | 'suspended' | 'trial';
+  isDefault?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  invoicePrefix?: string;
+  purchasePrefix?: string;
+  receiptPrefix?: string;
+  membersCount?: number;
+  invoicesCount?: number;
+  // Subscription fields
+  billingCycle?: SubscriptionBillingCycle;
+  subscriptionStatus?: SubscriptionStatus;
+  trialEndsAt?: string;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  cancelAtPeriodEnd?: boolean;
+  autoRenew?: boolean;
+  maxUsers?: number;
+  maxInvoicesPerMonth?: number;
+  subscriptionInvoices?: SubscriptionInvoice[];
+}
+
+export interface UserProfile {
+  id: number;
+  uid: string;
+  email: string;
+  displayName: string;
+  role: 'super_admin' | 'admin' | 'accountant' | 'auditor' | 'billing_operator';
+  avatarUrl?: string;
+}
+
+export interface CompanyProfile {
+  id?: number;
+  workspaceId?: string;
+  businessName: string;
+  tradeName?: string;
+  gstin: string;
+  stateCode: string;
+  stateName: string;
+  address: string;
+  phone?: string;
+  email?: string;
+  panNumber?: string;
+  compositeScheme?: boolean;
+  msmeNumber?: string;
+  cinNumber?: string;
+  website?: string;
+  financialYear?: string;
   bankName?: string;
   accountNumber?: string;
   ifscCode?: string;
@@ -349,3 +449,12 @@ export interface BankStatement {
   status: 'active' | 'archived';
   createdAt: string;
 }
+
+export type SettingsTab =
+  | 'general'
+  | 'numbering'
+  | 'design'
+  | 'banking'
+  | 'terms'
+  | 'roles'
+  | 'subscription';

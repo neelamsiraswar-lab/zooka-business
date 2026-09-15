@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CompanyProfile, Invoice } from '../types';
+import { CompanyProfile, Invoice, SettingsTab } from '../types';
 import { useAuth } from '../context/AuthContext.tsx';
 import {
   Building2,
@@ -44,9 +44,18 @@ import {
   Pencil,
   UserX,
   UserCog,
+  Server,
+  Cpu,
+  Globe,
+  Activity,
+  CheckCircle2,
+  Zap,
+  Radio,
+  ExternalLink,
 } from 'lucide-react';
 import { InvoiceTemplateRenderer, COLOR_THEMES } from './InvoiceTemplateRenderer.tsx';
 import { LocalImageUploader } from './LocalImageUploader.tsx';
+import { WorkspaceSubscriptionView } from './WorkspaceSubscriptionView.tsx';
 import {
   hasPermission,
   isReadOnlyRole,
@@ -72,6 +81,9 @@ interface CompanySettingsViewProps {
   onSaveCompany: (data: any) => Promise<any>;
   onClearMasterLedger?: () => void;
   loading: boolean;
+  initialSettingsTab?: SettingsTab;
+  onSettingsTabChange?: (tab: SettingsTab) => void;
+  workspace?: any;
 }
 
 export const ALL_INDIAN_STATES = [
@@ -115,17 +127,31 @@ export const ALL_INDIAN_STATES = [
   { code: '97', name: 'Other Territory' },
 ];
 
-type SettingsTab = 'general' | 'numbering' | 'design' | 'banking' | 'terms' | 'roles';
-
 export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   company,
   onSaveCompany,
   onClearMasterLedger,
   loading,
+  initialSettingsTab,
+  onSettingsTabChange,
+  workspace,
 }) => {
   const { getToken, profile, refreshProfile, signInAsUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialSettingsTab || 'general');
   const tabsScrollRef = useRef<HTMLDivElement>(null);
+
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    if (onSettingsTabChange) {
+      onSettingsTabChange(tab);
+    }
+  };
+
+  useEffect(() => {
+    if (initialSettingsTab) {
+      setActiveTab(initialSettingsTab);
+    }
+  }, [initialSettingsTab]);
 
   const currentUserRole: UserRole = (profile?.role as UserRole) || 'accountant';
   const canClearLedger = hasPermission(currentUserRole, 'settings:clear_ledger');
@@ -474,6 +500,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [panNumber, setPanNumber] = useState('');
+  const [compositeScheme, setCompositeScheme] = useState(false);
+  const [msmeNumber, setMsmeNumber] = useState('');
+  const [cinNumber, setCinNumber] = useState('');
+  const [website, setWebsite] = useState('');
+  const [financialYear, setFinancialYear] = useState('2026-27');
 
   // Tab 2: Invoice Serial Numbering & Duplicity Control
   const [invoiceNumberingMode, setInvoiceNumberingMode] = useState<'automatic' | 'manual'>('automatic');
@@ -538,6 +570,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     setAddress(target.address || '');
     setPhone(target.phone || '');
     setEmail(target.email || '');
+    setPanNumber(target.panNumber || (target.gstin && target.gstin.length >= 12 ? target.gstin.slice(2, 12) : ''));
+    setCompositeScheme(Boolean(target.compositeScheme));
+    setMsmeNumber(target.msmeNumber || '');
+    setCinNumber(target.cinNumber || '');
+    setWebsite(target.website || '');
+    setFinancialYear(target.financialYear || '2026-27');
 
     setInvoiceNumberingMode(target.invoiceNumberingMode || 'automatic');
     setInvoicePrefix(target.invoicePrefix !== undefined ? target.invoicePrefix : 'INV/2026-27/');
@@ -643,6 +681,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         upiId: upiId.trim() || company?.upiId || '',
         defaultTerms: defaultTerms.trim() || company?.defaultTerms || '',
         defaultNotes: defaultNotes.trim() || company?.defaultNotes || '',
+        panNumber: panNumber.trim().toUpperCase() || company?.panNumber || '',
+        compositeScheme: compositeScheme ?? company?.compositeScheme ?? false,
+        msmeNumber: msmeNumber.trim() || company?.msmeNumber || '',
+        cinNumber: cinNumber.trim().toUpperCase() || company?.cinNumber || '',
+        website: website.trim() || company?.website || '',
+        financialYear: financialYear.trim() || company?.financialYear || '2026-27',
       };
 
       await onSaveCompany(payload);
@@ -701,6 +745,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         upiId: upiId.trim() || company?.upiId || '',
         defaultTerms: defaultTerms.trim() || company?.defaultTerms || '',
         defaultNotes: defaultNotes.trim() || company?.defaultNotes || '',
+        panNumber: panNumber.trim().toUpperCase() || company?.panNumber || '',
+        compositeScheme: compositeScheme ?? company?.compositeScheme ?? false,
+        msmeNumber: msmeNumber.trim() || company?.msmeNumber || '',
+        cinNumber: cinNumber.trim().toUpperCase() || company?.cinNumber || '',
+        website: website.trim() || company?.website || '',
+        financialYear: financialYear.trim() || company?.financialYear || '2026-27',
       };
 
       await onSaveCompany(payload);
@@ -755,6 +805,10 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       if (match) {
         setStateCode(detectedCode);
       }
+    }
+
+    if (upper.length >= 12 && (!panNumber || panNumber === gstin.slice(2, 12))) {
+      setPanNumber(upper.slice(2, 12));
     }
   };
 
@@ -866,6 +920,14 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         upiId: upiId.trim(),
         defaultTerms: defaultTerms.trim(),
         defaultNotes: defaultNotes.trim(),
+
+        // Additional Statutory & Profile details
+        panNumber: panNumber.trim().toUpperCase(),
+        compositeScheme,
+        msmeNumber: msmeNumber.trim(),
+        cinNumber: cinNumber.trim().toUpperCase(),
+        website: website.trim(),
+        financialYear: financialYear.trim(),
       });
 
       isDirtyRef.current = false;
@@ -887,7 +949,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   }> = [
     {
       id: 'general',
-      label: 'GST & Legal Profile',
+      label: 'Company Profile & Details',
       icon: Building2,
     },
     {
@@ -916,6 +978,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       label: 'Team & Security Roles',
       icon: Shield,
       badge: 'RBAC',
+    },
+    {
+      id: 'subscription',
+      label: 'Subscription & Plan',
+      icon: Sparkles,
+      badge: 'PRO',
     },
   ];
 
@@ -968,7 +1036,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`snap-start flex-shrink-0 px-4 py-2 rounded-full transition flex items-center gap-2 text-xs font-semibold cursor-pointer select-none whitespace-nowrap ${
                   isActive
                     ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 border border-emerald-400'
@@ -1011,137 +1079,297 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
 
       {activeTab !== 'roles' ? (
         <form onSubmit={handleSubmit} className="space-y-6 text-xs">
-          {/* TAB 1: GST & Legal Profile */}
+          {/* TAB 1: Company Profile & Legal Registration */}
           {activeTab === 'general' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4 animate-fade-in">
-              <div className="border-b border-slate-800 pb-3">
-                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Legal Business Registration & Jurisdiction</span>
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  These legal entity details will be printed on all Tax Invoices, Delivery Challans, and GSTR summaries.
-                </p>
-              </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-medium text-slate-400 mb-1">
-                  Legal Business Name <span className="text-rose-400">*</span> (As per GST Certificate)
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={businessName}
-                  onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="e.g. Apex Industrial Solutions Ltd"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-400 mb-1">Trade Name / Brand (Optional)</label>
-                <input
-                  type="text"
-                  value={tradeName}
-                  onChange={(e) => setTradeName(e.target.value)}
-                  placeholder="e.g. Apex Tech"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-medium text-slate-400">
-                    15-Digit GSTIN <span className="text-rose-400">*</span>
-                  </label>
-                  {selectedStateObj && (
-                    <span className="text-[10px] text-emerald-400 font-mono">
-                      State Code: {selectedStateObj.code} ({selectedStateObj.name})
-                    </span>
-                  )}
+            <div className="space-y-5 animate-fade-in">
+              {/* Entity Overview Banner */}
+              <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-inner">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold text-white tracking-tight">
+                        {businessName || 'Business Name'}
+                      </h3>
+                      {tradeName && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                          Trade: {tradeName}
+                        </span>
+                      )}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold uppercase">
+                        {compositeScheme ? 'Composition Scheme' : 'Regular Taxpayer'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-3 flex-wrap font-mono">
+                      <span>GSTIN: {gstin || 'Unregistered'}</span>
+                      <span>•</span>
+                      <span>PAN: {panNumber || (gstin.length >= 12 ? gstin.slice(2, 12) : 'N/A')}</span>
+                      <span>•</span>
+                      <span>State: {selectedStateObj ? `${selectedStateObj.code} - ${selectedStateObj.name}` : 'Maharashtra (27)'}</span>
+                    </p>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  required
-                  maxLength={15}
-                  value={gstin}
-                  onChange={(e) => handleGstinChange(e.target.value)}
-                  placeholder="08IRRPZ8566K1ZD or 27AAECB9382M1ZR"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  First 2 digits automatically configure your Place of Supply state jurisdiction.
-                </span>
+
+                <div className="flex items-center gap-2 self-start sm:self-center">
+                  <button
+                    type="submit"
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-450 text-slate-950 font-semibold text-xs flex items-center gap-1.5 shadow-sm transition"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Details</span>
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label className="block font-medium text-slate-400 mb-1">
-                  Registered State Jurisdiction (Place of Supply) <span className="text-rose-400">*</span>
-                </label>
-                <select
-                  value={stateCode}
-                  onChange={(e) => setStateCode(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                >
-                  {ALL_INDIAN_STATES.map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.code} - {s.name}
-                    </option>
-                  ))}
-                </select>
+              {/* Main Legal Form */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+                <div className="border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Legal Business Registration & Statutory Identity</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    These legal entity details will be printed on all Tax Invoices, Delivery Challans, and GSTR statutory filings.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1">
+                      Legal Business Name <span className="text-rose-400">*</span> (As per GST Certificate)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={businessName}
+                      onChange={(e) => setBusinessName(e.target.value)}
+                      placeholder="e.g. Apex Industrial Solutions Ltd"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1">Trade Name / Brand (Optional)</label>
+                    <input
+                      type="text"
+                      value={tradeName}
+                      onChange={(e) => setTradeName(e.target.value)}
+                      placeholder="e.g. Apex Tech"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-medium text-slate-400">
+                        15-Digit GSTIN <span className="text-rose-400">*</span>
+                      </label>
+                      {selectedStateObj && (
+                        <span className="text-[10px] text-emerald-400 font-mono">
+                          State Code: {selectedStateObj.code} ({selectedStateObj.name})
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      maxLength={15}
+                      value={gstin}
+                      onChange={(e) => handleGstinChange(e.target.value)}
+                      placeholder="08IRRPZ8566K1ZD or 27AAECB9382M1ZR"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      First 2 digits determine Place of Supply state jurisdiction. Digits 3-12 form your PAN.
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-medium text-slate-400">
+                        10-Character Permanent Account Number (PAN)
+                      </label>
+                      {gstin.length >= 12 && (
+                        <button
+                          type="button"
+                          onClick={() => setPanNumber(gstin.slice(2, 12))}
+                          className="text-[10px] text-emerald-400 hover:text-emerald-300 underline font-mono"
+                        >
+                          Auto-fill from GSTIN
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      value={panNumber}
+                      onChange={(e) => setPanNumber(e.target.value.toUpperCase().trim())}
+                      placeholder="AAECB9382M"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Printed on TDS / TCS certificates and corporate billing headers.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1">
+                      Registered State Jurisdiction (Place of Supply) <span className="text-rose-400">*</span>
+                    </label>
+                    <select
+                      value={stateCode}
+                      onChange={(e) => setStateCode(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      {ALL_INDIAN_STATES.map((s) => (
+                        <option key={s.code} value={s.code}>
+                          {s.code} - {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1">
+                      Current Financial Year (FY)
+                    </label>
+                    <select
+                      value={financialYear}
+                      onChange={(e) => setFinancialYear(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="2024-25">FY 2024-25 (1 Apr 2024 - 31 Mar 2025)</option>
+                      <option value="2025-26">FY 2025-26 (1 Apr 2025 - 31 Mar 2026)</option>
+                      <option value="2026-27">FY 2026-27 (1 Apr 2026 - 31 Mar 2027) [Current]</option>
+                      <option value="2027-28">FY 2027-28 (1 Apr 2027 - 31 Mar 2028)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-medium text-slate-400 mb-1">
+                    Principal Place of Business (Full Address) <span className="text-rose-400">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Unit / Plot No, Road, Industrial Area, City, Pin Code"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  ></textarea>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1 flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-slate-400" />
+                      Official Contact Phone
+                    </label>
+                    <input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+91 98200 12345"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-slate-400" />
+                      Official Billing Email
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="accounts@company.com"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1 flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-slate-400" />
+                      Company Website
+                    </label>
+                    <input
+                      type="text"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      placeholder="https://company.com"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-800/80">
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1">
+                      MSME / Udyam Reg. No.
+                    </label>
+                    <input
+                      type="text"
+                      value={msmeNumber}
+                      onChange={(e) => setMsmeNumber(e.target.value)}
+                      placeholder="UDYAM-MH-01-0012345"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1">
+                      Corporate Identity (CIN)
+                    </label>
+                    <input
+                      type="text"
+                      value={cinNumber}
+                      onChange={(e) => setCinNumber(e.target.value.toUpperCase())}
+                      placeholder="U72900MH2020PTC123456"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-slate-400 mb-1">
+                      GST Taxation Model
+                    </label>
+                    <div className="flex items-center gap-4 pt-2">
+                      <label className="inline-flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="scheme"
+                          checked={!compositeScheme}
+                          onChange={() => setCompositeScheme(false)}
+                          className="text-emerald-500 focus:ring-emerald-500"
+                        />
+                        <span>Regular (ITC Active)</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-slate-300 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="scheme"
+                          checked={compositeScheme}
+                          onChange={() => setCompositeScheme(true)}
+                          className="text-emerald-500 focus:ring-emerald-500"
+                        />
+                        <span>Composition</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            <div>
-              <label className="block font-medium text-slate-400 mb-1">
-                Principal Place of Business (Full Address) <span className="text-rose-400">*</span>
-              </label>
-              <textarea
-                rows={2}
-                required
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Unit / Plot No, Road, Industrial Area, City, Pin Code"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-              ></textarea>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block font-medium text-slate-400 mb-1 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-slate-400" />
-                  Official Contact Phone
-                </label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+91 98200 12345"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-400 mb-1 flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-slate-400" />
-                  Official Billing Email
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="accounts@company.com"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: Invoice Series & Numbering + Duplicity Control */}
+          {/* TAB 2: Invoice Series & Numbering + Duplicity Control */}
         {activeTab === 'numbering' && (
           <div className="space-y-6 animate-fade-in">
             {/* Sales Invoicing Series Card */}
@@ -2687,6 +2915,11 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
               </div>
             )}
           </div>
+        )}
+
+        {/* Tab 7: Subscription & Billing */}
+        {activeTab === 'subscription' && (
+          <WorkspaceSubscriptionView />
         )}
 
       {/* Invite Modal */}

@@ -78,6 +78,18 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /workspaces/{workspaceId} {
+      allow read, write: if true;
+    }
+
+    match /subscription_invoices/{invoiceId} {
+      allow read, write: if true;
+    }
+
+    match /subscription_plans/{planId} {
+      allow read, write: if true;
+    }
+
     // Default Deny Catch-All for unknown paths
     match /{document=**} {
       allow read, write: if false;

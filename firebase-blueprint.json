@@ -281,7 +281,7 @@
     },
     "ActivityLog": {
       "title": "ActivityLog",
-      "description": "Audit and activity trail of user actions",
+      "description": "Audit trail of user actions",
       "type": "object",
       "properties": {
         "id": { "type": "number" },
@@ -294,9 +294,83 @@
         "createdAt": { "type": "string" }
       },
       "required": ["userId", "userEmail", "action", "entityType"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Multi-tenant corporate accounting workspace with GSTIN and subscription plan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 256 },
+        "businessName": { "type": "string", "maxLength": 256 },
+        "gstin": { "type": "string", "maxLength": 15 },
+        "ownerEmail": { "type": "string", "maxLength": 256 },
+        "plan": { "type": "string", "enum": ["starter", "professional", "enterprise"] },
+        "status": { "type": "string", "enum": ["active", "trial", "suspended"] },
+        "billingCycle": { "type": "string", "enum": ["monthly", "annual"] },
+        "subscriptionStatus": { "type": "string", "enum": ["active", "trial", "past_due", "suspended", "cancelled", "expired"] },
+        "currentPeriodEnd": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "businessName", "ownerEmail", "plan"]
+    },
+    "SubscriptionInvoice": {
+      "title": "SubscriptionInvoice",
+      "description": "B2B SaaS subscription billing tax invoice with 18% GST calculation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "workspaceId": { "type": "string", "maxLength": 128 },
+        "invoiceNumber": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string" },
+        "plan": { "type": "string", "enum": ["starter", "professional", "enterprise"] },
+        "billingCycle": { "type": "string", "enum": ["monthly", "annual"] },
+        "baseAmount": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid", "pending", "failed", "refunded"] },
+        "paymentMethod": { "type": "string" }
+      },
+      "required": ["workspaceId", "invoiceNumber", "plan", "totalAmount", "status"]
+    },
+    "SubscriptionPlan": {
+      "title": "SubscriptionPlan",
+      "description": "Subscription plan tier configuration with custom pricing, quotas, limits, and feature sets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 128 },
+        "tagline": { "type": "string", "maxLength": 256 },
+        "badge": { "type": "string", "maxLength": 64 },
+        "popular": { "type": "boolean" },
+        "isBuiltIn": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "archived", "draft"] },
+        "monthlyPrice": { "type": "number" },
+        "annualPrice": { "type": "number" },
+        "monthlyEquivalentAnnual": { "type": "number" },
+        "maxUsers": { "type": "number" },
+        "maxInvoicesPerMonth": { "type": "number" },
+        "maxLedgers": { "type": "number" },
+        "maxBranches": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "monthlyPrice", "annualPrice"]
     }
   },
   "firestore": {
+    "/subscription_plans/{planId}": {
+      "schema": "SubscriptionPlan",
+      "description": "Catalog of active subscription plan tiers governed by super admin"
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": "Workspace",
+      "description": "Multi-tenant workspaces and subscription tier settings"
+    },
+    "/subscription_invoices/{invoiceId}": {
+      "schema": "SubscriptionInvoice",
+      "description": "Tax invoices for platform workspace subscription renewals"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "Collection of workspace user profiles and role assignments"

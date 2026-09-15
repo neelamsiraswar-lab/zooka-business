@@ -1,9 +1,10 @@
 // src/lib/permissions.ts
 
-export type UserRole = 'admin' | 'accountant' | 'auditor' | 'billing_operator';
+export type UserRole = 'super_admin' | 'admin' | 'accountant' | 'auditor' | 'billing_operator';
 
 export type NavTabId =
   | 'dashboard'
+  | 'super_admin'
   | 'sales'
   | 'purchases'
   | 'payments'
@@ -93,6 +94,30 @@ export const ROLE_CONFIG: Record<
     allowedTabs: NavTabId[];
   }
 > = {
+  super_admin: {
+    title: 'Super Administrator',
+    badge: 'Super Admin',
+    description: 'Supreme multi-workspace authority: provision workspaces, manage all tenant environments, global billing, security policies, and master ledger operations.',
+    color: 'indigo',
+    bgBadge: 'bg-indigo-500/15',
+    textBadge: 'text-indigo-400',
+    borderBadge: 'border-indigo-500/30',
+    allowedTabs: [
+      'dashboard',
+      'super_admin',
+      'sales',
+      'purchases',
+      'payments',
+      'cheques',
+      'banking',
+      'accounting',
+      'expenses',
+      'ledgers',
+      'inventory',
+      'reports',
+      'settings',
+    ],
+  },
   admin: {
     title: 'Administrator',
     badge: 'Admin',
@@ -174,6 +199,56 @@ export const ROLE_CONFIG: Record<
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, Record<PermissionAction, boolean>> = {
+  super_admin: {
+    'sales:view': true,
+    'sales:create': true,
+    'sales:edit': true,
+    'sales:delete': true,
+    'purchases:view': true,
+    'purchases:create': true,
+    'purchases:edit': true,
+    'purchases:delete': true,
+    'payments:view': true,
+    'payments:create': true,
+    'payments:delete': true,
+    'cheques:view': true,
+    'cheques:create': true,
+    'cheques:update_status': true,
+    'cheques:delete': true,
+    'banking:view': true,
+    'banking:create': true,
+    'banking:reconcile': true,
+    'banking:delete': true,
+    'accounting:view': true,
+    'accounting:create': true,
+    'accounting:edit': true,
+    'accounting:delete': true,
+    'expenses:view': true,
+    'expenses:create': true,
+    'expenses:edit': true,
+    'expenses:delete': true,
+    'parties:view': true,
+    'parties:create': true,
+    'parties:edit': true,
+    'parties:delete': true,
+    'inventory:view': true,
+    'inventory:create': true,
+    'inventory:edit': true,
+    'inventory:adjust': true,
+    'inventory:delete': true,
+    'reports:view': true,
+    'reports:export': true,
+    'settings:view': true,
+    'settings:edit_company': true,
+    'settings:clear_ledger': true,
+    'settings:backup': true,
+    'settings:restore': true,
+    'users:view': true,
+    'users:manage_roles': true,
+    'users:edit': true,
+    'users:delete': true,
+    'audit:view': true,
+  },
   admin: {
     'sales:view': true,
     'sales:create': true,
@@ -393,6 +468,13 @@ export function canAccessTab(role: UserRole | undefined, tabId: NavTabId): boole
 
 export function isReadOnlyRole(role: UserRole | undefined): boolean {
   return role === 'auditor';
+}
+
+export function isSuperAdmin(user: any, profile: any): boolean {
+  const email = (user?.email || profile?.email || '').toLowerCase().trim();
+  if (email === 'nawarkuldeep@gmail.com') return true;
+  if (profile?.role === 'super_admin' || user?.role === 'super_admin') return true;
+  return false;
 }
 
 export interface RolePinConfig {

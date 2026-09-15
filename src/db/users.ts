@@ -2,7 +2,7 @@
 import { db, COLLECTIONS, getNextSequenceId } from './index.ts';
 import { ROLE_CONFIG } from '../lib/permissions.ts';
 
-export type UserRole = 'admin' | 'accountant' | 'auditor' | 'billing_operator';
+export type UserRole = 'super_admin' | 'admin' | 'accountant' | 'auditor' | 'billing_operator';
 
 export interface DbUser {
   id: number;
@@ -25,13 +25,13 @@ export async function getOrCreateUser(
   initialRole?: UserRole
 ): Promise<DbUser> {
   const normalizedEmail = email.toLowerCase().trim();
-  const isAdminEmail = normalizedEmail === 'nawarkuldeep@gmail.com';
+  const isSuperAdminEmail = normalizedEmail === 'nawarkuldeep@gmail.com';
 
   // Check memory cache first (valid for 5 minutes)
   const cached = userMemoryCache.get(uid);
   if (cached && cached.expiresAt > Date.now()) {
-    if (isAdminEmail && cached.user.role !== 'admin') {
-      cached.user.role = 'admin';
+    if (isSuperAdminEmail && cached.user.role !== 'super_admin') {
+      cached.user.role = 'super_admin';
     }
     return cached.user;
   }
@@ -43,7 +43,7 @@ export async function getOrCreateUser(
     if (!querySnapshot.empty) {
       const doc = querySnapshot.docs[0];
       const data = doc.data() as DbUser;
-      const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || data.role || 'accountant');
+      const targetRole: UserRole = isSuperAdminEmail ? 'super_admin' : (initialRole || data.role || 'accountant');
       
       const userObj: DbUser = {
         id: typeof data.id === 'number' ? data.id : parseInt(doc.id) || 1,
@@ -68,7 +68,7 @@ export async function getOrCreateUser(
     if (!emailSnapshot.empty) {
       const doc = emailSnapshot.docs[0];
       const data = doc.data() as DbUser;
-      const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || data.role || 'accountant');
+      const targetRole: UserRole = isSuperAdminEmail ? 'super_admin' : (initialRole || data.role || 'accountant');
       
       const updatedUser: DbUser = {
         ...data,
@@ -89,12 +89,12 @@ export async function getOrCreateUser(
 
     // 3. New user - allocate sequential ID and save to Firestore
     const nextId = await getNextSequenceId('user_id');
-    const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || 'accountant');
+    const targetRole: UserRole = isSuperAdminEmail ? 'super_admin' : (initialRole || 'accountant');
     const newUser: DbUser = {
       id: nextId,
       uid,
       email: normalizedEmail,
-      displayName: displayName || (isAdminEmail ? 'Kuldeep Siraswar (Admin)' : normalizedEmail.split('@')[0]),
+      displayName: displayName || (isSuperAdminEmail ? 'Kuldeep Siraswar (Super Admin)' : normalizedEmail.split('@')[0]),
       avatarUrl: avatarUrl || null,
       role: targetRole,
       createdAt: new Date().toISOString(),
@@ -106,12 +106,12 @@ export async function getOrCreateUser(
   } catch (error) {
     console.error('getOrCreateUser Firestore error:', error);
     // In-memory fallback if Firestore cold-start
-    const targetRole: UserRole = isAdminEmail ? 'admin' : (initialRole || 'accountant');
+    const targetRole: UserRole = isSuperAdminEmail ? 'super_admin' : (initialRole || 'accountant');
     const fallbackUser: DbUser = {
       id: 1,
       uid,
       email: normalizedEmail,
-      displayName: displayName || (isAdminEmail ? 'Kuldeep Siraswar (Admin)' : normalizedEmail.split('@')[0]),
+      displayName: displayName || (isSuperAdminEmail ? 'Kuldeep Siraswar (Super Admin)' : normalizedEmail.split('@')[0]),
       avatarUrl: avatarUrl || null,
       role: targetRole,
       createdAt: new Date().toISOString(),

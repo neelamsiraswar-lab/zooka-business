@@ -27,6 +27,7 @@ export const rawFirestore = getFirestore(app, firebaseConfig.firestoreDatabaseId
 // Collection names constants
 export const COLLECTIONS = {
   USERS: 'users',
+  WORKSPACES: 'workspaces',
   COMPANY_PROFILES: 'company_profiles',
   PARTIES: 'parties',
   INVENTORY_ITEMS: 'inventory_items',
@@ -39,6 +40,8 @@ export const COLLECTIONS = {
   BANK_STATEMENTS: 'bank_statements',
   ACTIVITY_LOGS: 'activity_logs',
   COUNTERS: 'counters',
+  SUBSCRIPTION_PLANS: 'subscription_plans',
+  SUBSCRIPTION_INVOICES: 'subscription_invoices',
 } as const;
 
 // Compatible wrapper around Firebase Web SDK

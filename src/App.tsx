@@ -13,8 +13,9 @@ import { ReceiptPaymentView } from './components/ReceiptPaymentView';
 import { AccountingView } from './components/AccountingView';
 import { ChequeManagementView } from './components/ChequeManagementView';
 import { BankReconciliationView } from './components/BankReconciliationView';
-import { Sidebar, NavTab } from './components/Sidebar';
+import { Sidebar, NavTab, SuperAdminSubTab } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
+import { SuperAdminDashboardView } from './components/SuperAdminDashboardView';
 import {
   FinancialSummary,
   Invoice,
@@ -28,14 +29,19 @@ import {
   Cheque,
   ChequeBook,
   BankStatement,
+  Workspace,
 } from './types';
 import { RefreshCw, AlertCircle, Menu, ShieldAlert, Eye } from 'lucide-react';
+import { SubscriptionBanner } from './components/SubscriptionBanner';
+import { getActiveWorkspace } from './db/workspaces';
+import { canPerformTransactionalAction } from './lib/subscriptionEnforcement';
 import {
   canAccessTab,
   hasPermission,
   isReadOnlyRole,
   UserRole,
   ROLE_CONFIG,
+  isSuperAdmin,
 } from './lib/permissions';
 import {
   getAppData,
@@ -80,15 +86,68 @@ export default function App() {
   const userRole: UserRole = (profile?.role as UserRole) || 'accountant';
   const roleConfig = ROLE_CONFIG[userRole] || ROLE_CONFIG.accountant;
 
-  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isUserSuperAdmin = isSuperAdmin(user, profile) || userRole === 'super_admin';
+  const [hasEnteredWorkspace, setHasEnteredWorkspace] = useState(false);
 
-  // Auto-redirect to dashboard if user switches to a role that cannot access the current active tab
+  const [activeTab, setActiveTab] = useState<NavTab>(() => {
+    try {
+      // If super admin, ALWAYS start directly on super_admin dashboard
+      const savedDevUser = localStorage.getItem('apex_gst_dev_user');
+      let isDevSuper = false;
+      if (savedDevUser) {
+        try {
+          const parsed = JSON.parse(savedDevUser);
+          if (parsed.email?.toLowerCase() === 'nawarkuldeep@gmail.com' || parsed.role === 'super_admin') {
+            isDevSuper = true;
+          }
+        } catch {}
+      }
+      if (isDevSuper) return 'super_admin';
+
+      const isSuper = (profile?.role === 'super_admin') || (user?.email && ['nawarkuldeep@gmail.com'].includes(user.email.toLowerCase()));
+      if (isSuper) return 'super_admin';
+
+      const savedTab = localStorage.getItem('last_active_tab') as NavTab;
+      if (savedTab && canAccessTab(userRole, savedTab)) return savedTab;
+    } catch {}
+    return isUserSuperAdmin ? 'super_admin' : 'dashboard';
+  });
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [superAdminSubTab, setSuperAdminSubTab] = useState<SuperAdminSubTab>('workspaces');
+
+  // Direct Super Admin Tab: If user is super admin and hasn't explicitly entered a workspace, force super_admin
+  const currentTab: NavTab = (isUserSuperAdmin && !hasEnteredWorkspace && (activeTab === 'dashboard' || !activeTab))
+    ? 'super_admin'
+    : activeTab;
+
+  // Auto-persist active tab
   useEffect(() => {
-    if (profile?.role && !canAccessTab(userRole, activeTab)) {
-      setActiveTab('dashboard');
+    try {
+      localStorage.setItem('last_active_tab', currentTab);
+    } catch {}
+  }, [currentTab]);
+
+  // Direct redirection to super_admin when logging in as super admin or switching to super admin role
+  const lastAuthUidRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (user?.uid) {
+      const isSuper = isSuperAdmin(user, profile) || userRole === 'super_admin';
+      if (isSuper && !hasEnteredWorkspace) {
+        // Force direct navigation to super_admin on login or when super admin profile is active
+        if (lastAuthUidRef.current !== user.uid) {
+          lastAuthUidRef.current = user.uid;
+          setActiveTab('super_admin');
+        }
+      }
     }
-  }, [profile?.role, activeTab, userRole]);
+  }, [user?.uid, profile?.role, userRole, user, profile, hasEnteredWorkspace]);
+
+  // Auto-redirect to super_admin or dashboard if user switches to a role that cannot access the current active tab
+  useEffect(() => {
+    if (profile?.role && !canAccessTab(userRole, currentTab)) {
+      setActiveTab(userRole === 'super_admin' ? 'super_admin' : 'dashboard');
+    }
+  }, [profile?.role, currentTab, userRole]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -96,6 +155,20 @@ export default function App() {
       return false;
     }
   });
+
+  const [platformFooterCompliance, setPlatformFooterCompliance] = useState(() => localStorage.getItem('platform_footer_compliance') || 'GST Act 2017 & ITC Section 16 Compliant');
+  const [platformFooterSupport, setPlatformFooterSupport] = useState(() => localStorage.getItem('platform_footer_support') || 'Support: support@apextally.com | +91 9876543210');
+
+  useEffect(() => {
+    const handleBrandingUpdate = () => {
+      setPlatformFooterCompliance(localStorage.getItem('platform_footer_compliance') || 'GST Act 2017 & ITC Section 16 Compliant');
+      setPlatformFooterSupport(localStorage.getItem('platform_footer_support') || 'Support: support@apextally.com | +91 9876543210');
+    };
+    window.addEventListener('platform_branding_updated', handleBrandingUpdate);
+    return () => {
+      window.removeEventListener('platform_branding_updated', handleBrandingUpdate);
+    };
+  }, []);
 
   const handleToggleSidebar = () => {
     setSidebarCollapsed((prev) => {
@@ -121,6 +194,8 @@ export default function App() {
   const [parties, setParties] = useState<Party[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+  const [initialSettingsSubTab, setInitialSettingsSubTab] = useState<'general' | 'numbering' | 'design' | 'banking' | 'terms' | 'roles' | 'subscription'>('general');
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -168,6 +243,14 @@ export default function App() {
       if (Array.isArray(data.inventory)) setInventory(data.inventory);
       if (data.company) setCompany(data.company);
       if (Array.isArray(data.activity)) setActivityLogs(data.activity);
+
+      try {
+        const ws = await getActiveWorkspace();
+        if (ws) setActiveWorkspace(ws);
+      } catch (wsErr) {
+        console.warn('Could not fetch active workspace metadata:', wsErr);
+      }
+
       setSyncError(null);
     } catch (err: any) {
       console.error('Failed to load application data from Firestore:', err);
@@ -188,21 +271,41 @@ export default function App() {
   // Initial load when authenticated user UID changes
   useEffect(() => {
     if (user?.uid) {
-      loadData();
+      const isSuper = isSuperAdmin(user, profile) || userRole === 'super_admin';
+      // If super admin, do not load workspace data on login unless they enter a workspace
+      if (!isSuper || hasEnteredWorkspace) {
+        loadData();
+      }
     }
-  }, [user?.uid]);
+  }, [user?.uid, hasEnteredWorkspace]);
 
   // Periodic background polling for multi-user synchronization across devices
   useEffect(() => {
     if (!user?.uid) return;
+    const isSuper = isSuperAdmin(user, profile) || userRole === 'super_admin';
+    if (isSuper && !hasEnteredWorkspace) return;
+
     const interval = setInterval(() => {
       loadData(true); // silent background refresh without flickering loader
     }, 15000); // 15 seconds live sync
     return () => clearInterval(interval);
-  }, [user?.uid]);
+  }, [user?.uid, hasEnteredWorkspace]);
 
   // Handler: Save Invoice (Create or Edit)
   const handleSaveInvoice = async (invoicePayload: any, invoiceId?: number) => {
+    // Subscription enforcement check for new voucher creation
+    if (!invoiceId) {
+      const check = canPerformTransactionalAction(activeWorkspace, 'create_invoice');
+      if (!check.allowed) {
+        dialog.alert({
+          title: 'Subscription Locked',
+          message: check.message || 'Invoice creation is restricted under the current subscription status.',
+          variant: 'warning',
+        });
+        return;
+      }
+    }
+
     setDataLoading(true);
     try {
       if (invoiceId) {
@@ -241,6 +344,19 @@ export default function App() {
 
   // Handler: Save Expense (Create or Edit)
   const handleSaveExpense = async (expensePayload: any, expenseId?: number) => {
+    // Subscription enforcement check for new expense voucher
+    if (!expenseId) {
+      const check = canPerformTransactionalAction(activeWorkspace, 'create_expense');
+      if (!check.allowed) {
+        dialog.alert({
+          title: 'Subscription Locked',
+          message: check.message || 'Expense voucher creation is restricted under current subscription status.',
+          variant: 'warning',
+        });
+        return;
+      }
+    }
+
     setDataLoading(true);
     try {
       if (expenseId) {
@@ -283,6 +399,16 @@ export default function App() {
 
   // Handler: Save Payment / Receipt Voucher
   const handleSavePayment = async (paymentData: any) => {
+    const check = canPerformTransactionalAction(activeWorkspace, 'create_payment');
+    if (!check.allowed) {
+      dialog.alert({
+        title: 'Subscription Locked',
+        message: check.message || 'Payment voucher recording is restricted under current subscription status.',
+        variant: 'warning',
+      });
+      return;
+    }
+
     setDataLoading(true);
     try {
       await createPayment(paymentData, profile?.id || 1, profile?.name || 'User');
@@ -654,6 +780,46 @@ export default function App() {
     }
   };
 
+  // Handler: Switch Workspace
+  const handleSwitchWorkspace = async (workspace: Workspace) => {
+    setDataLoading(true);
+    setHasEnteredWorkspace(true);
+    setActiveWorkspace(workspace);
+    try {
+      // Update local company state to match active workspace profile
+      setCompany((prev) => ({
+        ...prev,
+        workspaceId: workspace.id,
+        businessName: workspace.businessName,
+        tradeName: workspace.tradeName || '',
+        gstin: workspace.gstin,
+        stateCode: workspace.stateCode,
+        stateName: workspace.stateName,
+        address: workspace.address,
+        phone: workspace.phone || '',
+        email: workspace.email || '',
+        bankName: workspace.bankName || '',
+        accountNumber: workspace.accountNumber || '',
+        ifscCode: workspace.ifscCode || '',
+        upiId: workspace.upiId || '',
+        invoicePrefix: workspace.invoicePrefix || 'INV/2026-27/',
+        purchasePrefix: workspace.purchasePrefix || 'PUR/2026-27/',
+      }));
+      await loadData(false);
+      setActiveTab('dashboard');
+    } catch (err) {
+      console.error('Failed to switch workspace:', err);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // Handler: Return to Super Admin Master Hub
+  const handleReturnToSuperAdmin = () => {
+    setHasEnteredWorkspace(false);
+    setActiveTab('super_admin');
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400">
@@ -671,8 +837,15 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex">
       {/* Collapsible Side Navigation Bar */}
       <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        activeTab={currentTab}
+        setActiveTab={(tab) => {
+          if (tab !== 'super_admin') {
+            setHasEnteredWorkspace(true);
+          } else {
+            setHasEnteredWorkspace(false);
+          }
+          setActiveTab(tab);
+        }}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={handleToggleSidebar}
         mobileOpen={mobileMenuOpen}
@@ -691,6 +864,14 @@ export default function App() {
         expensesCount={expenses.length}
         partiesCount={parties.length}
         inventoryCount={inventory.length}
+        superAdminSubTab={superAdminSubTab}
+        onSelectSuperAdminSubTab={(subTab) => {
+          setSuperAdminSubTab(subTab);
+          setHasEnteredWorkspace(false);
+          setActiveTab('super_admin');
+        }}
+        activeWorkspace={activeWorkspace}
+        onSwitchWorkspace={handleSwitchWorkspace}
       />
 
       {/* Main Content Area */}
@@ -705,10 +886,12 @@ export default function App() {
           dataLoading={dataLoading}
           user={user}
           profile={profile}
+          activeTab={currentTab}
+          onNavigateToSuperAdmin={isUserSuperAdmin ? handleReturnToSuperAdmin : undefined}
         />
 
-        {/* Network / Sync Warning Banner if present */}
-        {syncError && (
+        {/* Network / Sync Warning Banner if present (suppressed while on master super admin view) */}
+        {syncError && currentTab !== 'super_admin' && (
           <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-4">
             <div className="bg-amber-500/10 border border-amber-500/20 text-amber-300 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -747,9 +930,33 @@ export default function App() {
           </div>
         )}
 
+        {/* Subscription Plan & Status Notification Banner */}
+        {currentTab !== 'super_admin' && (
+          <SubscriptionBanner
+            workspace={activeWorkspace}
+            onNavigateToSubscription={() => {
+              setInitialSettingsSubTab('subscription');
+              setActiveTab('settings');
+            }}
+          />
+        )}
+
         {/* Main Content Body */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-          {activeTab === 'dashboard' && (
+          {currentTab === 'super_admin' && (
+            <SuperAdminDashboardView
+              onSwitchWorkspace={handleSwitchWorkspace}
+              onNavigateToTab={(tab) => {
+                setHasEnteredWorkspace(true);
+                setActiveTab(tab as any);
+              }}
+              hasEnteredWorkspace={hasEnteredWorkspace}
+              activeViewTab={superAdminSubTab}
+              onViewTabChange={setSuperAdminSubTab}
+            />
+          )}
+
+          {currentTab === 'dashboard' && (
             <DashboardView
               summary={summary}
               activityLogs={activityLogs}
@@ -768,7 +975,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'accounting' && (
+          {currentTab === 'accounting' && (
             <AccountingView
               invoices={invoices}
               expenses={expenses}
@@ -794,7 +1001,7 @@ export default function App() {
             />
           )}
 
-          {(activeTab === 'sales' || activeTab === 'invoices') && (
+          {(currentTab === 'sales' || currentTab === 'invoices') && (
             <InvoiceView
               invoices={invoices}
               parties={parties}
@@ -809,7 +1016,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'purchases' && (
+          {currentTab === 'purchases' && (
             <InvoiceView
               invoices={invoices}
               parties={parties}
@@ -824,7 +1031,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'payments' && (
+          {currentTab === 'payments' && (
             <ReceiptPaymentView
               payments={payments}
               parties={parties}
@@ -848,7 +1055,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'cheques' && (
+          {currentTab === 'cheques' && (
             <ChequeManagementView
               cheques={cheques}
               chequeBooks={chequeBooks}
@@ -875,7 +1082,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'banking' && (
+          {currentTab === 'banking' && (
             <BankReconciliationView
               bankStatements={bankStatements}
               payments={payments}
@@ -895,7 +1102,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'expenses' && (
+          {currentTab === 'expenses' && (
             <ExpenseView
               expenses={expenses}
               onSaveExpense={handleSaveExpense}
@@ -904,7 +1111,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'ledgers' && (
+          {currentTab === 'ledgers' && (
             <LedgersView
               parties={parties}
               invoices={invoices}
@@ -923,7 +1130,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'inventory' && (
+          {currentTab === 'inventory' && (
             <InventoryView
               inventory={inventory}
               onAddItem={handleAddItem}
@@ -934,7 +1141,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'reports' && (
+          {currentTab === 'reports' && (
             <ReportsView
               summary={summary}
               invoices={invoices}
@@ -944,12 +1151,13 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'settings' && (
+          {currentTab === 'settings' && (
             <CompanySettingsView
               company={company}
               onSaveCompany={handleSaveCompany}
               onClearMasterLedger={handleClearMasterLedger}
               loading={dataLoading}
+              initialSettingsTab={initialSettingsSubTab}
             />
           )}
         </main>
@@ -969,9 +1177,9 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3 text-slate-500">
-              <span>GST Act 2017 & ITC Section 16 Compliant</span>
+              <span>{platformFooterCompliance}</span>
               <span>•</span>
-              <span>Real-time Multi-Device Sync</span>
+              <span>{platformFooterSupport}</span>
             </div>
           </div>
         </footer>
