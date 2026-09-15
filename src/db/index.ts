@@ -1,5 +1,7 @@
 // src/db/index.ts
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
+  getFirestore,
   collection,
   doc,
   getDoc,
@@ -17,10 +19,10 @@ import {
   OrderByDirection,
   QueryConstraint,
 } from 'firebase/firestore';
-import { db as sharedFirestore } from '../lib/firebase';
+import firebaseConfig from '../../firebase-applet-config.json';
 
-export const rawFirestore = sharedFirestore;
-
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const rawFirestore = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
 
 // Collection names constants
 export const COLLECTIONS = {
