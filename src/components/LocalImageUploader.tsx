@@ -1,5 +1,19 @@
 import React, { useRef, useState } from 'react';
-import { Upload, Trash2, Link2, AlertCircle, Check, Image as ImageIcon, PenTool } from 'lucide-react';
+import {
+  Upload,
+  Trash2,
+  Link2,
+  AlertCircle,
+  Check,
+  Image as ImageIcon,
+  PenTool,
+  User,
+  Camera,
+  Sparkles,
+  Dices,
+  RefreshCw,
+  Palette,
+} from 'lucide-react';
 
 interface LocalImageUploaderProps {
   id: string;
@@ -8,8 +22,19 @@ interface LocalImageUploaderProps {
   value: string;
   onChange: (dataUrlOrUrl: string) => void;
   recommendedDimensions?: string;
-  type?: 'logo' | 'signature';
+  type?: 'logo' | 'signature' | 'avatar';
+  fallbackName?: string;
 }
+
+const AVATAR_STYLES = [
+  { id: 'initials', name: 'Initials', icon: '🔤', desc: 'Clean Initials' },
+  { id: 'notionists', name: 'Notionist', icon: '👔', desc: 'Minimalist Line-Art' },
+  { id: 'lorelei', name: 'Executive', icon: '💼', desc: 'Clean Vector' },
+  { id: 'adventurer', name: 'Adventurer', icon: '🎨', desc: 'Modern Character' },
+  { id: 'avataaars', name: 'Avataaars', icon: '👤', desc: 'Illustrated 3D' },
+  { id: 'bottts', name: 'Tech Bot', icon: '🤖', desc: 'Futuristic Robot' },
+  { id: 'micah', name: 'Artistic', icon: '✨', desc: 'Contemporary Art' },
+];
 
 export const LocalImageUploader: React.FC<LocalImageUploaderProps> = ({
   id,
@@ -19,13 +44,16 @@ export const LocalImageUploader: React.FC<LocalImageUploaderProps> = ({
   onChange,
   recommendedDimensions,
   type = 'logo',
+  fallbackName,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
+  const [showPresetGallery, setShowPresetGallery] = useState(false);
   const [manualUrl, setManualUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAutoChanging, setIsAutoChanging] = useState(false);
 
   const processFile = (file: File) => {
     setError(null);
@@ -61,7 +89,7 @@ export const LocalImageUploader: React.FC<LocalImageUploaderProps> = ({
       const img = new Image();
       img.onload = () => {
         try {
-          const maxDim = 1000;
+          const maxDim = type === 'avatar' ? 400 : 1000;
           let width = img.naturalWidth || img.width;
           let height = img.naturalHeight || img.height;
 
@@ -88,10 +116,10 @@ export const LocalImageUploader: React.FC<LocalImageUploaderProps> = ({
 
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Preserve PNG transparency
+          // Preserve PNG transparency if png
           const isPng = file.type === 'image/png';
           const outputFormat = isPng ? 'image/png' : 'image/jpeg';
-          const finalDataUrl = canvas.toDataURL(outputFormat, 0.9);
+          const finalDataUrl = canvas.toDataURL(outputFormat, type === 'avatar' ? 0.85 : 0.9);
           onChange(finalDataUrl);
         } catch {
           onChange(dataUrl);
@@ -149,8 +177,251 @@ export const LocalImageUploader: React.FC<LocalImageUploaderProps> = ({
     }
   };
 
+  // Automatic profile image changer (randomize style + seed)
+  const handleAutoChangeAvatar = (specificStyle?: string) => {
+    setIsAutoChanging(true);
+    setError(null);
+
+    const styleList = AVATAR_STYLES.map((s) => s.id);
+    const selectedStyle = specificStyle || styleList[Math.floor(Math.random() * styleList.length)];
+    
+    // Generate a diverse random seed or name combination
+    const randomSuffix = Math.random().toString(36).substring(2, 7);
+    const baseName = fallbackName?.trim() || 'User';
+    const seed = `${baseName}-${randomSuffix}`;
+
+    let newAvatarUrl = `https://api.dicebear.com/7.x/${selectedStyle}/svg?seed=${encodeURIComponent(seed)}`;
+    
+    if (selectedStyle === 'initials') {
+      newAvatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(baseName || 'User')}&chars=2`;
+    }
+
+    setTimeout(() => {
+      onChange(newAvatarUrl);
+      setIsAutoChanging(false);
+    }, 150);
+  };
+
   const hasImage = Boolean(value && value.trim().length > 0);
 
+  // Avatar specific layout
+  if (type === 'avatar') {
+    return (
+      <div id={`${id}-uploader-card`} className="space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-blue-400" />
+              {label}
+            </label>
+            <p className="text-[11px] text-slate-400 mt-0.5">{description}</p>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Automatic Change / Randomize Button */}
+            <button
+              type="button"
+              id={`${id}-auto-change-btn`}
+              onClick={() => handleAutoChangeAvatar()}
+              disabled={isAutoChanging}
+              title="Automatically generate & change avatar"
+              className="text-[11px] font-medium text-emerald-300 hover:text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center gap-1 cursor-pointer transition py-1 px-2.5 rounded-lg shadow-sm"
+            >
+              {isAutoChanging ? (
+                <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+              ) : (
+                <Dices className="w-3 h-3 text-emerald-400" />
+              )}
+              <span>Auto-Change</span>
+            </button>
+
+            {/* Presets Gallery Toggle */}
+            <button
+              type="button"
+              id={`${id}-presets-toggle-btn`}
+              onClick={() => setShowPresetGallery(!showPresetGallery)}
+              className="text-[11px] font-medium text-slate-300 hover:text-blue-300 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 flex items-center gap-1 cursor-pointer transition py-1 px-2 rounded-lg"
+            >
+              <Palette className="w-3 h-3 text-blue-400" />
+              <span>{showPresetGallery ? 'Hide Styles' : 'Styles'}</span>
+            </button>
+
+            {/* URL toggle */}
+            <button
+              type="button"
+              id={`${id}-toggle-url-btn`}
+              onClick={() => setShowUrlInput(!showUrlInput)}
+              className="text-[11px] text-slate-400 hover:text-blue-400 flex items-center gap-1 cursor-pointer transition py-1 px-2 rounded-lg hover:bg-slate-800"
+            >
+              <Link2 className="w-3 h-3" />
+              <span>{showUrlInput ? 'Hide URL' : 'URL'}</span>
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Automatic Avatar Style Preset Picker */}
+        {showPresetGallery && (
+          <div className="p-3 rounded-xl bg-slate-900 border border-slate-700/80 space-y-2 animate-fade-in">
+            <div className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                Select Automatic Avatar Style Preset:
+              </span>
+              <span className="text-[10px] text-slate-500 font-normal">Click any style to apply instantly</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              {AVATAR_STYLES.map((style) => (
+                <button
+                  key={style.id}
+                  type="button"
+                  onClick={() => handleAutoChangeAvatar(style.id)}
+                  className="p-2 rounded-lg bg-slate-950 hover:bg-blue-950/40 border border-slate-800 hover:border-blue-500/50 text-left transition cursor-pointer flex items-center gap-2 group"
+                >
+                  <span className="text-base shrink-0 group-hover:scale-110 transition">{style.icon}</span>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-slate-200 group-hover:text-blue-300 truncate">
+                      {style.name}
+                    </div>
+                    <div className="text-[9px] text-slate-500 truncate">{style.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Manual URL Input Bar */}
+        {showUrlInput && (
+          <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-2">
+            <div className="text-[10px] text-slate-400">Direct avatar image URL (https://...):</div>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                id={`${id}-manual-url-input`}
+                value={manualUrl}
+                onChange={(e) => setManualUrl(e.target.value)}
+                placeholder="https://example.com/avatar.jpg"
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+              />
+              <button
+                type="button"
+                id={`${id}-apply-url-btn`}
+                onClick={handleApplyUrl}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold cursor-pointer transition"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden File Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          id={`${id}-file-input`}
+          accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+
+        {/* Avatar Upload Drop Zone and Actions */}
+        <div
+          id={`${id}-dropzone`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`p-3.5 rounded-xl border transition-all flex flex-col sm:flex-row items-center gap-4 ${
+            isDragging
+              ? 'border-blue-400 bg-blue-500/10'
+              : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+          }`}
+        >
+          {/* Circular Avatar Preview */}
+          <div className="relative group shrink-0">
+            <div className="w-16 h-16 rounded-full bg-slate-900 border-2 border-slate-700 overflow-hidden flex items-center justify-center shadow-md">
+              {hasImage ? (
+                <img
+                  src={value}
+                  alt={label}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-400 font-bold text-lg">
+                  {fallbackName ? fallbackName.charAt(0).toUpperCase() : <User className="w-7 h-7 text-slate-500" />}
+                </div>
+              )}
+            </div>
+
+            {/* Quick click on avatar to trigger file browse or auto change */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Click to upload local photo"
+              className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-white cursor-pointer"
+            >
+              <Camera className="w-5 h-5 text-blue-400" />
+              <span className="text-[9px] font-semibold mt-0.5">Upload</span>
+            </button>
+          </div>
+
+          <div className="flex-1 text-center sm:text-left min-w-0">
+            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+              <button
+                type="button"
+                id={`${id}-browse-btn`}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
+                className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+              >
+                {isProcessing ? (
+                  <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                <span>{hasImage ? 'Upload Custom Photo' : 'Upload Local Image'}</span>
+              </button>
+
+              <button
+                type="button"
+                id={`${id}-quick-auto-change-btn`}
+                onClick={() => handleAutoChangeAvatar()}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+              >
+                <Dices className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Auto-Change Image</span>
+              </button>
+
+              {hasImage && (
+                <button
+                  type="button"
+                  id={`${id}-remove-btn`}
+                  onClick={() => onChange('')}
+                  className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-medium flex items-center gap-1 cursor-pointer transition"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Remove</span>
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              Click <strong className="text-emerald-300 font-semibold">Auto-Change</strong> for instant generator or select an image file from your device.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default Logo or Signature layout
   return (
     <div id={`${id}-uploader-card`} className="space-y-2">
       <div className="flex items-center justify-between">
@@ -302,3 +573,4 @@ export const LocalImageUploader: React.FC<LocalImageUploaderProps> = ({
     </div>
   );
 };
+

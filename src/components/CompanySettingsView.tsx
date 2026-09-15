@@ -51,7 +51,6 @@ import {
   hasPermission,
   isReadOnlyRole,
   ROLE_CONFIG,
-  PERMISSION_MATRIX_DATA,
   UserRole,
 } from '../lib/permissions';
 import {
@@ -144,6 +143,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [backupLoading, setBackupLoading] = useState(false);
   const restoreFileRef = useRef<HTMLInputElement>(null);
   const [userDisplayName, setUserDisplayName] = useState(profile?.displayName || '');
+  const [userAvatarUrl, setUserAvatarUrl] = useState(profile?.avatarUrl || (profile as any)?.photoURL || '');
   const [userRole, setUserRole] = useState<'admin' | 'accountant' | 'auditor' | 'billing_operator'>(profile?.role || 'accountant');
   const [savingUser, setSavingUser] = useState(false);
   const [userSaveSuccess, setUserSaveSuccess] = useState(false);
@@ -154,12 +154,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
+  const [inviteAvatar, setInviteAvatar] = useState('');
   const [invitePassword, setInvitePassword] = useState('');
   const [showInvitePassword, setShowInvitePassword] = useState(false);
   const [inviteRole, setInviteRole] = useState<UserRole>('accountant');
   const [inviting, setInviting] = useState(false);
   const [updatingMemberId, setUpdatingMemberId] = useState<number | null>(null);
-  const [matrixSearch, setMatrixSearch] = useState('');
 
   // Edit Other User Profile State
   const [editingMember, setEditingMember] = useState<any | null>(null);
@@ -205,6 +205,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         displayName: inviteName.trim(),
         role: inviteRole,
         password: invitePassword.trim() || undefined,
+        avatarUrl: inviteAvatar.trim() || undefined,
       });
       await logActivity(
         profile?.id || 1,
@@ -216,6 +217,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       );
       setInviteEmail('');
       setInviteName('');
+      setInviteAvatar('');
       setInvitePassword('');
       setShowInviteModal(false);
       await fetchTeamMembers();
@@ -365,6 +367,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     if (profile) {
       setUserDisplayName(profile.displayName || '');
       setUserRole(profile.role || 'accountant');
+      setUserAvatarUrl(profile.avatarUrl || (profile as any)?.photoURL || '');
     }
   }, [profile]);
 
@@ -374,14 +377,17 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
     setSavingUser(true);
     setUserSaveSuccess(false);
     try {
-      await updateUserProfile(profile.id, { displayName: userDisplayName });
+      await updateUserProfile(profile.id, {
+        displayName: userDisplayName,
+        avatarUrl: userAvatarUrl.trim(),
+      });
       await logActivity(
         profile.id,
         profile.email,
         'UPDATE_PROFILE',
         'user',
         String(profile.id),
-        `User updated display name to: ${userDisplayName}`
+        `User updated display name / avatar`
       );
       await refreshProfile();
       setUserSaveSuccess(true);
@@ -2519,144 +2525,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
             )}
           </div>
 
-            {/* Granular Permission Matrix Table */}
-            <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                <div>
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    Interactive RBAC Permission Matrix
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Transparent capability verification across all 4 system roles and accounting modules.
-                  </p>
-                </div>
-
-                <div className="relative max-w-xs w-full">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                    <Search className="w-3.5 h-3.5" />
-                  </span>
-                  <input
-                    type="text"
-                    value={matrixSearch}
-                    onChange={(e) => setMatrixSearch(e.target.value)}
-                    placeholder="Search permissions..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {PERMISSION_MATRIX_DATA.filter((group) => {
-                  if (!matrixSearch.trim()) return true;
-                  const q = matrixSearch.toLowerCase();
-                  return (
-                    group.category.toLowerCase().includes(q) ||
-                    group.features.some(
-                      (f) =>
-                        f.name.toLowerCase().includes(q) ||
-                        f.description.toLowerCase().includes(q)
-                    )
-                  );
-                }).map((group) => (
-                  <div key={group.category} className="space-y-2">
-                    <div className="text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/5 px-3 py-1.5 rounded-lg border border-emerald-500/10">
-                      {group.category}
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-800/80 text-slate-400 text-[11px]">
-                            <th className="pb-2 w-2/5">Capability / Action</th>
-                            <th className="pb-2 text-center w-1/8 text-purple-400">Admin</th>
-                            <th className="pb-2 text-center w-1/8 text-emerald-400">Accountant</th>
-                            <th className="pb-2 text-center w-1/8 text-blue-400">Billing Clerk</th>
-                            <th className="pb-2 text-center w-1/8 text-amber-400">Auditor</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/40">
-                          {group.features
-                            .filter((feat) => {
-                              if (!matrixSearch.trim()) return true;
-                              const q = matrixSearch.toLowerCase();
-                              return (
-                                feat.name.toLowerCase().includes(q) ||
-                                feat.description.toLowerCase().includes(q)
-                              );
-                            })
-                            .map((feat) => (
-                              <tr key={feat.name} className="hover:bg-slate-800/30">
-                                <td className="py-2.5 pr-2">
-                                  <div className="font-semibold text-slate-200">{feat.name}</div>
-                                  <div className="text-[11px] text-slate-500 leading-tight">
-                                    {feat.description}
-                                  </div>
-                                </td>
-                                <td className="py-2.5 text-center">
-                                  {feat.admin ? (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-500/20 text-purple-300">
-                                      <Check className="w-3.5 h-3.5" />
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-slate-500">
-                                      -
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-2.5 text-center">
-                                  {feat.accountant ? (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300">
-                                      <Check className="w-3.5 h-3.5" />
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-slate-500">
-                                      -
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-2.5 text-center">
-                                  {feat.billing_operator ? (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/20 text-blue-300">
-                                      <Check className="w-3.5 h-3.5" />
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-slate-500">
-                                      -
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-2.5 text-center">
-                                  {feat.auditor ? (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500/20 text-amber-300">
-                                      <Check className="w-3.5 h-3.5" />
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-800 text-slate-500">
-                                      -
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* User Profile Form */}
             <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div>
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
                     <User className="w-4 h-4 text-emerald-400" />
-                    Personal Profile Name
+                    Personal Profile & Avatar
                   </h4>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Update your display name visible across company audit trails and document remarks.
+                    Update your profile photo and display name visible across company audit trails and document remarks.
                   </p>
                 </div>
               </div>
@@ -2691,15 +2569,27 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                   </div>
                 </div>
 
-                <div className="sm:col-span-2 flex justify-end pt-1">
+                <div className="sm:col-span-2 pt-2 border-t border-slate-800">
+                  <LocalImageUploader
+                    id="personal-profile-avatar"
+                    label="Personal Profile Picture"
+                    description="Upload a photo from your device or paste an image URL for your profile"
+                    value={userAvatarUrl}
+                    onChange={setUserAvatarUrl}
+                    type="avatar"
+                    fallbackName={userDisplayName}
+                  />
+                </div>
+
+                <div className="sm:col-span-2 flex justify-end pt-2">
                   <button
                     type="button"
                     onClick={handleSaveUserProfile}
                     disabled={savingUser}
-                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer shadow-md shadow-emerald-600/20"
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 transition cursor-pointer shadow-md shadow-emerald-600/20"
                   >
                     <Save className="w-4 h-4" />
-                    <span>{savingUser ? 'Updating Profile...' : 'Save Profile Name'}</span>
+                    <span>{savingUser ? 'Updating Profile...' : 'Save Profile & Photo'}</span>
                   </button>
                 </div>
               </div>
@@ -2885,6 +2775,18 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                 </select>
               </div>
 
+              <div className="pt-2 border-t border-slate-800">
+                <LocalImageUploader
+                  id="invite-member-avatar"
+                  label="Profile Photo / Avatar (Optional)"
+                  description="Upload member photo from device or generate initials"
+                  value={inviteAvatar}
+                  onChange={setInviteAvatar}
+                  type="avatar"
+                  fallbackName={inviteName}
+                />
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
@@ -2910,7 +2812,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       {/* Edit User Profile Modal (Admin Only) */}
       {editingMember && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
@@ -3008,14 +2910,15 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                 <p className="text-[10px] text-slate-500 mt-1">Set a new password (min 6 characters) to update user login access.</p>
               </div>
 
-              <div>
-                <label className="block font-medium text-slate-300 mb-1">Avatar Image URL (Optional)</label>
-                <input
-                  type="url"
+              <div className="pt-2 border-t border-slate-800">
+                <LocalImageUploader
+                  id="edit-member-avatar"
+                  label="Profile Photo / Avatar"
+                  description="Upload a photo from local device or paste an image link"
                   value={editMemberAvatar}
-                  onChange={(e) => setEditMemberAvatar(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 font-mono"
+                  onChange={setEditMemberAvatar}
+                  type="avatar"
+                  fallbackName={editMemberName}
                 />
               </div>
 

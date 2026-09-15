@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole, isReadOnlyRole } from '../lib/permissions';
 import { AppSelect } from './AppSelect';
 import { AccountMatchSelector } from './AccountMatchSelector';
+import { SkeletonAccountingView } from './SkeletonLoaders';
 import {
   BookOpen,
   Plus,
@@ -854,6 +855,10 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     ]);
     exportCsv(`TrialBalance_${dateRange.start}_to_${dateRange.end}`, [header, ...rows]);
   };
+
+  if (loading && !summary && dayBookEntries.length === 0) {
+    return <SkeletonAccountingView />;
+  }
 
   return (
     <div className="space-y-6 pb-12">

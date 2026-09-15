@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useDialog } from '../context/DialogContext';
 import { AppSelect } from './AppSelect';
 import { Expense } from '../types';
+import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
 import {
   TrendingDown,
   Plus,
@@ -196,6 +197,22 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
     .filter((e) => !e.itcEligible)
     .reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
 
+  if (loading && expenses.length === 0) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="space-y-2">
+            <div className="h-6 w-52 bg-slate-800 rounded-lg animate-pulse animate-shimmer" />
+            <div className="h-3.5 w-80 bg-slate-800/60 rounded animate-pulse animate-shimmer" />
+          </div>
+          <div className="h-10 w-36 bg-slate-800 rounded-xl animate-pulse animate-shimmer" />
+        </div>
+        <SkeletonMetricGrid count={3} cols="grid-cols-1 sm:grid-cols-3" />
+        <SkeletonTable columns={8} rows={6} hasHeader={false} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -351,7 +368,20 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {filteredExpenses.length === 0 ? (
+              {loading && filteredExpenses.length === 0 ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse animate-shimmer">
+                    <td className="py-3.5 px-4"><div className="h-4 w-20 bg-slate-800 rounded" /></td>
+                    <td className="py-3.5 px-4"><div className="h-4 w-28 bg-slate-800 rounded" /></td>
+                    <td className="py-3.5 px-4"><div className="h-4 w-36 bg-slate-800 rounded" /></td>
+                    <td className="py-3.5 px-4"><div className="h-4 w-24 bg-slate-800/70 rounded" /></td>
+                    <td className="py-3.5 px-4 text-right"><div className="h-4 w-20 bg-slate-800 ml-auto rounded" /></td>
+                    <td className="py-3.5 px-4 text-right"><div className="h-4 w-16 bg-slate-800 ml-auto rounded" /></td>
+                    <td className="py-3.5 px-4 text-center"><div className="h-5 w-20 bg-slate-800 mx-auto rounded-full" /></td>
+                    <td className="py-3.5 px-4 text-center"><div className="h-6 w-16 bg-slate-800 mx-auto rounded" /></td>
+                  </tr>
+                ))
+              ) : filteredExpenses.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-10 text-center text-slate-500">
                     <Receipt className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" />

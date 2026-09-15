@@ -16,10 +16,13 @@ import {
   Lock,
   KeyRound,
   UserCheck,
+  Dices,
+  Sparkles,
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_CONFIG, UserRole } from '../lib/permissions';
+import { updateUserProfile } from '../db/users';
 
 interface TopHeaderProps {
   isCollapsed: boolean;
@@ -42,10 +45,35 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   user,
   profile,
 }) => {
-  const { logout } = useAuth();
+  const { logout, refreshProfile } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
+  const [isChangingAvatar, setIsChangingAvatar] = useState<boolean>(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleQuickAutoChangeAvatar = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!profile?.id) return;
+    setIsChangingAvatar(true);
+    try {
+      const styles = ['notionists', 'lorelei', 'adventurer', 'avataaars', 'bottts', 'micah', 'initials'];
+      const randomStyle = styles[Math.floor(Math.random() * styles.length)];
+      const randomSuffix = Math.random().toString(36).substring(2, 7);
+      const name = profile?.displayName || user?.displayName || 'User';
+      const seed = `${name}-${randomSuffix}`;
+      const newAvatarUrl =
+        randomStyle === 'initials'
+          ? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&chars=2`
+          : `https://api.dicebear.com/7.x/${randomStyle}/svg?seed=${encodeURIComponent(seed)}`;
+
+      await updateUserProfile(profile.id, { avatarUrl: newAvatarUrl });
+      await refreshProfile();
+    } catch (err) {
+      console.error('Quick auto change avatar error:', err);
+    } finally {
+      setIsChangingAvatar(false);
+    }
+  };
 
   const currentRole: UserRole = (profile?.role as UserRole) || 'accountant';
   const roleConfig = ROLE_CONFIG[currentRole] || ROLE_CONFIG.accountant;
@@ -163,18 +191,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <span className="hidden sm:inline">{dataLoading ? 'Syncing...' : 'Sync Books'}</span>
         </button>
 
-        {/* Quick Header Logout Button */}
-        <button
-          type="button"
-          id="header-quick-logout-btn"
-          onClick={logout}
-          title="Log out and return to Workspace Portal"
-          className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-500/10 border border-slate-700/60 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">Logout</span>
-        </button>
-
         {/* User Profile Chip & Account Details Menu */}
         <div className="relative" ref={userMenuRef}>
           <button
@@ -184,15 +200,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             title="Click to view user profile and security role"
             className="flex items-center gap-2 pl-2 border-l border-slate-800 hover:bg-slate-800/50 py-1 px-1.5 rounded-xl transition cursor-pointer group"
           >
-            {user?.photoURL ? (
+            {profile?.avatarUrl || user?.photoURL ? (
               <img
-                src={user.photoURL}
+                src={profile?.avatarUrl || user?.photoURL}
                 alt="User"
+                referrerPolicy="no-referrer"
                 className="w-7 h-7 rounded-full border border-slate-700 object-cover"
               />
             ) : (
               <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold">
-                {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
+                {profile?.displayName?.[0]?.toUpperCase() || user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
               </div>
             )}
             <div className="hidden sm:block text-left min-w-0">
@@ -213,22 +230,47 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               className="absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-3 z-50 animate-fade-in space-y-3"
             >
               {/* User Identity Header */}
-              <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-                <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm font-bold text-emerald-400 shrink-0">
-                  {user?.photoURL ? (
-                    <img src={user.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+              <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative group">
+                    <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm font-bold text-emerald-400 shrink-0 overflow-hidden shadow-inner">
+                      {profile?.avatarUrl || user?.photoURL ? (
+                        <img
+                          src={profile?.avatarUrl || user?.photoURL}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full rounded-full object-cover"
+                        />
+                      ) : (
+                        user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-white truncate">
+                      {profile?.displayName || user?.displayName || 'Workspace User'}
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono truncate">
+                      {user?.email}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  id="quick-auto-change-avatar-btn"
+                  onClick={handleQuickAutoChangeAvatar}
+                  disabled={isChangingAvatar}
+                  title="Automatically change profile image"
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition shrink-0"
+                >
+                  {isChangingAvatar ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'
+                    <Dices className="w-3.5 h-3.5" />
                   )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-white truncate">
-                    {user?.displayName || 'Workspace User'}
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-mono truncate">
-                    {user?.email}
-                  </div>
-                </div>
+                  <span>Auto-Change</span>
+                </button>
               </div>
 
               {/* Active Role Card */}

@@ -4,6 +4,7 @@ import { useDialog } from '../context/DialogContext';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole } from '../lib/permissions';
 import { AppSelect } from './AppSelect';
+import { SkeletonLedgersView } from './SkeletonLoaders';
 import {
   Users,
   Plus,
@@ -239,6 +240,10 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
     }
   };
 
+  if (loading && parties.length === 0) {
+    return <SkeletonLedgersView />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -440,7 +445,21 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredParties.length === 0 ? (
+                {loading && filteredParties.length === 0 ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse animate-shimmer">
+                      <td className="py-3.5 px-4"><div className="h-4 w-40 bg-slate-800 rounded" /></td>
+                      <td className="py-3.5 px-4"><div className="h-4 w-20 bg-slate-800/80 rounded" /></td>
+                      <td className="py-3.5 px-4"><div className="h-4 w-28 bg-slate-800/70 rounded" /></td>
+                      <td className="py-3.5 px-4"><div className="h-4 w-24 bg-slate-800/60 rounded" /></td>
+                      <td className="py-3.5 px-4 text-right"><div className="h-4 w-16 bg-slate-800 ml-auto rounded" /></td>
+                      <td className="py-3.5 px-4 text-right"><div className="h-4 w-20 bg-slate-800 ml-auto rounded" /></td>
+                      <td className="py-3.5 px-4 text-right"><div className="h-4 w-20 bg-slate-800 ml-auto rounded" /></td>
+                      <td className="py-3.5 px-4 text-right"><div className="h-4 w-24 bg-slate-800/90 ml-auto rounded" /></td>
+                      <td className="py-3.5 px-4 text-center"><div className="h-6 w-16 bg-slate-800 mx-auto rounded" /></td>
+                    </tr>
+                  ))
+                ) : filteredParties.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-12 text-center text-xs text-slate-500 bg-slate-900/50">
                       No parties found matching your search. Click &quot;Add Party&quot; above to create one.

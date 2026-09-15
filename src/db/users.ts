@@ -288,7 +288,7 @@ export async function updateUserRole(userId: number, role: UserRole) {
   return await updateUserProfile(userId, { role });
 }
 
-export async function createTeamMember(data: { email: string; displayName: string; role: UserRole; password?: string }) {
+export async function createTeamMember(data: { email: string; displayName: string; role: UserRole; password?: string; avatarUrl?: string }) {
   const dummyUid = `member-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const nextId = await getNextSequenceId('user_id');
   const newMember: DbUser = {
@@ -298,7 +298,7 @@ export async function createTeamMember(data: { email: string; displayName: strin
     displayName: data.displayName.trim(),
     role: data.role,
     password: data.password?.trim() || null,
-    avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.displayName)}`,
+    avatarUrl: data.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(data.displayName)}`,
     createdAt: new Date().toISOString(),
   };
 

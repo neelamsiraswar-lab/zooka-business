@@ -9,6 +9,7 @@ import {
 } from '../types';
 import { numberToIndianWords } from '../lib/numberToWords';
 import { useDialog } from '../context/DialogContext';
+import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
 import {
   CreditCard,
   Plus,
@@ -605,6 +606,25 @@ export const ChequeManagementView: React.FC<ChequeManagementViewProps> = ({
       totalLeaves: total,
     }));
   };
+
+  if (loading && cheques.length === 0) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="h-6 w-64 bg-slate-800 rounded-lg animate-pulse animate-shimmer" />
+            <div className="h-3.5 w-80 bg-slate-800/60 rounded animate-pulse animate-shimmer" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-10 w-36 bg-slate-800 rounded-xl animate-pulse animate-shimmer" />
+            <div className="h-10 w-36 bg-slate-800 rounded-xl animate-pulse animate-shimmer" />
+          </div>
+        </div>
+        <SkeletonMetricGrid count={5} cols="grid-cols-2 md:grid-cols-3 lg:grid-cols-5" />
+        <SkeletonTable columns={8} rows={6} hasHeader={false} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12">

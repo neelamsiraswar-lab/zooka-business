@@ -345,20 +345,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
             <div className="flex items-center gap-2.5 min-w-0">
-              {user?.photoURL ? (
+              {profile?.avatarUrl || user?.photoURL ? (
                 <img
-                  src={user.photoURL}
+                  src={profile?.avatarUrl || user?.photoURL}
                   alt="User"
-                  className="w-8 h-8 rounded-full border border-slate-700 flex-shrink-0"
+                  referrerPolicy="no-referrer"
+                  className="w-8 h-8 rounded-full border border-slate-700 flex-shrink-0 object-cover"
                 />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {user?.email?.[0]?.toUpperCase() || 'U'}
+                  {profile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
                 </div>
               )}
               <div className="min-w-0">
                 <span className="block text-xs font-semibold text-slate-200 truncate">
-                  {user?.displayName || user?.email?.split('@')[0]}
+                  {profile?.displayName || user?.displayName || user?.email?.split('@')[0]}
                 </span>
                 <span className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-semibold border ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
                   {roleConfig.badge}
@@ -486,22 +487,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              {user?.photoURL ? (
+              {profile?.avatarUrl || user?.photoURL ? (
                 <img
-                  src={user.photoURL}
+                  src={profile?.avatarUrl || user?.photoURL}
                   alt="User"
-                  className="w-7 h-7 rounded-full border border-slate-700 flex-shrink-0"
+                  referrerPolicy="no-referrer"
+                  className="w-7 h-7 rounded-full border border-slate-700 flex-shrink-0 object-cover"
                 />
               ) : (
                 <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {user?.email?.[0]?.toUpperCase() || 'U'}
+                  {profile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
                 </div>
               )}
 
               {!isCollapsed && (
                 <div className="min-w-0">
                   <span className="block text-xs font-semibold text-slate-200 truncate leading-tight">
-                    {user?.displayName || user?.email?.split('@')[0]}
+                    {profile?.displayName || user?.displayName || user?.email?.split('@')[0]}
                   </span>
                   <span className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-semibold border leading-none ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
                     {roleConfig.badge}

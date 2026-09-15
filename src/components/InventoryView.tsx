@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { InventoryItem } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole } from '../lib/permissions';
+import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
 import {
   Boxes,
   Plus,
@@ -191,6 +192,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     }
   };
 
+  if (loading && inventory.length === 0) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="space-y-2">
+            <div className="h-6 w-56 bg-slate-800 rounded-lg animate-pulse animate-shimmer" />
+            <div className="h-3.5 w-80 bg-slate-800/60 rounded animate-pulse animate-shimmer" />
+          </div>
+          <div className="h-10 w-36 bg-slate-800 rounded-xl animate-pulse animate-shimmer" />
+        </div>
+        <SkeletonMetricGrid count={4} />
+        <SkeletonTable columns={9} rows={6} hasHeader={false} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -306,7 +323,21 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 font-mono">
-              {filteredItems.length === 0 ? (
+              {loading && filteredItems.length === 0 ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse animate-shimmer">
+                    <td className="py-3.5 px-4"><div className="h-4 w-36 bg-slate-800 rounded" /></td>
+                    <td className="py-3.5 px-4 text-center"><div className="h-4 w-16 bg-slate-800 mx-auto rounded" /></td>
+                    <td className="py-3.5 px-4 text-center"><div className="h-5 w-12 bg-slate-800 mx-auto rounded-full" /></td>
+                    <td className="py-3.5 px-4 text-right"><div className="h-4 w-20 bg-slate-800 ml-auto rounded" /></td>
+                    <td className="py-3.5 px-4 text-right"><div className="h-4 w-20 bg-slate-800/70 ml-auto rounded" /></td>
+                    <td className="py-3.5 px-4 text-center"><div className="h-4 w-16 bg-slate-800 mx-auto rounded" /></td>
+                    <td className="py-3.5 px-4 text-right"><div className="h-4 w-24 bg-slate-800/90 ml-auto rounded" /></td>
+                    <td className="py-3.5 px-4 text-center"><div className="h-5 w-20 bg-slate-800 mx-auto rounded-full" /></td>
+                    <td className="py-3.5 px-4 text-right"><div className="h-6 w-16 bg-slate-800 ml-auto rounded" /></td>
+                  </tr>
+                ))
+              ) : filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-12 text-center text-slate-500 font-sans">
                     No stock inventory items found. Click &quot;Add Stock Item&quot; to build your product catalog.

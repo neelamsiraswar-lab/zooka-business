@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FinancialSummary, ActivityLog, Invoice, Cheque } from '../types';
+import { SkeletonDashboardView } from './SkeletonLoaders';
 import {
   TrendingUp,
   TrendingDown,
@@ -9,15 +10,12 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   ArrowDownLeft,
-  RefreshCw,
   Clock,
   CheckCircle,
   IndianRupee,
   Layers,
   CreditCard,
   BookOpen,
-  Maximize2,
-  Minimize2,
   Bell,
   AlertCircle,
   Calendar,
@@ -58,33 +56,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onRefresh,
   loading,
 }) => {
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, []);
-
-  const toggleFullscreen = async () => {
-    try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-      } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        }
-      }
-    } catch (err) {
-      console.warn('Error toggling fullscreen:', err);
-    }
-  };
-
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
     return new Intl.NumberFormat('en-IN', {
@@ -93,6 +64,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       maximumFractionDigits: 2,
     }).format(val);
   };
+
+  if (loading && !summary) {
+    return <SkeletonDashboardView />;
+  }
 
   return (
     <div className="space-y-6">
@@ -111,14 +86,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={onRefresh}
-            disabled={loading}
-            className="px-3 py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-xl transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>Sync</span>
-          </button>
           {onQuickReceipt && (
             <button
               onClick={onQuickReceipt}
@@ -159,14 +126,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           >
             <ArrowUpRight className="w-4 h-4 font-bold" />
             <span>+ Create GST Invoice</span>
-          </button>
-          <button
-            onClick={toggleFullscreen}
-            className="px-3.5 py-2 text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
-            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            <span className="hidden sm:inline">{isFullscreen ? 'Exit Fullscreen' : 'Full Screen'}</span>
           </button>
         </div>
       </div>
