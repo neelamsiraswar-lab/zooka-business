@@ -2,42 +2,9 @@
 import { db, COLLECTIONS, getNextSequenceId } from './index';
 import { Workspace } from '../types';
 import { logActivity } from './dataService';
+import { getPlatformSettings } from './platformSettings';
 
 export const ACTIVE_WORKSPACE_KEY = 'apex_gst_active_workspace_id';
-
-export const DEFAULT_WORKSPACE_DATA: Omit<Workspace, 'id' | 'createdAt'> = {
-  numericId: 1,
-  name: 'Apex Enterprises (Primary)',
-  slug: 'apex-primary',
-  businessName: 'Apex Enterprises Pvt Ltd',
-  tradeName: 'Apex GST Accounting & Solutions',
-  gstin: '27AAECB9382M1ZR',
-  stateCode: '27',
-  stateName: 'Maharashtra',
-  address: 'Plot 42, Bandra-Kurla Complex, Bandra East, Mumbai, Maharashtra 400051',
-  phone: '+91 98201 23456',
-  email: 'accounts@apexenterprises.in',
-  bankName: 'HDFC Bank Ltd',
-  accountNumber: '50200084920192',
-  ifscCode: 'HDFC0000240',
-  upiId: 'apexenterprises@hdfcbank',
-  ownerEmail: 'nawarkuldeep@gmail.com',
-  ownerName: 'Kuldeep Siraswar',
-  plan: 'enterprise',
-  status: 'active',
-  isDefault: true,
-  invoicePrefix: 'INV/2026-27/',
-  purchasePrefix: 'PUR/2026-27/',
-  receiptPrefix: 'REC/2026-27/',
-  membersCount: 4,
-  invoicesCount: 12,
-  billingCycle: 'annual',
-  subscriptionStatus: 'active',
-  currentPeriodStart: '2026-04-01T00:00:00.000Z',
-  currentPeriodEnd: '2027-03-31T23:59:59.000Z',
-  maxUsers: -1,
-  maxInvoicesPerMonth: -1,
-};
 
 export function getActiveWorkspaceId(): string {
   try {
@@ -46,7 +13,7 @@ export function getActiveWorkspaceId(): string {
   } catch {
     // ignore
   }
-  return 'default-workspace';
+  return '';
 }
 
 export function setActiveWorkspaceId(workspaceId: string): void {
@@ -57,10 +24,11 @@ export function setActiveWorkspaceId(workspaceId: string): void {
   }
 }
 
-export async function getActiveWorkspace(): Promise<Workspace> {
+export async function getActiveWorkspace(): Promise<Workspace | null> {
   const activeId = getActiveWorkspaceId();
   const all = await getAllWorkspaces();
-  const found = all.find((w) => w.id === activeId) || all.find((w) => w.isDefault) || all[0];
+  if (!all || all.length === 0) return null;
+  const found = (activeId ? all.find((w) => w.id === activeId) : null) || all[0] || null;
   return found;
 }
 
@@ -70,29 +38,24 @@ export async function getAllWorkspaces(): Promise<Workspace[]> {
     const snap = await workspacesRef.get();
 
     if (snap.empty) {
-      // Initialize default primary workspace in Firestore
-      const now = new Date().toISOString();
-      const defaultWorkspace: Workspace = {
-        ...DEFAULT_WORKSPACE_DATA,
-        id: 'default-workspace',
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      await workspacesRef.doc('default-workspace').set(defaultWorkspace);
-      return [defaultWorkspace];
+      return [];
     }
 
-    const list: Workspace[] = snap.docs.map((d) => {
+    const list: Workspace[] = [];
+    for (const d of snap.docs) {
       const data = d.data();
-      return {
+      // Skip any legacy default workspace
+      if (d.id === 'default-workspace' || data.slug === 'primary-enterprise') {
+        continue;
+      }
+      list.push({
         id: d.id,
         numericId: data.numericId || 1,
         name: data.name || data.businessName || 'Workspace',
         slug: data.slug || d.id,
         businessName: data.businessName || data.name || 'Business Entity',
         tradeName: data.tradeName || '',
-        gstin: data.gstin || '27AAECB9382M1ZR',
+        gstin: data.gstin || '',
         stateCode: data.stateCode || '27',
         stateName: data.stateName || 'Maharashtra',
         address: data.address || '',
@@ -102,11 +65,11 @@ export async function getAllWorkspaces(): Promise<Workspace[]> {
         accountNumber: data.accountNumber || '',
         ifscCode: data.ifscCode || '',
         upiId: data.upiId || '',
-        ownerEmail: data.ownerEmail || 'nawarkuldeep@gmail.com',
-        ownerName: data.ownerName || 'Admin',
+        ownerEmail: data.ownerEmail || '',
+        ownerName: data.ownerName || '',
         plan: data.plan || 'professional',
         status: data.status || 'active',
-        isDefault: !!data.isDefault,
+        isDefault: false,
         createdAt: data.createdAt || new Date().toISOString(),
         updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
         invoicePrefix: data.invoicePrefix || 'INV/2026-27/',
@@ -124,24 +87,13 @@ export async function getAllWorkspaces(): Promise<Workspace[]> {
         maxUsers: data.maxUsers,
         maxInvoicesPerMonth: data.maxInvoicesPerMonth,
         subscriptionInvoices: data.subscriptionInvoices || [],
-      };
-    });
+      });
+    }
 
-    // Sort: Default first, then recently created
-    return list.sort((a, b) => {
-      if (a.isDefault && !b.isDefault) return -1;
-      if (!a.isDefault && b.isDefault) return 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (err) {
     console.error('Failed to get all workspaces from Firestore:', err);
-    return [
-      {
-        ...DEFAULT_WORKSPACE_DATA,
-        id: 'default-workspace',
-        createdAt: new Date().toISOString(),
-      },
-    ];
+    return [];
   }
 }
 
@@ -300,13 +252,6 @@ export async function deleteWorkspace(
   operatorEmail: string = 'nawarkuldeep@gmail.com'
 ): Promise<void> {
   const docRef = db.collection(COLLECTIONS.WORKSPACES).doc(id);
-  const snap = await docRef.get();
-  if (snap.exists) {
-    const data = snap.data() as Workspace;
-    if (data.isDefault) {
-      throw new Error('The primary default workspace cannot be deleted.');
-    }
-  }
 
   await docRef.delete();
 

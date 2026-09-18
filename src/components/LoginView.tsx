@@ -27,6 +27,9 @@ import {
 
 import { createWorkspace } from '../db/workspaces';
 import { INDIAN_STATES } from '../data/indianStates';
+import { FirestoreConnectionModal } from './FirestoreConnectionModal';
+import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
+import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, formatINR, PLAN_COLOR_PRESETS } from '../data/subscriptionPlans';
 
 export const LoginView: React.FC = () => {
   const {
@@ -41,17 +44,23 @@ export const LoginView: React.FC = () => {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
 
   // Sign In Form States
-  const [email, setEmail] = useState('admin.rohit@apexaccounting.com');
-  const [password, setPassword] = useState('Admin@2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Super Admin Modal States
   const [showSuperAdminModal, setShowSuperAdminModal] = useState(false);
-  const [superAdminEmail, setSuperAdminEmail] = useState('nawarkuldeep@gmail.com');
-  const [superAdminPassword, setSuperAdminPassword] = useState('Kuldeep@2785');
+  const [showFirestoreModal, setShowFirestoreModal] = useState(false);
+  const [superAdminEmail, setSuperAdminEmail] = useState('');
+  const [superAdminPassword, setSuperAdminPassword] = useState('');
   const [showSuperAdminPassword, setShowSuperAdminPassword] = useState(false);
   const [superAdminLoading, setSuperAdminLoading] = useState(false);
   const [superAdminError, setSuperAdminError] = useState<string | null>(null);
+
+  // Dynamic Subscription Plans State (Synced with Super Admin Firestore Catalog)
+  const [availablePlans, setAvailablePlans] = useState<PlanTierConfig[]>(DEFAULT_BUILTIN_PLANS);
+  const [plansLoading, setPlansLoading] = useState<boolean>(true);
+  const [pricingCycle, setPricingCycle] = useState<'monthly' | 'annual'>('annual');
 
   // Sign Up & Workspace Registration Form States
   const [signupName, setSignupName] = useState('');
@@ -80,6 +89,42 @@ export const LoginView: React.FC = () => {
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
   const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
 
+  // Load live subscription plans from Super Admin Firestore Catalog
+  const loadPlans = async () => {
+    setPlansLoading(true);
+    try {
+      const fetched = await getAllSubscriptionPlans();
+      if (fetched && fetched.length > 0) {
+        // Filter out archived plans from public landing page
+        const activeOnly = fetched.filter((p) => p.status !== 'archived');
+        const listToUse = activeOnly.length > 0 ? activeOnly : fetched;
+        setAvailablePlans(listToUse);
+
+        // Ensure selected plan is valid in catalog
+        setSignupPlan((prev) => {
+          if (listToUse.some((p) => p.id === prev)) return prev;
+          const proPlan = listToUse.find((p) => p.id === 'professional');
+          return proPlan ? proPlan.id : listToUse[0].id;
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load subscription plans in LoginView:', err);
+    } finally {
+      setPlansLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPlans();
+    const handlePlansUpdate = () => {
+      loadPlans();
+    };
+    window.addEventListener('subscription_plans_updated', handlePlansUpdate);
+    return () => {
+      window.removeEventListener('subscription_plans_updated', handlePlansUpdate);
+    };
+  }, []);
+
   useEffect(() => {
     const handleBrandingUpdate = () => {
       setPlatformAppName(localStorage.getItem('platform_app_name') || 'Apex TallyGST');
@@ -92,14 +137,6 @@ export const LoginView: React.FC = () => {
       window.removeEventListener('platform_branding_updated', handleBrandingUpdate);
     };
   }, []);
-
-  // Quick autofill preset handler
-  const handleSelectPreset = (presetEmail: string, presetPass: string) => {
-    setEmail(presetEmail);
-    setPassword(presetPass);
-    setLocalError(null);
-    clearError();
-  };
 
   // Handle Quick Super Admin 1-Click Login
   const handleInstantSuperAdminLogin = async () => {
@@ -210,9 +247,10 @@ export const LoginView: React.FC = () => {
     try {
       await signUpWithEmail(trimmedEmail, trimmedPass, trimmedName, signupRole);
 
-      // Create workspace with full details
+      // Create workspace with full details from selected live plan
       const wsName = signupWorkspaceName.trim() || `${trimmedName.split(' ')[0]}'s Company`;
       const stateObj = INDIAN_STATES.find((s) => s.code === signupStateCode);
+      const selectedPlanObj = availablePlans.find((p) => p.id === signupPlan);
       await createWorkspace({
         name: wsName,
         businessName: (signupBusinessName || wsName).trim(),
@@ -226,6 +264,9 @@ export const LoginView: React.FC = () => {
         ownerName: trimmedName,
         plan: signupPlan as any,
         status: 'active',
+        maxUsers: selectedPlanObj?.maxUsers,
+        maxInvoicesPerMonth: selectedPlanObj?.maxInvoicesPerMonth,
+        billingCycle: pricingCycle,
       }, trimmedEmail);
 
       setLocalSuccess('Account & workspace registered successfully! Entering...');
@@ -246,28 +287,30 @@ export const LoginView: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white relative">
       {/* Top Navigation Bar */}
-      <header className="px-4 sm:px-6 py-4 border-b border-slate-800/80 max-w-7xl mx-auto w-full flex items-center justify-between">
+      <header className="px-4 sm:px-6 py-3.5 border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md max-w-7xl mx-auto w-full flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
           {platformAppLogo ? (
             <img
               src={platformAppLogo}
               alt="Logo"
               referrerPolicy="no-referrer"
-              className="w-10 h-10 rounded-xl object-contain bg-slate-900 border border-slate-800 p-1 shadow-lg"
+              className="w-9 h-9 rounded-xl object-contain bg-slate-900 border border-slate-800/80 p-1 shadow-xs"
             />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/20">
-              <Building2 className="w-5 h-5 font-bold" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 shadow-xs">
+              <Building2 className="w-4 h-4 font-bold" />
             </div>
           )}
           <div>
-            <span className="font-semibold text-lg tracking-tight text-white flex items-center gap-2">
-              {platformAppName}{' '}
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider font-bold">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-base tracking-tight text-white">
+                {platformAppName}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider font-semibold">
                 Enterprise Cloud
               </span>
-            </span>
-            <p className="text-xs text-slate-400">{platformAppTagline}</p>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-none mt-0.5">{platformAppTagline}</p>
           </div>
         </div>
 
@@ -280,17 +323,22 @@ export const LoginView: React.FC = () => {
               setSuperAdminError(null);
               setShowSuperAdminModal(true);
             }}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 via-amber-600/15 to-amber-500/10 hover:from-amber-500/30 hover:to-amber-600/25 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs font-semibold transition cursor-pointer shadow-sm shadow-amber-500/10 active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-semibold transition cursor-pointer shadow-xs active:scale-95"
             title="Access Super Administrator Console"
           >
             <Crown className="w-3.5 h-3.5 text-amber-400" />
-            <span>Super Admin Login</span>
+            <span>Super Admin</span>
           </button>
 
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 font-medium">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Cloud Firestore Synced</span>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowFirestoreModal(true)}
+            title="Cloud Firestore Connection Diagnostics"
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[11px] text-emerald-300 font-medium transition cursor-pointer"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Firestore Synced</span>
+          </button>
         </div>
       </header>
 
@@ -421,26 +469,26 @@ export const LoginView: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
-        <div className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+      <main className="flex-1 px-4 py-8 sm:py-12 max-w-7xl mx-auto w-full space-y-16">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
           {/* Left Column: Platform Overview & Enterprise Trust */}
           <div className="lg:col-span-6 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-emerald-400">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-medium">
               <Zap className="w-3.5 h-3.5 text-emerald-400" />
               <span>Full GST Compliance (CGST, SGST, IGST &amp; ITC)</span>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-tight">
               Enterprise Cloud Accounting &amp; GST Compliance
             </h1>
 
-            <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-              Secure role-based accounting, double-entry general ledgers, tax filings, and automated GSTR-2B reconciliation backed by Google Cloud Firestore.
+            <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl">
+              Secure role-based accounting, double-entry general ledgers, statutory tax filings, and automated GSTR-2B reconciliation backed by Google Cloud Firestore.
             </p>
 
             {/* Key Features Overview */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
                 <div className="flex items-center gap-2 text-emerald-400">
                   <FileText className="w-4 h-4" />
                   <span className="text-xs font-bold text-white">Full GST Invoicing</span>
@@ -450,7 +498,7 @@ export const LoginView: React.FC = () => {
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
                 <div className="flex items-center gap-2 text-teal-400">
                   <Users className="w-4 h-4" />
                   <span className="text-xs font-bold text-white">Role-Based Access (RBAC)</span>
@@ -460,7 +508,7 @@ export const LoginView: React.FC = () => {
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
                 <div className="flex items-center gap-2 text-indigo-400">
                   <Landmark className="w-4 h-4" />
                   <span className="text-xs font-bold text-white">Banking &amp; Auto BRS</span>
@@ -470,7 +518,7 @@ export const LoginView: React.FC = () => {
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/80 space-y-1.5">
+              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
                 <div className="flex items-center gap-2 text-purple-400">
                   <ShieldCheck className="w-4 h-4" />
                   <span className="text-xs font-bold text-white">Audit Trail Logging</span>
@@ -484,7 +532,7 @@ export const LoginView: React.FC = () => {
 
           {/* Right Column: Authentication Card with Sign In / Create Account tabs */}
           <div className="lg:col-span-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+            <div className="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xs">
               <div className="absolute -top-16 -right-16 w-44 h-44 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
               {/* Mode Toggle Tabs (Sign In vs Create Account) */}
@@ -610,51 +658,6 @@ export const LoginView: React.FC = () => {
                       </>
                     )}
                   </button>
-
-                  {/* Quick Preset Roles Bar */}
-                  <div className="pt-3 border-t border-slate-800/80">
-                    <div className="text-[11px] text-slate-400 mb-2 font-medium flex items-center justify-between">
-                      <span>Quick Demo Logins:</span>
-                      <span className="text-[10px] text-slate-500">Click to autofill</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleSelectPreset('admin.rohit@apexaccounting.com', 'Admin@2026')}
-                        className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/40 text-left transition cursor-pointer"
-                      >
-                        <div className="text-[11px] font-semibold text-emerald-400 truncate">Admin</div>
-                        <div className="text-[9px] text-slate-500 truncate">Rohit</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSelectPreset('ca.kuldeep@apexaccounting.com', 'Accountant@2026')}
-                        className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/40 text-left transition cursor-pointer"
-                      >
-                        <div className="text-[11px] font-semibold text-teal-400 truncate">Accountant</div>
-                        <div className="text-[9px] text-slate-500 truncate">CA Kuldeep</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSelectPreset('billing.vikram@apexaccounting.com', 'Billing@2026')}
-                        className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/40 text-left transition cursor-pointer"
-                      >
-                        <div className="text-[11px] font-semibold text-indigo-400 truncate">Billing</div>
-                        <div className="text-[9px] text-slate-500 truncate">Vikram</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSelectPreset('auditor.kavita@apexaccounting.com', 'Auditor@2026')}
-                        className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-left transition cursor-pointer"
-                      >
-                        <div className="text-[11px] font-semibold text-amber-400 truncate">Auditor</div>
-                        <div className="text-[9px] text-slate-500 truncate">Kavita</div>
-                      </button>
-                    </div>
-                  </div>
                 </form>
               ) : (
                 /* ----------------- CREATE ACCOUNT / REGISTER FORM ----------------- */
@@ -805,9 +808,11 @@ export const LoginView: React.FC = () => {
                         onChange={(e) => setSignupPlan(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-emerald-500 transition text-xs cursor-pointer font-medium"
                       >
-                        <option value="starter">Starter Plan (₹999/mo - Up to 2 Users, 150 Invoices)</option>
-                        <option value="professional">Professional Plan (₹2,499/mo - 10 Users, Unlimited Invoices)</option>
-                        <option value="enterprise">Enterprise Plan (₹6,999/mo - Unlimited Users &amp; Multi-Branch)</option>
+                        {availablePlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name} ({plan.monthlyPrice === 0 ? 'Free' : `₹${plan.monthlyPrice.toLocaleString('en-IN')}/mo`} - {plan.maxUsers === -1 ? 'Unlimited' : plan.maxUsers} Users, {plan.maxInvoicesPerMonth === -1 ? 'Unlimited' : plan.maxInvoicesPerMonth} Invoices)
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -892,12 +897,181 @@ export const LoginView: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* ----------------- PRICING & SUBSCRIPTION PLANS TABLE SECTION ----------------- */}
+        <section className="mt-16 pt-12 border-t border-slate-800/80 space-y-8">
+          <div className="text-center max-w-2xl mx-auto space-y-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Transparent Pricing Plans</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white">
+              Choose the Right Plan for Your Business Growth
+            </h2>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Scale your accounting operations from single proprietorships to multi-branch enterprises with transparent billing and full GST compliance.
+            </p>
+
+            {/* Billing Cycle Toggle */}
+            <div className="pt-2 flex items-center justify-center">
+              <div className="inline-flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPricingCycle('monthly')}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    pricingCycle === 'monthly'
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Monthly Billing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPricingCycle('annual')}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    pricingCycle === 'annual'
+                      ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>Annual Billing</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-extrabold ${
+                    pricingCycle === 'annual' ? 'bg-slate-950/20 text-slate-950' : 'bg-emerald-500/20 text-emerald-400'
+                  }`}>
+                    Save ~17%
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {availablePlans.map((plan) => {
+              const isPopular = Boolean(plan.popular);
+              const isFree = plan.monthlyPrice === 0;
+
+              return (
+                <div
+                  key={plan.id}
+                  className={`bg-slate-900 rounded-2xl p-6 flex flex-col justify-between transition relative shadow-lg ${
+                    isPopular
+                      ? 'border-2 border-emerald-500 shadow-emerald-500/10'
+                      : 'border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  {isPopular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-emerald-500 text-slate-950 font-bold text-[10px] rounded-full uppercase tracking-wider shadow">
+                      Most Popular
+                    </div>
+                  )}
+
+                  <div>
+                    <div className={`flex items-center justify-between mb-3 ${isPopular ? 'pt-1' : ''}`}>
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                        {plan.badge || (isFree ? 'Free Tier' : plan.isBuiltIn ? 'Standard' : 'Custom')}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold border border-slate-700/50">
+                        {plan.maxUsers === -1 ? 'Unlimited Seats' : `${plan.maxUsers} Seat${plan.maxUsers > 1 ? 's' : ''}`}
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-white mb-1">{plan.name}</h3>
+                    <p className="text-xs text-slate-400 mb-4 h-10 line-clamp-2">{plan.tagline}</p>
+
+                    <div className="mb-6 pb-4 border-b border-slate-800">
+                      {isFree ? (
+                        <>
+                          <div className="text-2xl sm:text-3xl font-extrabold text-white font-mono">₹0</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">Free forever • No credit card required</div>
+                        </>
+                      ) : pricingCycle === 'annual' ? (
+                        <>
+                          <div className="text-2xl sm:text-3xl font-extrabold text-white font-mono flex items-baseline gap-1">
+                            <span className={isPopular ? 'text-emerald-400' : 'text-white'}>
+                              ₹{plan.monthlyEquivalentAnnual.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-xs font-normal text-slate-400">/mo</span>
+                          </div>
+                          <div className={`text-[11px] mt-0.5 ${isPopular ? 'text-emerald-400/90' : 'text-slate-400'}`}>
+                            Billed annually (₹{plan.annualPrice.toLocaleString('en-IN')}/yr • 10 mos calc)
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-2xl sm:text-3xl font-extrabold text-white font-mono flex items-baseline gap-1">
+                            <span className={isPopular ? 'text-emerald-400' : 'text-white'}>
+                              ₹{plan.monthlyPrice.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-xs font-normal text-slate-400">/mo</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            Billed monthly (₹{(plan.monthlyPrice * 12).toLocaleString('en-IN')}/yr)
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Features list */}
+                    <ul className="space-y-2.5 text-xs text-slate-300 mb-6">
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-4 h-4 shrink-0 ${isPopular ? 'text-emerald-400' : 'text-slate-400'}`} />
+                        <span>{plan.maxUsers === -1 ? 'Unlimited User Accounts' : `Up to ${plan.maxUsers} User Seat${plan.maxUsers > 1 ? 's' : ''}`}</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-4 h-4 shrink-0 ${isPopular ? 'text-emerald-400' : 'text-slate-400'}`} />
+                        <span>{plan.maxInvoicesPerMonth === -1 ? 'Unlimited GST Invoices & Bills' : `${plan.maxInvoicesPerMonth.toLocaleString('en-IN')} Invoices / month`}</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <CheckCircle2 className={`w-4 h-4 shrink-0 ${isPopular ? 'text-emerald-400' : 'text-slate-400'}`} />
+                        <span>{plan.maxBranches === -1 ? 'Unlimited Multi-Branch Locations' : `${plan.maxBranches} Branch Location${plan.maxBranches > 1 ? 's' : ''}`}</span>
+                      </li>
+                      {plan.features.slice(0, 3).map((feat, idx) => (
+                        <li key={idx} className="flex items-center gap-2">
+                          <CheckCircle2 className={`w-4 h-4 shrink-0 ${isPopular ? 'text-emerald-400' : 'text-slate-400'}`} />
+                          <span className="line-clamp-1">{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignupPlan(plan.id);
+                      setAuthMode('signup');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className={`w-full py-2.5 rounded-xl font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                      isPopular
+                        ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950 shadow-lg shadow-emerald-500/20'
+                        : isFree
+                        ? 'bg-slate-800 hover:bg-slate-700 text-white'
+                        : 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-500/20'
+                    }`}
+                  >
+                    <span>
+                      {isFree ? 'Get Started Free' : isPopular ? `Select ${plan.name}` : `Choose ${plan.name}`}
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </main>
 
       {/* Page Footer */}
       <footer className="px-6 py-4 border-t border-slate-900 text-center text-xs text-slate-600">
         {platformFooterCopyright}
       </footer>
+
+      {/* Cloud Firestore Diagnostic Modal */}
+      <FirestoreConnectionModal
+        isOpen={showFirestoreModal}
+        onClose={() => setShowFirestoreModal(false)}
+      />
     </div>
   );
 };

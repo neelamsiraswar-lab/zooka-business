@@ -78,6 +78,18 @@ export interface Workspace {
   receiptPrefix?: string;
   membersCount?: number;
   invoicesCount?: number;
+  // Multi-tenant onboarding & setup wizard
+  setupCompleted?: boolean;
+  onboardingStep?: number;
+  filingFrequency?: 'monthly' | 'quarterly';
+  financialYearStart?: string;
+  // White-labeling & branding
+  subdomain?: string;
+  customDomain?: string;
+  brandPrimaryColor?: string;
+  brandLogoUrl?: string;
+  digitalSignatureUrl?: string;
+  watermarkText?: string;
   // Subscription fields
   billingCycle?: SubscriptionBillingCycle;
   subscriptionStatus?: SubscriptionStatus;
@@ -173,6 +185,15 @@ export interface CompanyProfile {
   invoiceShowTerms?: boolean;
   defaultTerms?: string;
   defaultNotes?: string;
+  // White-labeling & branding
+  subdomain?: string;
+  customDomain?: string;
+  brandPrimaryColor?: string;
+  brandLogoUrl?: string;
+  digitalSignatureUrl?: string;
+  watermarkText?: string;
+  filingFrequency?: 'monthly' | 'quarterly';
+  financialYearStart?: string;
 }
 
 export interface Party {
@@ -457,4 +478,6 @@ export type SettingsTab =
   | 'banking'
   | 'terms'
   | 'roles'
-  | 'subscription';
+  | 'subscription'
+  | 'whitelabel'
+  | 'migration';

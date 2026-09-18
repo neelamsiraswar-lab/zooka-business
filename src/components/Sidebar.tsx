@@ -36,6 +36,7 @@ import { CompanyProfile, Workspace } from '../types';
 import { canAccessTab, ROLE_CONFIG, UserRole, isSuperAdmin } from '../lib/permissions';
 import { getAllWorkspaces, getActiveWorkspaceId } from '../db/workspaces';
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
+import { getPlatformSettings } from '../db/platformSettings';
 
 export type NavTab =
   | 'dashboard'
@@ -145,13 +146,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     let mounted = true;
     const fetchMeta = async () => {
       try {
-        const [wsList, plans] = await Promise.all([
+        const [wsList, plans, cloudSettings] = await Promise.all([
           getAllWorkspaces(),
           getAllSubscriptionPlans(),
+          getPlatformSettings(),
         ]);
         if (mounted) {
           if (Array.isArray(wsList)) setWorkspacesList(wsList);
           if (Array.isArray(plans)) setPlansCount(plans.length);
+          if (cloudSettings) {
+            if (cloudSettings.appName) setPlatformAppName(cloudSettings.appName);
+            if (cloudSettings.appLogoUrl) setPlatformAppLogo(cloudSettings.appLogoUrl);
+          }
           setActiveWsId(getActiveWorkspaceId());
         }
       } catch (err) {
@@ -353,20 +359,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="space-y-1.5 px-2">
           {/* If Super Admin, show Super Admin primary icons */}
           {isSuper && (
-            <div className="space-y-1 pb-2 mb-2 border-b border-slate-800">
+            <div className="space-y-1 pb-2 mb-2 border-b border-slate-800/80">
               {/* Master Console Root Button */}
               <button
                 type="button"
                 id="sidebar-collapsed-super-admin"
                 onClick={() => handleSelectTab('super_admin')}
                 title="Super Admin Master Console"
-                className={`w-full p-2.5 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                className={`w-full p-2.5 rounded-lg flex items-center justify-center transition cursor-pointer ${
                   activeTab === 'super_admin'
-                    ? 'bg-gradient-to-tr from-amber-500 to-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-500/25 ring-2 ring-amber-400/40'
-                    : 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/15'
+                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                    : 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/10'
                 }`}
               >
-                <Crown className="w-5 h-5" />
+                <Crown className="w-4 h-4" />
               </button>
 
               {/* In Super Admin mode, show sub-item icons */}
@@ -382,10 +388,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         id={`sidebar-collapsed-super-${item.id}`}
                         onClick={() => handleSelectSuperAdminItem(item.id)}
                         title={`${item.label} (${item.subtitle})`}
-                        className={`w-full p-2.5 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                        className={`w-full p-2.5 rounded-lg flex items-center justify-center transition cursor-pointer ${
                           isSubActive
-                            ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400'
-                            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                            ? 'bg-slate-800 text-amber-300 border border-amber-500/30 font-medium'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                         }`}
                       >
                         <Icon className="w-4 h-4" />
@@ -399,7 +405,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Standard Workspace Nav Items (if inside a workspace) */}
           {(!isSuper || activeTab !== 'super_admin') && (
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {navItems
                 .filter((item) => item.id !== 'super_admin' && canAccessTab(userRole, item.id))
                 .map((item) => {
@@ -411,15 +417,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       id={`nav-item-${item.id}`}
                       onClick={() => handleSelectTab(item.id)}
                       title={`${item.label} (${item.subtitle})`}
-                      className={`w-full p-2.5 rounded-xl flex items-center justify-center relative transition-all duration-200 cursor-pointer ${
+                      className={`w-full p-2.5 rounded-lg flex items-center justify-center relative transition cursor-pointer ${
                         isActive
-                          ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/20'
-                          : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 font-medium'
+                          ? 'bg-slate-800 text-emerald-400 border border-slate-700/70 font-semibold'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                       }`}
                     >
-                      <Icon className="w-5 h-5" />
+                      <Icon className="w-4 h-4" />
                       {item.badge !== undefined && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400" />
+                        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400" />
                       )}
                     </button>
                   );
@@ -439,21 +445,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* VIEW A: ON SUPER ADMIN CONSOLE (activeTab === 'super_admin') */}
         {/* ======================================================= */}
         {isSuper && activeTab === 'super_admin' && (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {/* Section Header */}
-            <div className="flex items-center justify-between px-2 pt-1 pb-0.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+            <div className="flex items-center justify-between px-2 pt-0.5 pb-0.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400/90">
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>Super Admin Governance</span>
+                <span>Governance</span>
               </div>
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Master Online</span>
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>Master Mode</span>
               </span>
             </div>
 
             {/* Super Admin Sub-Items List */}
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {superAdminSubItems.map((item) => {
                 const Icon = item.icon;
                 const isSubActive = superAdminSubTab === item.id;
@@ -464,29 +470,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     id={`super-admin-nav-${item.id}`}
                     type="button"
                     onClick={() => handleSelectSuperAdminItem(item.id)}
-                    className={`w-full group flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                    className={`w-full group flex items-center justify-between px-3 py-2 rounded-lg transition cursor-pointer text-left ${
                       isSubActive
-                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-bold shadow-lg shadow-amber-500/20'
-                        : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 font-medium'
+                        ? 'bg-slate-800 text-white font-medium border border-amber-500/30'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className={`flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${
-                          isSubActive ? 'text-slate-950' : 'text-amber-400/90 group-hover:text-amber-300'
+                        className={`flex-shrink-0 transition-colors ${
+                          isSubActive ? 'text-amber-400' : 'text-slate-400 group-hover:text-amber-400'
                         }`}
                       >
                         <Icon className="w-4 h-4" />
                       </div>
-                      <div className="text-left min-w-0">
-                        <span className={`block text-xs truncate leading-tight ${isSubActive ? 'font-bold' : ''}`}>
+                      <div className="min-w-0">
+                        <span className={`block text-xs truncate leading-tight ${isSubActive ? 'text-white font-medium' : 'text-slate-300'}`}>
                           {item.label}
                         </span>
-                        <span
-                          className={`block text-[10px] truncate leading-tight mt-0.5 ${
-                            isSubActive ? 'text-slate-900/80 font-medium' : 'text-slate-400'
-                          }`}
-                        >
+                        <span className="block text-[10px] text-slate-400 truncate leading-tight mt-0.5">
                           {item.subtitle}
                         </span>
                       </div>
@@ -494,10 +496,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     {item.badge && (
                       <span
-                        className={`ml-2 px-1.5 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                        className={`ml-2 px-1.5 py-0.2 rounded text-[10px] font-mono shrink-0 ${
                           isSubActive
-                            ? 'bg-slate-950/20 text-slate-950'
-                            : 'bg-slate-800 text-amber-400 border border-slate-700'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700/60'
                         }`}
                       >
                         {item.badge}
@@ -517,23 +519,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <>
             {/* If Super Admin is viewing a workspace: Show Dedicated Super Admin Menu Widget */}
             {isSuper && (
-              <div className="rounded-2xl bg-gradient-to-b from-amber-500/10 via-slate-900 to-indigo-950/40 border border-amber-500/30 overflow-hidden shadow-lg shadow-amber-500/5">
+              <div className="rounded-xl bg-slate-950/70 border border-slate-800 p-2.5 space-y-2">
                 {/* Super Admin Menu Header */}
-                <div className="px-3 py-2 flex items-center justify-between border-b border-amber-500/20 bg-amber-500/5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-                      <Crown className="w-3 h-3" />
-                    </div>
-                    <div>
-                      <span className="block text-[11px] font-bold text-amber-300 tracking-wide">
-                        SUPER ADMIN MENU
-                      </span>
-                    </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Crown className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-[10px] font-semibold text-amber-300 uppercase tracking-wider">
+                      Super Admin Mode
+                    </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSuperAdminMenuExpanded(!superAdminMenuExpanded)}
-                    className="p-1 rounded-md text-amber-400 hover:text-amber-200 hover:bg-amber-500/20 transition cursor-pointer"
+                    className="p-1 rounded text-slate-400 hover:text-slate-200 transition cursor-pointer"
                     title={superAdminMenuExpanded ? 'Collapse Super Admin Menu' : 'Expand Super Admin Menu'}
                   >
                     <ChevronDown
@@ -544,63 +542,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                 {/* Expanded Super Admin Menu Sub-Items */}
                 {superAdminMenuExpanded && (
-                  <div className="p-2 space-y-1.5 bg-slate-950/60">
-                    {/* Primary Master Console Hub Link */}
+                  <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
                     <button
                       type="button"
                       onClick={() => handleSelectTab('super_admin')}
-                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold text-amber-200 hover:text-amber-100 hover:bg-amber-500/15 transition cursor-pointer group"
+                      className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-medium text-amber-300 hover:bg-amber-500/10 transition cursor-pointer"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <Crown className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                        <Crown className="w-3.5 h-3.5 text-amber-400" />
                         <span className="truncate">Master Console Hub</span>
                       </div>
-                      <ArrowRight className="w-3 h-3 text-amber-400/70 group-hover:translate-x-0.5 transition-transform" />
+                      <ArrowRight className="w-3 h-3 text-amber-400/70" />
                     </button>
-
-                    {/* Direct Quick Jump Grid to Super Admin Sub-Sections */}
-                    <div className="grid grid-cols-2 gap-1 pt-1 border-t border-amber-500/15">
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSuperAdminItem('workspaces')}
-                        className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer truncate"
-                      >
-                        <Building2 className="w-3 h-3 text-indigo-400 shrink-0" />
-                        <span className="truncate">Workspaces</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSuperAdminItem('subscriptions')}
-                        className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer truncate"
-                      >
-                        <CreditCard className="w-3 h-3 text-emerald-400 shrink-0" />
-                        <span className="truncate">Subscriptions</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSuperAdminItem('catalog')}
-                        className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer truncate"
-                      >
-                        <Layers className="w-3 h-3 text-amber-400 shrink-0" />
-                        <span className="truncate">Plan Catalog</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSelectSuperAdminItem('audit')}
-                        className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer truncate"
-                      >
-                        <ShieldAlert className="w-3 h-3 text-rose-400 shrink-0" />
-                        <span className="truncate">Audit Trail</span>
-                      </button>
-                    </div>
 
                     {/* Fast Tenant Switcher dropdown */}
                     {workspacesList.length > 1 && (
-                      <div className="pt-1.5 mt-1 border-t border-amber-500/15">
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 mb-1">
-                          <span>Switch Tenant:</span>
-                          <span className="text-amber-400 font-mono text-[9px]">
-                            {currentWorkspace?.name || 'Current'}
+                      <div className="pt-1 border-t border-slate-800/80">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                          <span>Tenant:</span>
+                          <span className="text-slate-300 font-mono text-[9px] truncate max-w-[120px]">
+                            {currentWorkspace?.name}
                           </span>
                         </div>
                         <select
@@ -611,7 +572,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               onSwitchWorkspace(selected);
                             }
                           }}
-                          className="w-full bg-slate-900 border border-amber-500/20 text-slate-200 text-[11px] rounded-lg px-2 py-1 focus:outline-none focus:border-amber-400 cursor-pointer"
+                          className="w-full bg-slate-900 border border-slate-700/80 text-slate-200 text-xs rounded-md px-2 py-1 focus:outline-none focus:border-amber-400 cursor-pointer"
                         >
                           {workspacesList.map((ws) => (
                             <option key={ws.id} value={ws.id}>
@@ -627,12 +588,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
 
             {/* Workspace Accounting Section Header */}
-            <div className="px-3 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Workspace Accounting
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Workspace
             </div>
 
             {/* Regular Accounting Nav Items */}
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {navItems
                 .filter((item) => item.id !== 'super_admin' && canAccessTab(userRole, item.id))
                 .map((item) => {
@@ -644,30 +605,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       key={item.id}
                       id={`nav-item-${item.id}`}
                       onClick={() => handleSelectTab(item.id)}
-                      className={`w-full group relative flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                      className={`w-full group flex items-center justify-between px-2.5 py-1.5 rounded-lg transition cursor-pointer text-left ${
                         isActive
-                          ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/20'
-                          : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 font-medium'
+                          ? 'bg-slate-800/90 text-white font-medium border border-slate-700/60 shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
                       }`}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
-                          className={`flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${
-                            isActive ? 'text-slate-950' : 'text-slate-400 group-hover:text-emerald-400'
+                          className={`flex-shrink-0 transition-colors ${
+                            isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-emerald-400'
                           }`}
                         >
-                          <Icon className="w-5 h-5" />
+                          <Icon className="w-4 h-4" />
                         </div>
 
-                        <div className="text-left min-w-0">
-                          <span className={`block text-xs truncate leading-tight ${isActive ? 'font-bold' : ''}`}>
+                        <div className="min-w-0">
+                          <span className={`block text-xs truncate leading-tight ${isActive ? 'text-white font-semibold' : 'text-slate-300 font-medium'}`}>
                             {item.label}
                           </span>
-                          <span
-                            className={`block text-[10px] truncate leading-tight mt-0.5 ${
-                              isActive ? 'text-slate-900/80 font-medium' : 'text-slate-400'
-                            }`}
-                          >
+                          <span className="block text-[10px] text-slate-400 truncate leading-tight mt-0.5">
                             {item.subtitle}
                           </span>
                         </div>
@@ -675,10 +632,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                       {item.badge !== undefined && (
                         <span
-                          className={`ml-2 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                          className={`ml-2 px-1.5 py-0.2 rounded text-[10px] font-mono ${
                             isActive
-                              ? 'bg-slate-950/20 text-slate-950'
-                              : 'bg-slate-800 text-slate-400 group-hover:text-emerald-400 border border-slate-700'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-slate-800 text-slate-400 border border-slate-700/60'
                           }`}
                         >
                           {item.badge}
@@ -714,37 +671,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <div>
           {/* Mobile Drawer Header */}
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="p-3.5 border-b border-slate-800/80 flex items-center justify-between">
             {activeTab === 'super_admin' ? (
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-amber-500/20">
-                  <Crown className="w-4 h-4" />
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Crown className="w-3.5 h-3.5" />
                 </div>
                 <div className="min-w-0">
-                  <span className="block font-bold text-xs text-white truncate">
+                  <span className="block font-semibold text-xs text-white truncate">
                     Super Admin Console
                   </span>
-                  <span className="block text-[10px] text-amber-400 font-mono truncate">
-                    Multi-Tenant Master Hub
+                  <span className="block text-[10px] text-amber-400/80 font-mono truncate">
+                    Master Console
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
                 {company?.invoiceLogoUrl ? (
                   <img
                     src={company.invoiceLogoUrl}
                     alt="Company Logo"
                     referrerPolicy="no-referrer"
-                    className="w-8 h-8 rounded-lg object-contain bg-slate-950 border border-slate-800 p-0.5"
+                    className="w-7 h-7 rounded-lg object-contain bg-slate-950 border border-slate-800 p-0.5"
                   />
                 ) : (
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-emerald-500/20">
-                    <Building2 className="w-4 h-4" />
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Building2 className="w-3.5 h-3.5" />
                   </div>
                 )}
                 <div className="min-w-0">
-                  <span className="block font-bold text-xs text-white truncate">
+                  <span className="block font-semibold text-xs text-white truncate">
                     {company?.businessName || 'TallyGST ERP'}
                   </span>
                   <span className="block text-[10px] text-slate-400 font-mono truncate">
@@ -756,44 +713,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             <button
               onClick={onCloseMobile}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
 
           {/* Navigation Items */}
-          <div className="py-4 overflow-y-auto max-h-[calc(100vh-210px)]">
+          <div className="py-3 overflow-y-auto max-h-[calc(100vh-190px)]">
             {renderNavList(false)}
           </div>
         </div>
 
         {/* Mobile Drawer Footer */}
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50 space-y-3">
-          <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+        <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 space-y-2.5">
+          <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium px-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>Cloud Firestore Synced</span>
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               {profile?.avatarUrl || user?.photoURL ? (
                 <img
                   src={profile?.avatarUrl || user?.photoURL}
                   alt="User"
                   referrerPolicy="no-referrer"
-                  className="w-8 h-8 rounded-full border border-slate-700 flex-shrink-0 object-cover"
+                  className="w-7 h-7 rounded-full border border-slate-700 flex-shrink-0 object-cover"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                <div className="w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-xs font-semibold flex-shrink-0">
                   {profile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
                 </div>
               )}
               <div className="min-w-0">
-                <span className="block text-xs font-semibold text-slate-200 truncate">
+                <span className="block text-xs font-medium text-slate-200 truncate">
                   {profile?.displayName || user?.displayName || user?.email?.split('@')[0]}
                 </span>
-                <span className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-semibold border ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
+                <span className={`inline-block px-1.5 py-0.2 mt-0.5 rounded text-[9px] font-medium border ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
                   {roleConfig.badge}
                 </span>
               </div>
@@ -802,7 +759,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={logout}
               title="Sign Out"
-              className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -813,15 +770,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ---------------- DESKTOP COLLAPSIBLE SIDEBAR ---------------- */}
       <aside
         id="desktop-collapsible-sidebar"
-        className={`hidden lg:flex flex-col justify-between bg-slate-900 border-r border-slate-800/90 h-screen sticky top-0 z-30 transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'w-20' : 'w-64'
+        className={`hidden lg:flex flex-col justify-between bg-slate-950 border-r border-slate-800/60 h-screen sticky top-0 z-30 transition-all duration-300 ease-in-out ${
+          isCollapsed ? 'w-16' : 'w-60'
         }`}
       >
         {/* Top Section: Brand & Collapse Toggle */}
         <div className="flex flex-col">
           <div
-            className={`h-16 border-b border-slate-800 flex items-center transition-all ${
-              isCollapsed ? 'justify-center px-2' : 'justify-between px-4'
+            className={`h-14 border-b border-slate-800/60 flex items-center transition-all bg-slate-950/80 ${
+              isCollapsed ? 'justify-center px-1.5' : 'justify-between px-3.5'
             }`}
           >
             {isCollapsed ? (
@@ -830,62 +787,62 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 id="sidebar-expand-button"
                 onClick={onToggleCollapse}
                 title="Expand sidebar"
-                className="p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer group flex items-center justify-center"
+                className="p-1.5 rounded-lg hover:bg-slate-900 transition cursor-pointer group flex items-center justify-center border border-slate-800/60"
               >
                 {activeTab === 'super_admin' ? (
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform">
-                    <Crown className="w-4 h-4" />
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <Crown className="w-3.5 h-3.5" />
                   </div>
                 ) : company?.invoiceLogoUrl ? (
                   <img
                     src={company.invoiceLogoUrl}
                     alt="Logo"
                     referrerPolicy="no-referrer"
-                    className="w-8 h-8 rounded-lg object-contain bg-slate-950 border border-slate-800 p-0.5"
+                    className="w-7 h-7 rounded-lg object-contain bg-slate-900 border border-slate-800 p-0.5"
                   />
                 ) : (
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-                    <Building2 className="w-4 h-4" />
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Building2 className="w-3.5 h-3.5" />
                   </div>
                 )}
               </button>
             ) : (
               <>
                 {activeTab === 'super_admin' ? (
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 to-amber-300 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-amber-500/20 flex-shrink-0">
-                      <Crown className="w-4 h-4" />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
+                      <Crown className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0">
-                      <span className="block font-bold text-xs text-white truncate tracking-tight">
-                        {platformAppName || 'Super Admin Console'}
+                      <span className="block font-semibold text-xs text-white tracking-tight truncate">
+                        {platformAppName || 'Super Admin'}
                       </span>
-                      <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-mono truncate">
-                        <span>Multi-Tenant Master</span>
+                      <div className="text-[10px] text-amber-400/80 font-mono truncate">
+                        Master Console
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     {platformAppLogo || company?.invoiceLogoUrl ? (
                       <img
                         src={platformAppLogo || company?.invoiceLogoUrl}
                         alt="Logo"
                         referrerPolicy="no-referrer"
-                        className="w-8 h-8 rounded-lg object-contain bg-slate-950 border border-slate-800 p-0.5 flex-shrink-0"
+                        className="w-7 h-7 rounded-lg object-contain bg-slate-900 border border-slate-800 p-0.5 flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 font-bold shadow-md shadow-emerald-500/20 flex-shrink-0">
-                        <Building2 className="w-4 h-4" />
+                      <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                        <Building2 className="w-3.5 h-3.5" />
                       </div>
                     )}
 
                     <div className="min-w-0">
-                      <span className="block font-bold text-xs text-white truncate tracking-tight">
+                      <span className="block font-semibold text-xs text-white tracking-tight truncate">
                         {company?.businessName || platformAppName || 'TallyGST ERP'}
                       </span>
-                      <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono truncate">
-                        <span>{company?.gstin || localStorage.getItem('platform_app_tagline') || 'Multi-Tenant Cloud Accounting'}</span>
+                      <div className="text-[10px] text-slate-400 font-mono truncate">
+                        {company?.gstin || localStorage.getItem('platform_app_tagline') || 'Cloud Accounting'}
                       </div>
                     </div>
                   </div>
@@ -896,7 +853,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   id="sidebar-collapse-button"
                   onClick={onToggleCollapse}
                   title="Collapse sidebar"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer flex-shrink-0"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition cursor-pointer flex-shrink-0"
                 >
                   <PanelLeftClose className="w-4 h-4" />
                 </button>
@@ -905,25 +862,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Navigation Items List */}
-          <div className="py-4 overflow-y-auto max-h-[calc(100vh-170px)]">
+          <div className="py-3 overflow-y-auto max-h-[calc(100vh-140px)]">
             {renderNavList(isCollapsed)}
           </div>
         </div>
 
         {/* Bottom Section: Database Sync & User Profile */}
-        <div className="border-t border-slate-800 bg-slate-900/70 p-3 space-y-2">
+        <div className="border-t border-slate-800/80 bg-slate-950/40 p-2.5 space-y-2">
           {/* Cloud Firestore Synced Badge */}
           <div
-            className={`flex items-center rounded-lg bg-slate-950/60 border border-slate-800/80 transition-all ${
-              isCollapsed ? 'justify-center p-2' : 'justify-between px-3 py-1.5'
+            className={`flex items-center rounded-lg bg-slate-900/60 border border-slate-800/80 transition-all ${
+              isCollapsed ? 'justify-center p-1.5' : 'justify-between px-2.5 py-1'
             }`}
             title="Google Cloud Firestore Synced & ITC Section 16 Compliant"
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
               {!isCollapsed && (
                 <span className="text-[10px] font-medium text-slate-400 truncate">
-                  Cloud Firestore Connected
+                  Cloud Synced
                 </span>
               )}
             </div>
@@ -935,29 +892,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* User Profile Card */}
           <div
             className={`flex items-center transition-all ${
-              isCollapsed ? 'justify-center py-1' : 'justify-between px-1 py-1'
+              isCollapsed ? 'justify-center py-0.5' : 'justify-between px-1 py-0.5'
             }`}
           >
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               {profile?.avatarUrl || user?.photoURL ? (
                 <img
                   src={profile?.avatarUrl || user?.photoURL}
                   alt="User"
                   referrerPolicy="no-referrer"
-                  className="w-7 h-7 rounded-full border border-slate-700 flex-shrink-0 object-cover"
+                  className="w-6 h-6 rounded-full border border-slate-700 flex-shrink-0 object-cover"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-[10px] font-semibold flex-shrink-0">
                   {profile?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
                 </div>
               )}
 
               {!isCollapsed && (
                 <div className="min-w-0">
-                  <span className="block text-xs font-semibold text-slate-200 truncate leading-tight">
+                  <span className="block text-xs font-medium text-slate-200 truncate leading-tight">
                     {profile?.displayName || user?.displayName || user?.email?.split('@')[0]}
                   </span>
-                  <span className={`inline-block px-1.5 py-0.5 mt-0.5 rounded text-[10px] font-semibold border leading-none ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
+                  <span className={`inline-block px-1.5 py-0.2 mt-0.5 rounded text-[9px] font-medium border leading-none ${roleConfig.bgBadge} ${roleConfig.textBadge} ${roleConfig.borderBadge}`}>
                     {roleConfig.badge}
                   </span>
                 </div>
@@ -970,24 +927,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 id="sidebar-logout-button"
                 onClick={logout}
                 title="Sign Out"
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                className="p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-md transition cursor-pointer"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
           {/* Collapsed logout icon */}
           {isCollapsed && (
-            <div className="flex justify-center pt-1">
+            <div className="flex justify-center pt-0.5">
               <button
                 type="button"
                 id="sidebar-logout-button-collapsed"
                 onClick={logout}
                 title="Sign Out"
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                className="p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-md transition cursor-pointer"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-3.5 h-3.5" />
               </button>
             </div>
           )}

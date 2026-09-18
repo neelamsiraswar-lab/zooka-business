@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FinancialSummary, ActivityLog, Invoice, Cheque } from '../types';
+import { FinancialSummary, ActivityLog, Invoice, Cheque, Workspace, CompanyProfile } from '../types';
 import { SkeletonDashboardView } from './SkeletonLoaders';
 import {
   TrendingUp,
@@ -21,13 +21,27 @@ import {
   Calendar,
   ChevronRight,
   ArrowRight,
+  Sparkles,
+  Database,
+  Zap,
+  Building2,
+  CheckCircle2,
 } from 'lucide-react';
+import { QuotaGaugesWidget } from './QuotaGaugesWidget';
+import { TenantSetupWizardModal } from './TenantSetupWizardModal';
+import { BulkDataMigrationModal } from './BulkDataMigrationModal';
+import { ProratedUpgradeModal } from './ProratedUpgradeModal';
 
 interface DashboardViewProps {
   summary: FinancialSummary | null;
   activityLogs: ActivityLog[];
   invoices?: Invoice[];
   cheques?: Cheque[];
+  workspace?: Workspace | null;
+  companyProfile?: CompanyProfile | null;
+  onWorkspaceUpdated?: (ws: Workspace) => void;
+  onCompanyUpdated?: (comp: CompanyProfile) => void;
+  onNavigateToConsolidatedReports?: () => void;
   onQuickInvoice: () => void;
   onQuickExpense: () => void;
   onQuickReceipt?: () => void;
@@ -45,6 +59,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   activityLogs,
   invoices,
   cheques,
+  workspace,
+  companyProfile,
+  onWorkspaceUpdated,
+  onCompanyUpdated,
+  onNavigateToConsolidatedReports,
   onQuickInvoice,
   onQuickExpense,
   onQuickReceipt,
@@ -56,6 +75,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onRefresh,
   loading,
 }) => {
+  const [isSetupWizardOpen, setIsSetupWizardOpen] = useState(false);
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
     return new Intl.NumberFormat('en-IN', {
@@ -72,63 +94,126 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner & Quick Actions */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-5 shadow-xs">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Executive Accounting Dashboard</h1>
-            <span className="text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
-              Live Cloud Firestore Sync
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+              Executive Accounting Dashboard
+            </h1>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live Firestore Sync
             </span>
           </div>
-          <p className="text-sm text-slate-400 mt-1">
-            Real-time books of accounts, GST tax liability, receivables, and profit metrics.
+          <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl leading-relaxed">
+            Real-time double-entry ledgers, GST tax liability, receivables, and profit analytics.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsMigrationModalOpen(true)}
+            className="px-3 py-2 text-xs font-semibold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            title="Import Masters from Tally Prime / ERP 9"
+          >
+            <Database className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Tally XML Import</span>
+          </button>
+
+          {onNavigateToConsolidatedReports && (
+            <button
+              type="button"
+              onClick={onNavigateToConsolidatedReports}
+              className="px-3 py-2 text-xs font-semibold text-slate-300 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Building2 className="w-3.5 h-3.5 text-slate-400" />
+              <span>Consolidated P&amp;L</span>
+            </button>
+          )}
+
           {onQuickReceipt && (
             <button
               onClick={onQuickReceipt}
-              className="px-3.5 py-2 text-xs font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-2 text-xs font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
             >
-              <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
-              <span>+ Record Receipt (F6)</span>
+              <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-400" />
+              <span>+ Receipt (F6)</span>
             </button>
           )}
           {onQuickPayment && (
             <button
               onClick={onQuickPayment}
-              className="px-3.5 py-2 text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-2 text-xs font-semibold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
             >
-              <ArrowUpRight className="w-4 h-4 text-rose-400" />
-              <span>+ Record Payment (F5)</span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-rose-400" />
+              <span>+ Payment (F5)</span>
             </button>
           )}
           <button
             onClick={onQuickExpense}
-            className="px-3.5 py-2 text-xs font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-2 text-xs font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
           >
-            <ArrowDownRight className="w-4 h-4 text-amber-400" />
-            <span>+ Record Expense</span>
+            <ArrowDownRight className="w-3.5 h-3.5 text-amber-400" />
+            <span>+ Expense</span>
           </button>
           {onQuickAccounting && (
             <button
               onClick={onQuickAccounting}
-              className="px-3.5 py-2 text-xs font-semibold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-2 text-xs font-semibold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
             >
-              <BookOpen className="w-4 h-4 text-indigo-400" />
-              <span>Books & Reports</span>
+              <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Day Book</span>
             </button>
           )}
           <button
             onClick={onQuickInvoice}
-            className="px-4 py-2 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer"
+            className="px-3.5 py-2 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
           >
-            <ArrowUpRight className="w-4 h-4 font-bold" />
-            <span>+ Create GST Invoice</span>
+            <ArrowUpRight className="w-3.5 h-3.5 font-bold" />
+            <span>+ GST Invoice</span>
           </button>
         </div>
       </div>
+
+      {/* Onboarding Checklist Banner for New Tenants */}
+      {workspace && !workspace.setupCompleted && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-950/60 via-slate-900 to-indigo-950/40 border border-indigo-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg animate-fade-in">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Interactive Setup Checklist Pending</h3>
+                <span className="text-[10px] uppercase font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                  3-Step Onboarding
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Configure your statutory GSTIN, filing frequencies, settlement bank accounts, and custom invoice prefixes to start issuing legally compliant tax invoices.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsSetupWizardOpen(true)}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 shadow-md shadow-indigo-600/25 cursor-pointer self-start sm:self-auto"
+          >
+            <span>Launch Setup Checklist</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Real-Time Quota Gauges & Resource Utilization Meters */}
+      {workspace && (
+        <QuotaGaugesWidget
+          workspace={workspace}
+          onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
+        />
+      )}
 
       {/* Notification Badge & Actionable Alerts Center */}
       {(() => {
@@ -385,73 +470,73 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Primary KPI Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Sales */}
-        <div className="bg-slate-900 border border-slate-800/90 rounded-xl p-4 sm:p-5 relative overflow-hidden">
+        <div className="bg-slate-900/85 border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden transition-colors hover:border-slate-700/80 shadow-xs">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Total Revenue (Sales)</span>
-            <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+            <span className="uppercase tracking-wider text-[10px] font-semibold text-slate-400">Total Revenue (Sales)</span>
+            <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <TrendingUp className="w-4 h-4" />
             </span>
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-bold text-white tracking-tight">
+            <span className="text-2xl font-bold text-white tracking-tight font-mono">
               {formatINR(summary?.totalSales)}
             </span>
-            <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-              <span className="text-emerald-400 font-medium">{summary?.totalInvoicesCount || 0} Invoices</span> generated
+            <p className="text-xs text-slate-400 mt-1.5 flex items-center gap-1">
+              <span className="text-emerald-400 font-semibold">{summary?.totalInvoicesCount || 0} Invoices</span> issued
             </p>
           </div>
         </div>
 
         {/* Total Expenses */}
-        <div className="bg-slate-900 border border-slate-800/90 rounded-xl p-4 sm:p-5 relative overflow-hidden">
+        <div className="bg-slate-900/85 border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden transition-colors hover:border-slate-700/80 shadow-xs">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Operating Expenses</span>
-            <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400">
+            <span className="uppercase tracking-wider text-[10px] font-semibold text-slate-400">Operating Expenses</span>
+            <span className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
               <TrendingDown className="w-4 h-4" />
             </span>
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-bold text-white tracking-tight">
+            <span className="text-2xl font-bold text-white tracking-tight font-mono">
               {formatINR(summary?.totalExpenses)}
             </span>
-            <p className="text-xs text-slate-400 mt-1">
-              Salaries, rent, utilities & freight
+            <p className="text-xs text-slate-400 mt-1.5">
+              Salaries, rent, utilities &amp; freight
             </p>
           </div>
         </div>
 
         {/* Net Profit (P&L) */}
-        <div className="bg-slate-900 border border-slate-800/90 rounded-xl p-4 sm:p-5 relative overflow-hidden">
+        <div className="bg-slate-900/85 border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden transition-colors hover:border-slate-700/80 shadow-xs">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Net Profit / (Loss)</span>
-            <span className={`p-1.5 rounded-lg ${(summary?.netProfit || 0) >= 0 ? 'bg-teal-500/10 text-teal-400' : 'bg-amber-500/10 text-amber-400'}`}>
+            <span className="uppercase tracking-wider text-[10px] font-semibold text-slate-400">Net Profit / (Loss)</span>
+            <span className={`p-1.5 rounded-lg border ${(summary?.netProfit || 0) >= 0 ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
               <IndianRupee className="w-4 h-4" />
             </span>
           </div>
           <div className="mt-3">
-            <span className={`text-2xl font-bold tracking-tight ${(summary?.netProfit || 0) >= 0 ? 'text-teal-300' : 'text-rose-400'}`}>
+            <span className={`text-2xl font-bold tracking-tight font-mono ${(summary?.netProfit || 0) >= 0 ? 'text-teal-300' : 'text-rose-400'}`}>
               {formatINR(summary?.netProfit)}
             </span>
-            <p className="text-xs text-slate-400 mt-1">
-              Gross Margin: {formatINR(summary?.grossProfit)}
+            <p className="text-xs text-slate-400 mt-1.5">
+              Gross Margin: <span className="font-mono text-slate-300">{formatINR(summary?.grossProfit)}</span>
             </p>
           </div>
         </div>
 
         {/* Net GST Payable */}
-        <div className="bg-slate-900 border border-slate-800/90 rounded-xl p-4 sm:p-5 relative overflow-hidden">
+        <div className="bg-slate-900/85 border border-slate-800/80 rounded-2xl p-5 relative overflow-hidden transition-colors hover:border-slate-700/80 shadow-xs">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Net GST Liability</span>
-            <span className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400">
+            <span className="uppercase tracking-wider text-[10px] font-semibold text-slate-400">Net GST Liability</span>
+            <span className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20">
               <Receipt className="w-4 h-4" />
             </span>
           </div>
           <div className="mt-3">
-            <span className="text-2xl font-bold text-purple-300 tracking-tight">
+            <span className="text-2xl font-bold text-purple-300 tracking-tight font-mono">
               {formatINR(summary?.netGstPayable)}
             </span>
-            <p className="text-xs text-slate-400 mt-1">
-              Output GST - Input Tax Credit (ITC)
+            <p className="text-xs text-slate-400 mt-1.5">
+              Output GST − Input Tax Credit (ITC)
             </p>
           </div>
         </div>
@@ -609,6 +694,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Interactive Tenant Setup Checklist Wizard Modal */}
+      <TenantSetupWizardModal
+        isOpen={isSetupWizardOpen}
+        onClose={() => setIsSetupWizardOpen(false)}
+        workspace={workspace || null}
+        companyProfile={companyProfile || null}
+        onCompleted={(updatedWs, updatedComp) => {
+          if (onWorkspaceUpdated) onWorkspaceUpdated(updatedWs);
+          if (onCompanyUpdated) onCompanyUpdated(updatedComp);
+        }}
+      />
+
+      {/* Bulk Data Migration & Tally XML Modal */}
+      <BulkDataMigrationModal
+        isOpen={isMigrationModalOpen}
+        onClose={() => setIsMigrationModalOpen(false)}
+        workspace={workspace || null}
+        onMigrationComplete={onRefresh}
+      />
+
+      {/* Prorated Upgrades / Downgrades Modal */}
+      <ProratedUpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={() => setIsUpgradeModalOpen(false)}
+        workspace={workspace || null}
+        onUpgradeSuccess={(newPlan) => {
+          if (workspace && onWorkspaceUpdated) {
+            onWorkspaceUpdated({ ...workspace, plan: newPlan, subscriptionStatus: 'active' });
+          }
+          onRefresh();
+        }}
+      />
     </div>
   );
 };

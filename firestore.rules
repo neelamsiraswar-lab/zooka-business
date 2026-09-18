@@ -90,6 +90,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /platform_settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    match /system_personas/{personaId} {
+      allow read, write: if true;
+    }
+
     // Default Deny Catch-All for unknown paths
     match /{document=**} {
       allow read, write: if false;

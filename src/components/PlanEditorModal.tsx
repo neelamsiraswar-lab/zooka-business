@@ -13,8 +13,12 @@ import {
   FileSpreadsheet,
   Building,
   Info,
+  Lock,
+  ShieldCheck,
+  AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
-import { PlanTierConfig, PLAN_COLOR_PRESETS, formatINR } from '../data/subscriptionPlans';
+import { PlanTierConfig, PLAN_COLOR_PRESETS, DEFAULT_BUILTIN_PLANS, formatINR } from '../data/subscriptionPlans';
 import { useDialog } from '../context/DialogContext';
 
 interface PlanEditorModalProps {
@@ -22,6 +26,9 @@ interface PlanEditorModalProps {
   onClose: () => void;
   onSave: (planData: Partial<PlanTierConfig>) => Promise<void>;
   plan?: PlanTierConfig | null; // null for create, object for edit
+  initialPlan?: PlanTierConfig | null;
+  existingPlans?: PlanTierConfig[];
+  assignedWorkspacesCount?: number;
 }
 
 export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
@@ -29,9 +36,16 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
   onClose,
   onSave,
   plan,
+  initialPlan,
+  assignedWorkspacesCount = 0,
 }) => {
   const dialog = useDialog();
-  const isEditMode = !!plan;
+  const activePlan = plan ?? initialPlan ?? null;
+  const isEditMode = !!activePlan;
+  const isBuiltIn = Boolean(
+    activePlan?.isBuiltIn || (activePlan?.id && ['free', 'starter', 'professional', 'enterprise'].includes(activePlan.id))
+  );
+  const assignedCount = assignedWorkspacesCount;
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -49,26 +63,30 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
   const [features, setFeatures] = useState<string[]>([]);
   const [newFeatureInput, setNewFeatureInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [adminAuthorized, setAdminAuthorized] = useState(true);
 
   useEffect(() => {
-    if (plan) {
-      setName(plan.name);
-      setSlug(plan.id);
-      setTagline(plan.tagline || '');
-      setBadge(plan.badge || '');
-      setPopular(!!plan.popular);
-      setStatus(plan.status || 'active');
-      setMonthlyPrice(plan.monthlyPrice);
-      setAnnualPrice(plan.annualPrice);
-      setMaxUsers(plan.maxUsers);
-      setMaxInvoicesPerMonth(plan.maxInvoicesPerMonth);
-      setMaxLedgers(plan.maxLedgers);
-      setMaxBranches(plan.maxBranches);
-      setFeatures(plan.features || []);
+    setAdminAuthorized(true);
+    if (activePlan) {
+      const defaultDef = DEFAULT_BUILTIN_PLANS.find((p) => p.id === activePlan.id);
+      setName(activePlan.name || defaultDef?.name || '');
+      setSlug(activePlan.id || '');
+      setTagline(activePlan.tagline || defaultDef?.tagline || '');
+      setBadge(activePlan.badge || defaultDef?.badge || '');
+      setPopular(!!activePlan.popular);
+      setStatus(activePlan.status || 'active');
+      setMonthlyPrice(activePlan.monthlyPrice !== undefined ? activePlan.monthlyPrice : (defaultDef?.monthlyPrice ?? 1999));
+      setAnnualPrice(activePlan.annualPrice !== undefined ? activePlan.annualPrice : (defaultDef?.annualPrice ?? 19990));
+      setMaxUsers(activePlan.maxUsers !== undefined ? activePlan.maxUsers : (defaultDef?.maxUsers ?? 5));
+      setMaxInvoicesPerMonth(activePlan.maxInvoicesPerMonth !== undefined ? activePlan.maxInvoicesPerMonth : (defaultDef?.maxInvoicesPerMonth ?? -1));
+      setMaxLedgers(activePlan.maxLedgers !== undefined ? activePlan.maxLedgers : (defaultDef?.maxLedgers ?? 1000));
+      setMaxBranches(activePlan.maxBranches !== undefined ? activePlan.maxBranches : (defaultDef?.maxBranches ?? 2));
+      setFeatures(activePlan.features && activePlan.features.length > 0 ? activePlan.features : (defaultDef?.features || []));
 
       // Match color preset if possible
+      const targetColor = activePlan.color || defaultDef?.color;
       const matched = Object.entries(PLAN_COLOR_PRESETS).find(
-        ([, p]) => p.text === plan.color?.text
+        ([, p]) => p.text === targetColor?.text
       );
       setSelectedColorPreset(matched ? matched[0] : 'indigo');
     } else {
@@ -95,7 +113,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
         'Standard Email & Chat Support SLA',
       ]);
     }
-  }, [plan, isOpen]);
+  }, [activePlan, isOpen]);
 
   if (!isOpen) return null;
 
@@ -111,11 +129,12 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
     }
   };
 
-  // Quick auto-fill annual price (10 months pricing = 2 months free)
-  const handleMonthlyPriceChange = (val: number) => {
+  // Quick auto-fill annual price (12 months = 1 full year)
+  const handleMonthlyPriceChange = (val: number | string) => {
     setMonthlyPrice(val);
-    if (!isEditMode || annualPrice === 0 || annualPrice === monthlyPrice * 10) {
-      setAnnualPrice(val * 10);
+    const numVal = Number(val);
+    if (!isNaN(numVal) && numVal >= 0 && (!isEditMode || annualPrice === 0 || Number(annualPrice) === Number(monthlyPrice) * 12)) {
+      setAnnualPrice(numVal * 12);
     }
   };
 
@@ -135,7 +154,8 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
       dialog.toast.warning('Plan name is required');
       return;
     }
-    if (!slug.trim()) {
+    const finalSlug = (isEditMode && activePlan?.id ? activePlan.id : slug).trim().toLowerCase();
+    if (!finalSlug) {
       dialog.toast.warning('Plan unique identifier/slug is required');
       return;
     }
@@ -147,20 +167,27 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
     setSaving(true);
     try {
       const activeColor = PLAN_COLOR_PRESETS[selectedColorPreset] || PLAN_COLOR_PRESETS.indigo;
+      const parsedMonthly = typeof monthlyPrice === 'string' ? (Number(monthlyPrice) || 0) : Number(monthlyPrice);
+      const parsedAnnual = typeof annualPrice === 'string' ? (Number(annualPrice) || 0) : Number(annualPrice);
+      const parsedUsers = maxUsers === '' || Number(maxUsers) === -1 ? -1 : (Number(maxUsers) || 1);
+      const parsedInvoices = maxInvoicesPerMonth === '' || Number(maxInvoicesPerMonth) === -1 ? -1 : (Number(maxInvoicesPerMonth) || -1);
+      const parsedLedgers = maxLedgers === '' || Number(maxLedgers) === -1 ? -1 : (Number(maxLedgers) || 1000);
+      const parsedBranches = maxBranches === '' || Number(maxBranches) === -1 ? -1 : (Number(maxBranches) || 1);
+
       const payload: Partial<PlanTierConfig> = {
-        id: slug.trim().toLowerCase(),
+        id: finalSlug,
         name: name.trim(),
         tagline: tagline.trim(),
         badge: badge.trim(),
         popular,
         status,
-        monthlyPrice: Number(monthlyPrice),
-        annualPrice: Number(annualPrice),
-        monthlyEquivalentAnnual: Math.round(Number(annualPrice) / 12),
-        maxUsers: Number(maxUsers),
-        maxInvoicesPerMonth: Number(maxInvoicesPerMonth),
-        maxLedgers: Number(maxLedgers),
-        maxBranches: Number(maxBranches),
+        monthlyPrice: parsedMonthly < 0 ? 0 : parsedMonthly,
+        annualPrice: parsedAnnual < 0 ? 0 : parsedAnnual,
+        monthlyEquivalentAnnual: Math.round(parsedAnnual / 12),
+        maxUsers: parsedUsers,
+        maxInvoicesPerMonth: parsedInvoices,
+        maxLedgers: parsedLedgers,
+        maxBranches: parsedBranches,
         features,
         color: activeColor,
       };
@@ -176,8 +203,11 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
   };
 
   const activeColorTheme = PLAN_COLOR_PRESETS[selectedColorPreset] || PLAN_COLOR_PRESETS.indigo;
-  const annualSavings = (monthlyPrice * 12) - annualPrice;
-  const savingsPct = Math.round((annualSavings / (monthlyPrice * 12)) * 100);
+  const numMonthly = typeof monthlyPrice === 'string' ? (Number(monthlyPrice) || 0) : Number(monthlyPrice);
+  const numAnnual = typeof annualPrice === 'string' ? (Number(annualPrice) || 0) : Number(annualPrice);
+  const full12Months = numMonthly * 12;
+  const annualSavings = full12Months - numAnnual;
+  const savingsPct = full12Months > 0 && annualSavings > 0 ? Math.round((annualSavings / full12Months) * 100) : 0;
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -185,15 +215,29 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
-              <CreditCard className="w-5 h-5" />
+            <div className={`p-2 rounded-xl ${isBuiltIn ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30' : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'}`}>
+              {isBuiltIn ? <ShieldCheck className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">
-                {isEditMode ? `Edit Plan: ${plan?.name}` : 'Create New Subscription Plan'}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white">
+                  {isEditMode ? `Edit Plan: ${activePlan?.name}` : 'Create New Subscription Plan'}
+                </h3>
+                {isEditMode && isBuiltIn && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                    Protected Tier
+                  </span>
+                )}
+                {isEditMode && assignedCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    {assignedCount} Active Workspace{assignedCount === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
-                Define tier pricing, quota limits, entitled feature sets, and visual badges.
+                {isEditMode
+                  ? 'Protected Plan Governance: Configure published pricing, quotas, and feature allocations.'
+                  : 'Define tier pricing, quota limits, entitled feature sets, and visual badges.'}
               </p>
             </div>
           </div>
@@ -208,6 +252,42 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
 
         {/* Content Form */}
         <form onSubmit={handleSubmit} className="p-6 max-h-[calc(85vh-120px)] overflow-y-auto space-y-6">
+          {/* Security & Impact Banners for Edit Mode */}
+          {isEditMode && (
+            <div className="space-y-3">
+              {isBuiltIn && (
+                <div className="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-start gap-3 text-xs">
+                  <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-purple-300 flex items-center gap-1.5">
+                      <span>Protected Core System Tier</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-200 border border-purple-500/40 font-mono">
+                        ID: {activePlan?.id}
+                      </span>
+                    </div>
+                    <p className="text-slate-300 mt-1 text-[11px] leading-relaxed">
+                      This is a foundational platform subscription tier. Its unique slug identifier and system tier flag are permanently locked to preserve data integrity across tenant billing and GST modules.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {assignedCount > 0 && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-amber-300">
+                      Live Production Plan: {assignedCount} Workspace{assignedCount === 1 ? '' : 's'} Active
+                    </div>
+                    <p className="text-slate-300 mt-1 text-[11px] leading-relaxed">
+                      Modifications to user seats, monthly invoice capacity, or ledger counts will immediately redefine the quota ceilings for all {assignedCount} enrolled tenant workspaces.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column: Form Fields (8 cols) */}
             <div className="lg:col-span-8 space-y-6">
@@ -234,20 +314,31 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Plan Identifier Slug <span className="text-rose-400">*</span>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                      <span>Plan Identifier Slug <span className="text-rose-400">*</span></span>
+                      {isEditMode && (
+                        <span className="text-[10px] text-slate-400 flex items-center gap-1 font-normal">
+                          <Lock className="w-3 h-3 text-amber-400" /> Locked
+                        </span>
+                      )}
                     </label>
                     <input
                       type="text"
                       required
-                      disabled={isEditMode && plan?.isBuiltIn}
+                      disabled={isEditMode}
                       value={slug}
                       onChange={(e) => setSlug(e.target.value)}
                       placeholder="e.g. growth_pro"
-                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
                     />
-                    {isEditMode && plan?.isBuiltIn && (
-                      <span className="text-[10px] text-slate-500 mt-1 block">Built-in plan ID cannot be modified.</span>
+                    {isEditMode ? (
+                      <span className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-slate-400" /> Primary identifier is locked to preserve tenant relations and invoices.
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 mt-1 block">
+                        Unique machine slug (lowercase, numbers, underscores).
+                      </span>
                     )}
                   </div>
                 </div>
@@ -337,9 +428,12 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Annual Price (₹ Excl. GST) <span className="text-rose-400">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-300">
+                        Annual Price (₹ Excl. GST) <span className="text-rose-400">*</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">1 Year = 12 Months</span>
+                    </div>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">₹</span>
                       <input
@@ -351,9 +445,39 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
                         className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-7 pr-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
                       />
                     </div>
-                    <span className="text-[10px] text-emerald-400 mt-1 block">
-                      ≈ {formatINR(Math.round(annualPrice / 12))}/mo {annualSavings > 0 ? `(Save ${savingsPct}%)` : ''}
-                    </span>
+                    <div className="flex items-center justify-between mt-1.5 flex-wrap gap-1">
+                      <span className="text-[10px] text-emerald-400">
+                        ≈ {formatINR(Math.round(annualPrice / 12))}/mo {annualSavings > 0 ? `(Save ${savingsPct}%)` : '(12 months standard)'}
+                      </span>
+                      {numMonthly > 0 && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setAnnualPrice(numMonthly * 12)}
+                            className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer"
+                            title="Set to 12 x Monthly Price"
+                          >
+                            12× (Full)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAnnualPrice(Math.round(numMonthly * 12 * 0.90))}
+                            className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 cursor-pointer"
+                            title="Apply 10% annual discount"
+                          >
+                            -10%
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAnnualPrice(Math.round(numMonthly * 12 * 0.8333))}
+                            className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 cursor-pointer"
+                            title="Apply ~17% annual discount (2 months free)"
+                          >
+                            2mo free
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -594,33 +718,64 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
             </div>
           </div>
 
+          {/* Super Admin Tier Audit Notice for Edit Mode */}
+          {isEditMode && (
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Super Admin Plan Governance</span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                  Authorized Super Admin Mode
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Saving modifications to <strong className="text-white">"{name || activePlan?.name}"</strong> will immediately update billing terms, pricing, and quota thresholds across current and future workspace subscriptions.
+              </p>
+            </div>
+          )}
+
           {/* Footer Actions */}
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3 bg-slate-900 sticky bottom-0">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs font-bold shadow-lg shadow-indigo-500/25 transition cursor-pointer flex items-center gap-1.5"
-            >
-              {saving ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Saving Plan...</span>
-                </>
+          <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3 bg-slate-900 sticky bottom-0">
+            <div className="text-[11px] text-slate-500">
+              {isEditMode ? (
+                <span>Plan Identifier: <code className="text-slate-300 font-mono font-semibold">{activePlan?.id}</code></span>
               ) : (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>{isEditMode ? 'Save Changes' : 'Create & Publish Plan'}</span>
-                </>
+                <span>New custom plan tier will be added to catalog upon publish.</span>
               )}
-            </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                id="plan-modal-cancel-btn"
+                onClick={onClose}
+                disabled={saving}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                id="plan-modal-save-btn"
+                disabled={saving}
+                className="px-5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white shadow-lg shadow-indigo-500/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isEditMode ? 'Save changes to this subscription plan' : 'Publish new subscription plan'}
+              >
+                {saving ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Saving Plan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{isEditMode ? 'Save Plan Changes' : 'Create & Publish Plan'}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>

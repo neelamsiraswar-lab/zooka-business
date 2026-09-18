@@ -45,6 +45,7 @@ import {
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { getActiveWorkspaceId, getAllWorkspaces } from '../db/workspaces';
 import { SubscriptionReceiptModal } from './SubscriptionReceiptModal';
+import { ProratedUpgradeModal } from './ProratedUpgradeModal';
 
 interface WorkspaceSubscriptionViewProps {
   workspace?: Workspace | null;
@@ -72,6 +73,10 @@ export const WorkspaceSubscriptionView: React.FC<WorkspaceSubscriptionViewProps>
   const [checkoutUtr, setCheckoutUtr] = useState('');
   const [processingPayment, setProcessingPayment] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState<string | null>(null);
+
+  // Prorated Upgrade / Downgrade Modal
+  const [showProratedModal, setShowProratedModal] = useState(false);
+  const [proratedTargetPlan, setProratedTargetPlan] = useState<SubscriptionPlanTier>('enterprise');
 
   // Invoice Receipt modal
   const [viewInvoice, setViewInvoice] = useState<SubscriptionInvoice | null>(null);
@@ -136,8 +141,32 @@ export const WorkspaceSubscriptionView: React.FC<WorkspaceSubscriptionViewProps>
   const checkoutCost = calculateSubscriptionCost(checkoutTier, billingCycle, plans);
 
   const handleOpenCheckout = (tier: SubscriptionPlanTier) => {
-    setCheckoutTier(tier);
-    setShowCheckoutModal(true);
+    // If user is switching to a different tier, route through the prorated calculation modal
+    if (tier !== workspace.plan) {
+      setProratedTargetPlan(tier);
+      setShowProratedModal(true);
+    } else {
+      setCheckoutTier(tier);
+      setShowCheckoutModal(true);
+    }
+  };
+
+  const handleProratedUpgradeSuccess = (newPlan: SubscriptionPlanTier) => {
+    const updatedWs: Workspace = {
+      ...workspace,
+      plan: newPlan,
+      subscriptionStatus: 'active',
+      currentPeriodEnd: new Date(Date.now() + (billingCycle === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    setWorkspace(updatedWs);
+    setSelectedTier(newPlan);
+    if (onWorkspaceUpdated) {
+      onWorkspaceUpdated(updatedWs);
+    }
+    setCelebrationMessage(
+      `Congratulations! Workspace has been switched to ${newPlan.toUpperCase()} with prorated credit applied.`
+    );
+    setTimeout(() => setCelebrationMessage(null), 6000);
   };
 
   const handleConfirmCheckout = async (e: React.FormEvent) => {
@@ -340,15 +369,15 @@ export const WorkspaceSubscriptionView: React.FC<WorkspaceSubscriptionViewProps>
               }`}
             >
               <span>Annual Billing</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500 text-slate-950">
-                SAVE 17%
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                12 Months
               </span>
             </button>
           </div>
         </div>
 
         {/* Tier Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {plans
             .filter((p) => p.status !== 'archived' || p.id === workspace.plan)
             .map((plan) => {
@@ -391,7 +420,17 @@ export const WorkspaceSubscriptionView: React.FC<WorkspaceSubscriptionViewProps>
                   </div>
                   {billingCycle === 'annual' && (
                     <p className="text-[11px] text-emerald-400 font-medium mt-0.5">
-                      Equivalent to ₹{plan.monthlyEquivalentAnnual}/mo (Save 17%)
+                      {(() => {
+                        const full12Months = plan.monthlyPrice * 12;
+                        const savings = full12Months - plan.annualPrice;
+                        const discountPct = full12Months > 0 && savings > 0 ? Math.round((savings / full12Months) * 100) : 0;
+                        return (
+                          <span>
+                            Equivalent to {formatINR(plan.monthlyEquivalentAnnual)}/mo
+                            {discountPct > 0 ? ` (Save ${discountPct}%)` : ' (12 months billed annually)'}
+                          </span>
+                        );
+                      })()}
                     </p>
                   )}
 
@@ -637,6 +676,15 @@ export const WorkspaceSubscriptionView: React.FC<WorkspaceSubscriptionViewProps>
           onClose={() => setViewInvoice(null)}
         />
       )}
+
+      {/* Prorated Upgrades & Downgrades Modal */}
+      <ProratedUpgradeModal
+        isOpen={showProratedModal}
+        onClose={() => setShowProratedModal(false)}
+        workspace={workspace}
+        targetPlan={proratedTargetPlan}
+        onUpgradeSuccess={handleProratedUpgradeSuccess}
+      />
     </div>
   );
 };

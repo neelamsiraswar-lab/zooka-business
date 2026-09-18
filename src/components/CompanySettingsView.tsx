@@ -52,10 +52,13 @@ import {
   Zap,
   Radio,
   ExternalLink,
+  Database,
 } from 'lucide-react';
 import { InvoiceTemplateRenderer, COLOR_THEMES } from './InvoiceTemplateRenderer.tsx';
 import { LocalImageUploader } from './LocalImageUploader.tsx';
 import { WorkspaceSubscriptionView } from './WorkspaceSubscriptionView.tsx';
+import { TenantWhiteLabelSettings } from './TenantWhiteLabelSettings.tsx';
+import { BulkDataMigrationModal } from './BulkDataMigrationModal.tsx';
 import {
   hasPermission,
   isReadOnlyRole,
@@ -202,6 +205,9 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [deletingMember, setDeletingMember] = useState<any | null>(null);
   const [deletingMemberLoading, setDeletingMemberLoading] = useState(false);
   const [deleteMemberError, setDeleteMemberError] = useState<string | null>(null);
+
+  // Bulk Migration Modal State
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
 
   const fetchTeamMembers = async () => {
     try {
@@ -953,6 +959,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       icon: Building2,
     },
     {
+      id: 'whitelabel',
+      label: 'White-Label & Branding',
+      icon: Globe,
+      badge: 'BRAND',
+    },
+    {
       id: 'numbering',
       label: 'Invoice Series & Serial No.',
       icon: Hash,
@@ -972,6 +984,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       id: 'terms',
       label: 'Terms & Invoice Footers',
       icon: FileText,
+    },
+    {
+      id: 'migration',
+      label: 'Tally XML Migration',
+      icon: Database,
+      badge: 'IMPORT',
     },
     {
       id: 'roles',
@@ -1077,7 +1095,64 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         </button>
       </div>
 
-      {activeTab !== 'roles' ? (
+      {activeTab === 'whitelabel' ? (
+        <div className="animate-fade-in">
+          <TenantWhiteLabelSettings
+            workspace={workspace}
+            companyProfile={company}
+          />
+        </div>
+      ) : activeTab === 'migration' ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 animate-fade-in text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Database className="w-5 h-5 text-indigo-400" />
+                <span>Bulk Data Migration &amp; Tally XML Importer</span>
+              </h3>
+              <p className="text-slate-400 mt-1">
+                Seamlessly import your existing Chart of Accounts, Customers, Vendors, and Opening Balances into this workspace.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMigrationModalOpen(true)}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center gap-2 transition cursor-pointer shadow-md shadow-indigo-600/20"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Launch Tally XML Import Wizard</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-semibold text-white">1. Master Groups Supported</span>
+              <p className="text-slate-400">
+                Sundry Debtors, Sundry Creditors, Bank Accounts, Sales, Purchases, and Capital ledgers.
+              </p>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-semibold text-white">2. Automatic GST Parsing</span>
+              <p className="text-slate-400">
+                Extracts 15-character GSTINs, state codes, and opening debit/credit balances automatically.
+              </p>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <span className="font-semibold text-white">3. Direct Stock Units</span>
+              <p className="text-slate-400">
+                Preserves HSN codes, measuring units (PCS, KGS, MTR), and opening valuations.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'subscription' ? (
+        <div className="animate-fade-in">
+          <WorkspaceSubscriptionView
+            workspace={workspace}
+            onSelectPlan={() => {}}
+          />
+        </div>
+      ) : activeTab !== 'roles' ? (
         <form onSubmit={handleSubmit} className="space-y-6 text-xs">
           {/* TAB 1: Company Profile & Legal Registration */}
           {activeTab === 'general' && (
@@ -3267,6 +3342,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
           </div>
         </div>
       )}
+      {/* Bulk Data Migration & Tally XML Modal */}
+      <BulkDataMigrationModal
+        isOpen={isMigrationModalOpen}
+        onClose={() => setIsMigrationModalOpen(false)}
+        workspace={workspace}
+      />
     </div>
   );
 };

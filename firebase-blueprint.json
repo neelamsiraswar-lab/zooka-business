@@ -356,9 +356,36 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["name", "monthlyPrice", "annualPrice"]
+    },
+    "PlatformSettings": {
+      "title": "PlatformSettings",
+      "description": "Global white-label branding, platform footer, and master business details with state selection for subscription billing",
+      "type": "object",
+      "properties": {
+        "appName": { "type": "string" },
+        "appShortName": { "type": "string" },
+        "tagline": { "type": "string" },
+        "appLogoUrl": { "type": "string" },
+        "invoiceBusinessName": { "type": "string" },
+        "invoiceGstin": { "type": "string" },
+        "invoiceStateCode": { "type": "string" },
+        "invoiceStateName": { "type": "string" },
+        "invoicePan": { "type": "string" },
+        "invoiceSac": { "type": "string" },
+        "invoiceAddress": { "type": "string" },
+        "invoiceBank": { "type": "string" },
+        "subInvoicePrefix": { "type": "string" },
+        "subInvoiceSuffix": { "type": "string" },
+        "subInvoiceNextNum": { "type": "string" },
+        "subInvoicePadding": { "type": "string" }
+      }
     }
   },
   "firestore": {
+    "/platform_settings/{settingId}": {
+      "schema": "PlatformSettings",
+      "description": "Global platform branding, footer, and master business billing configuration"
+    },
     "/subscription_plans/{planId}": {
       "schema": "SubscriptionPlan",
       "description": "Catalog of active subscription plan tiers governed by super admin"

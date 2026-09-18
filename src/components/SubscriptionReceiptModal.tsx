@@ -27,9 +27,11 @@ export const SubscriptionReceiptModal: React.FC<SubscriptionReceiptModalProps> =
   const invBank = localStorage.getItem('platform_invoice_bank') || 'HDFC Bank, A/C 50200012345678, IFSC HDFC0000001';
   const invTagline = localStorage.getItem('platform_app_tagline') || 'Cloud Accounting & GST Solutions (SaaS)';
   const invLogo = localStorage.getItem('platform_app_logo') || '';
+  const invStateCode = localStorage.getItem('platform_invoice_state_code') || '27';
+  const invStateName = localStorage.getItem('platform_invoice_state_name') || 'Maharashtra';
 
   const planConfig = getPlanConfig(invoice.plan);
-  const isIntraState = !workspace?.stateCode || workspace?.stateCode === '27'; // Platform headquarters in MH (27)
+  const isIntraState = !workspace?.stateCode || workspace?.stateCode === invStateCode;
   const cgst = isIntraState ? Math.round(invoice.taxAmount / 2) : 0;
   const sgst = isIntraState ? Math.round(invoice.taxAmount / 2) : 0;
   const igst = !isIntraState ? invoice.taxAmount : 0;
@@ -78,8 +80,12 @@ export const SubscriptionReceiptModal: React.FC<SubscriptionReceiptModalProps> =
                 <span className="text-base font-bold text-white tracking-tight">{invName}</span>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">{invTagline}</p>
-              <p className="text-[11px] text-slate-400">GSTIN: {invGstin} | PAN: {invPan} | SAC: {invSac}</p>
-              <p className="text-[11px] text-slate-400">{invAddress}</p>
+              <p className="text-[11px] text-slate-400">
+                GSTIN: <span className="font-mono text-slate-300">{invGstin}</span> | PAN: <span className="font-mono text-slate-300">{invPan}</span> | SAC: <span className="font-mono text-slate-300">{invSac}</span>
+              </p>
+              <p className="text-[11px] text-slate-400">
+                {invAddress} | <span className="text-indigo-300 font-medium">State: {invStateName} ({invStateCode})</span>
+              </p>
               <p className="text-[11px] text-indigo-300 font-mono mt-0.5">Bank Details: {invBank}</p>
             </div>
             <div className="sm:text-right">

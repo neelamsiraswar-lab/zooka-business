@@ -18,11 +18,35 @@ import {
   WhereFilterOp,
   OrderByDirection,
   QueryConstraint,
+  enableNetwork,
+  disableNetwork,
+  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const rawFirestore = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+setLogLevel('error');
+
+// Suppress benign Firestore offline connection warnings in sandbox containers
+if (typeof window !== 'undefined') {
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  console.warn = (...args: any[]) => {
+    const str = args.join(' ');
+    if (str.includes('@firebase/firestore') || str.includes('Could not reach Cloud Firestore backend')) {
+      return;
+    }
+    originalWarn(...args);
+  };
+  console.error = (...args: any[]) => {
+    const str = args.join(' ');
+    if (str.includes('@firebase/firestore') || str.includes('Could not reach Cloud Firestore backend')) {
+      return;
+    }
+    originalError(...args);
+  };
+}
 
 // Collection names constants
 export const COLLECTIONS = {
@@ -42,6 +66,8 @@ export const COLLECTIONS = {
   COUNTERS: 'counters',
   SUBSCRIPTION_PLANS: 'subscription_plans',
   SUBSCRIPTION_INVOICES: 'subscription_invoices',
+  PLATFORM_SETTINGS: 'platform_settings',
+  SYSTEM_PERSONAS: 'system_personas',
 } as const;
 
 // Compatible wrapper around Firebase Web SDK
@@ -292,3 +318,60 @@ export async function getNextSequenceId(sequenceName: string): Promise<number> {
     return Date.now() + Math.floor(Math.random() * 1000);
   }
 }
+
+export interface FirestoreConnectionStatus {
+  status: 'connected' | 'error' | 'connecting';
+  latencyMs: number;
+  projectId: string;
+  databaseId: string;
+  authDomain: string;
+  error?: string;
+  timestamp: string;
+  documentCountSample?: number;
+}
+
+export async function testFirestoreConnection(): Promise<FirestoreConnectionStatus> {
+  const startTime = performance.now();
+  const projectId = firebaseConfig.projectId;
+  const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
+  const authDomain = firebaseConfig.authDomain;
+
+  try {
+    // Test live Firestore connectivity with sample query
+    const sampleRef = collection(rawFirestore, COLLECTIONS.WORKSPACES);
+    const q = query(sampleRef, limit(1));
+    const snapshot = await getDocs(q);
+    const latencyMs = Math.round(performance.now() - startTime);
+
+    return {
+      status: 'connected',
+      latencyMs,
+      projectId,
+      databaseId,
+      authDomain,
+      documentCountSample: snapshot.size,
+      timestamp: new Date().toISOString(),
+    };
+  } catch (err: any) {
+    const latencyMs = Math.round(performance.now() - startTime);
+    return {
+      status: 'error',
+      latencyMs,
+      projectId,
+      databaseId,
+      authDomain,
+      error: err?.message || 'Failed to communicate with Cloud Firestore backend',
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+export async function reconnectFirestore(): Promise<FirestoreConnectionStatus> {
+  try {
+    await enableNetwork(rawFirestore).catch(() => {});
+  } catch (e) {
+    // ignore
+  }
+  return await testFirestoreConnection();
+}
+

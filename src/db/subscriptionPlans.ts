@@ -58,33 +58,32 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
     const plansRef = db.collection(path);
     const snap = await plansRef.get();
 
-    if (snap.empty) {
-      // Seed default built-in plans into Firestore
-      const seededPlans: PlanTierConfig[] = [];
-      for (const p of DEFAULT_BUILTIN_PLANS) {
-        const docRef = db.collection(path).doc(p.id);
-        const planWithMeta: PlanTierConfig = {
-          ...p,
-          isBuiltIn: true,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        await docRef.set(planWithMeta);
-        seededPlans.push(planWithMeta);
-      }
-      return seededPlans;
-    }
-
     const plans: PlanTierConfig[] = [];
     snap.docs.forEach((d: any) => {
-      plans.push({ ...d.data(), id: d.id });
+      const data = d.data();
+      const defaultDef = DEFAULT_BUILTIN_PLANS.find((p) => p.id === d.id);
+      plans.push({
+        ...(defaultDef || {}),
+        ...data,
+        id: d.id,
+        features: data.features && data.features.length > 0 ? data.features : (defaultDef?.features || []),
+        color: data.color || defaultDef?.color || PLAN_COLOR_PRESETS.indigo,
+      });
     });
 
-    // Ensure built-in plans are present even if not in DB yet
+    // Ensure all default built-in plans exist in Firestore and in returned list
     for (const def of DEFAULT_BUILTIN_PLANS) {
       if (!plans.some((p) => p.id === def.id)) {
-        plans.unshift(def);
+        const docRef = db.collection(path).doc(def.id);
+        const planWithMeta: PlanTierConfig = {
+          ...def,
+          isBuiltIn: true,
+          status: 'active',
+          createdAt: def.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await docRef.set(planWithMeta, { merge: true });
+        plans.push(planWithMeta);
       }
     }
 
@@ -111,7 +110,7 @@ export async function createSubscriptionPlan(
     const planId = rawSlug || `plan_${Date.now()}`;
 
     const monthlyPrice = Number(planInput.monthlyPrice) || 0;
-    const annualPrice = Number(planInput.annualPrice) || Math.round(monthlyPrice * 10);
+    const annualPrice = Number(planInput.annualPrice) || Math.round(monthlyPrice * 12);
     const monthlyEquivalentAnnual = Math.round(annualPrice / 12);
 
     const colorConfig = planInput.color || PLAN_COLOR_PRESETS.indigo;
@@ -174,24 +173,69 @@ export async function updateSubscriptionPlan(
   adminUserId: number = 1,
   adminUserEmail: string = 'admin@platform.com'
 ): Promise<PlanTierConfig> {
-  const path = `${COLLECTIONS.SUBSCRIPTION_PLANS}/${planId}`;
-  try {
-    const docRef = db.collection(COLLECTIONS.SUBSCRIPTION_PLANS).doc(planId);
-    const existingSnap = await docRef.get();
-    const existing = existingSnap.exists ? existingSnap.data() : null;
+  const trimmedPlanId = planId?.trim().toLowerCase();
+  
+  // 1. Validation of Plan ID before triggering any Firestore write
+  if (!trimmedPlanId) {
+    throw new Error('Validation Error: Valid subscription plan ID (slug) is required before updating.');
+  }
 
-    const monthlyPrice = updates.monthlyPrice !== undefined ? Number(updates.monthlyPrice) : (existing?.monthlyPrice ?? 0);
-    const annualPrice = updates.annualPrice !== undefined ? Number(updates.annualPrice) : (existing?.annualPrice ?? 0);
+  // Ensure slug format is valid (alphanumeric, underscore, hyphen, 2 to 64 chars)
+  const slugRegex = /^[a-z0-9_-]{2,64}$/;
+  if (!slugRegex.test(trimmedPlanId)) {
+    throw new Error(`Validation Error: Invalid plan identifier "${trimmedPlanId}". Plan ID must be 2-64 characters long and contain only alphanumeric characters, dashes, or underscores.`);
+  }
+
+  const path = `${COLLECTIONS.SUBSCRIPTION_PLANS}/${trimmedPlanId}`;
+  try {
+    const docRef = db.collection(COLLECTIONS.SUBSCRIPTION_PLANS).doc(trimmedPlanId);
+    const existingSnap = await docRef.get();
+    const defaultBuiltIn = DEFAULT_BUILTIN_PLANS.find((p) => p.id === trimmedPlanId);
+    
+    const existing = existingSnap.exists ? existingSnap.data() : (defaultBuiltIn || {
+      id: trimmedPlanId,
+      name: updates.name || trimmedPlanId,
+      status: 'active',
+      monthlyPrice: 0,
+      annualPrice: 0,
+      features: [],
+    });
+
+    const isBuiltIn =
+      ['free', 'starter', 'professional', 'enterprise'].includes(trimmedPlanId) ||
+      Boolean(existing?.isBuiltIn);
+
+    // Validate and sanitize pricing
+    const rawMonthly = updates.monthlyPrice !== undefined ? Number(updates.monthlyPrice) : (existing?.monthlyPrice ?? 0);
+    const rawAnnual = updates.annualPrice !== undefined ? Number(updates.annualPrice) : (existing?.annualPrice ?? 0);
+
+    const monthlyPrice = isNaN(rawMonthly) || rawMonthly < 0 ? 0 : Math.round(rawMonthly);
+    const annualPrice = isNaN(rawAnnual) || rawAnnual < 0 ? 0 : Math.round(rawAnnual);
     const monthlyEquivalentAnnual = Math.round(annualPrice / 12);
 
-    const cleanUpdates: Partial<PlanTierConfig> = {
+    // Validate and sanitize resource limits
+    const maxUsers = updates.maxUsers !== undefined ? Number(updates.maxUsers) : (existing?.maxUsers ?? 5);
+    const maxInvoices = updates.maxInvoicesPerMonth !== undefined ? Number(updates.maxInvoicesPerMonth) : (existing?.maxInvoicesPerMonth ?? -1);
+    const maxLedgers = updates.maxLedgers !== undefined ? Number(updates.maxLedgers) : (existing?.maxLedgers ?? 1000);
+    const maxBranches = updates.maxBranches !== undefined ? Number(updates.maxBranches) : (existing?.maxBranches ?? 1);
+
+    const cleanUpdates: PlanTierConfig = {
+      ...(existing || {}),
       ...updates,
+      id: trimmedPlanId, // ID is permanently immutable to protect relational integrity
+      isBuiltIn: isBuiltIn, // Built-in lock cannot be stripped
       monthlyPrice,
       annualPrice,
       monthlyEquivalentAnnual,
+      maxUsers: isNaN(maxUsers) ? -1 : maxUsers,
+      maxInvoicesPerMonth: isNaN(maxInvoices) ? -1 : maxInvoices,
+      maxLedgers: isNaN(maxLedgers) ? -1 : maxLedgers,
+      maxBranches: isNaN(maxBranches) ? 1 : maxBranches,
+      features: updates.features && updates.features.length > 0 ? updates.features : (existing?.features || []),
       updatedAt: new Date().toISOString(),
-    };
+    } as PlanTierConfig;
 
+    // Trigger atomic Firestore write
     await docRef.set(cleanUpdates, { merge: true });
 
     try {
@@ -200,14 +244,16 @@ export async function updateSubscriptionPlan(
         adminUserEmail,
         'UPDATE',
         'SUBSCRIPTION_PLAN',
-        planId,
-        `Updated subscription plan parameters for ${planId}`
+        trimmedPlanId,
+        `Updated subscription plan: ${cleanUpdates.name || trimmedPlanId} (₹${monthlyPrice}/mo, ₹${annualPrice}/yr)${
+          isBuiltIn ? ' [Built-in System Tier]' : ''
+        }`
       );
     } catch (e) {
       console.warn('Failed to log activity:', e);
     }
 
-    return { ...(existing || {}), ...cleanUpdates, id: planId } as PlanTierConfig;
+    return cleanUpdates;
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
     throw err;
@@ -219,14 +265,36 @@ export async function deleteSubscriptionPlan(
   adminUserId: number = 1,
   adminUserEmail: string = 'admin@platform.com'
 ): Promise<boolean> {
-  const path = `${COLLECTIONS.SUBSCRIPTION_PLANS}/${planId}`;
+  const trimmedPlanId = planId?.trim().toLowerCase();
+  if (!trimmedPlanId) {
+    throw new Error('Valid subscription plan ID is required.');
+  }
+
+  const path = `${COLLECTIONS.SUBSCRIPTION_PLANS}/${trimmedPlanId}`;
   try {
-    // Prevent deletion of built-in starter, professional, enterprise
-    if (['starter', 'professional', 'enterprise'].includes(planId)) {
-      throw new Error('Built-in system plans (Starter, Professional, Enterprise) cannot be deleted.');
+    // 1. Prevent deletion of built-in free, starter, professional, enterprise
+    if (['free', 'starter', 'professional', 'enterprise'].includes(trimmedPlanId)) {
+      throw new Error(
+        `Protection Violation: Built-in system tier "${trimmedPlanId}" is a foundational platform requirement and cannot be deleted.`
+      );
     }
 
-    const docRef = db.collection(COLLECTIONS.SUBSCRIPTION_PLANS).doc(planId);
+    const docRef = db.collection(COLLECTIONS.SUBSCRIPTION_PLANS).doc(trimmedPlanId);
+    const existingSnap = await docRef.get();
+    if (existingSnap.exists && existingSnap.data()?.isBuiltIn) {
+      throw new Error(
+        `Protection Violation: Plan "${trimmedPlanId}" is designated as a protected built-in system plan and cannot be deleted.`
+      );
+    }
+
+    // 2. Prevent deletion if any workspaces are currently assigned to this plan
+    const wsSnap = await db.collection(COLLECTIONS.WORKSPACES).where('plan', '==', trimmedPlanId).get();
+    if (!wsSnap.empty) {
+      throw new Error(
+        `Protection Violation: Cannot delete plan "${trimmedPlanId}". ${wsSnap.size} active workspace(s) are currently enrolled in this tier. Reassign or migrate them to another plan first.`
+      );
+    }
+
     await docRef.delete();
 
     try {
@@ -235,8 +303,8 @@ export async function deleteSubscriptionPlan(
         adminUserEmail,
         'DELETE',
         'SUBSCRIPTION_PLAN',
-        planId,
-        `Deleted custom subscription plan ${planId}`
+        trimmedPlanId,
+        `Permanently deleted custom subscription plan tier "${trimmedPlanId}" (0 assigned workspaces verified)`
       );
     } catch (e) {
       console.warn('Failed to log activity:', e);

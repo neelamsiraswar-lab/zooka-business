@@ -521,7 +521,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                             <span className="text-xs text-slate-400">/{selectedCycle === 'annual' ? 'yr' : 'mo'}</span>
                             {selectedCycle === 'annual' && (
                               <p className="text-[11px] text-emerald-400 mt-0.5">
-                                ₹{plan.monthlyEquivalentAnnual}/mo equivalent
+                                {formatINR(plan.monthlyEquivalentAnnual)}/mo equivalent
                               </p>
                             )}
                           </div>

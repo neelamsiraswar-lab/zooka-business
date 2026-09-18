@@ -3,6 +3,7 @@ import { SubscriptionPlanTier, SubscriptionBillingCycle, SubscriptionStatus, Wor
 
 export interface PlanFeature {
   name: string;
+  free?: boolean | string;
   starter: boolean | string;
   professional: boolean | string;
   enterprise: boolean | string;
@@ -103,6 +104,30 @@ export const PLAN_COLOR_PRESETS: Record<string, {
 };
 
 export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
+  free: {
+    id: 'free',
+    name: 'Free Forever',
+    tagline: 'For individual freelancers, hobbyists & testing basic GST billing.',
+    badge: 'Free Tier',
+    isBuiltIn: true,
+    status: 'active',
+    monthlyPrice: 0,
+    annualPrice: 0,
+    monthlyEquivalentAnnual: 0,
+    maxUsers: 1,
+    maxInvoicesPerMonth: 25,
+    maxLedgers: 50,
+    maxBranches: 1,
+    features: [
+      '1 User Seat',
+      '25 GST Tax Invoices & Vouchers / month',
+      'Basic Sales & Purchase Invoicing',
+      'Standard Ledgers & Trial Balance',
+      'GSTR-1 Summary',
+      'Community Email Support',
+    ],
+    color: PLAN_COLOR_PRESETS.slate,
+  },
   starter: {
     id: 'starter',
     name: 'Starter Solo',
@@ -111,8 +136,8 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     isBuiltIn: true,
     status: 'active',
     monthlyPrice: 999,
-    annualPrice: 9990,
-    monthlyEquivalentAnnual: 832,
+    annualPrice: 11988,
+    monthlyEquivalentAnnual: 999,
     maxUsers: 2,
     maxInvoicesPerMonth: 150,
     maxLedgers: 250,
@@ -137,8 +162,8 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     isBuiltIn: true,
     status: 'active',
     monthlyPrice: 2499,
-    annualPrice: 24990,
-    monthlyEquivalentAnnual: 2082,
+    annualPrice: 29988,
+    monthlyEquivalentAnnual: 2499,
     maxUsers: 10,
     maxInvoicesPerMonth: -1, // Unlimited
     maxLedgers: 5000,
@@ -163,8 +188,8 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     isBuiltIn: true,
     status: 'active',
     monthlyPrice: 5999,
-    annualPrice: 59900,
-    monthlyEquivalentAnnual: 4991,
+    annualPrice: 71988,
+    monthlyEquivalentAnnual: 5999,
     maxUsers: -1, // Unlimited
     maxInvoicesPerMonth: -1, // Unlimited
     maxLedgers: -1,
@@ -188,6 +213,7 @@ export const DEFAULT_BUILTIN_PLANS: PlanTierConfig[] = Object.values(SUBSCRIPTIO
 export const COMPARISON_FEATURES: PlanFeature[] = [
   {
     name: 'User Accounts / Seats',
+    free: '1 Seat',
     starter: 'Up to 2',
     professional: 'Up to 10',
     enterprise: 'Unlimited',
@@ -195,18 +221,21 @@ export const COMPARISON_FEATURES: PlanFeature[] = [
   },
   {
     name: 'Monthly Invoices & Bills',
+    free: '25 / mo',
     starter: '150 / mo',
     professional: 'Unlimited',
     enterprise: 'Unlimited',
   },
   {
     name: 'Multi-Role Permissions (RBAC)',
+    free: 'Admin only',
     starter: 'Admin & Accountant only',
     professional: 'All 5 Roles',
     enterprise: 'Custom Granular + Auditor Lock',
   },
   {
     name: 'Automated Bank Reconciliation',
+    free: false,
     starter: false,
     professional: true,
     enterprise: true,
@@ -214,30 +243,35 @@ export const COMPARISON_FEATURES: PlanFeature[] = [
   },
   {
     name: 'Cheque Book & PDC Lifecycle',
+    free: false,
     starter: false,
     professional: true,
     enterprise: true,
   },
   {
     name: 'Multi-State GSTINs',
+    free: 'Single GSTIN',
     starter: 'Single GSTIN',
     professional: 'Up to 3 Branches',
     enterprise: 'Unlimited Multi-State',
   },
   {
     name: 'Statutory Auditor Access',
+    free: false,
     starter: false,
     professional: 'Standard',
     enterprise: 'Dedicated Read-Only & Audit Lock',
   },
   {
     name: 'Comprehensive Audit Logs',
+    free: 'Last 7 days',
     starter: 'Last 30 days',
     professional: '1 Year',
     enterprise: 'Permanent Immutable Trail',
   },
   {
     name: 'Customer Support SLA',
+    free: 'Community Email',
     starter: 'Email (48h)',
     professional: 'Priority Phone & WhatsApp (4h)',
     enterprise: 'Dedicated Account Manager (Instant)',

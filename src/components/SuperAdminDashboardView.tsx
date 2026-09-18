@@ -79,6 +79,7 @@ import {
   updateSubscriptionPlan,
   deleteSubscriptionPlan,
 } from '../db/subscriptionPlans';
+import { FirestoreConnectionModal } from './FirestoreConnectionModal';
 
 interface SuperAdminDashboardViewProps {
   onSwitchWorkspace?: (workspace: Workspace) => void;
@@ -125,6 +126,12 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
   const [planEditorModalOpen, setPlanEditorModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PlanTierConfig | null>(null);
 
+  // Protected Plan Deletion Facility State
+  const [planToDelete, setPlanToDelete] = useState<PlanTierConfig | null>(null);
+  const [deleteConfirmationSlug, setDeleteConfirmationSlug] = useState('');
+  const [deleteAdminAuthorized, setDeleteAdminAuthorized] = useState(false);
+  const [deletingPlan, setDeletingPlan] = useState(false);
+
   // Platform Audit Trail State
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -150,6 +157,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
   }, [dashboardViewTab]);
 
   // Modal States
+  const [showFirestoreModal, setShowFirestoreModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
@@ -210,6 +218,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
   useEffect(() => {
     loadWorkspaces();
     loadPlans();
+
+    const handleSuperAdminRefresh = () => {
+      loadWorkspaces();
+      loadPlans();
+    };
+    window.addEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
+    return () => {
+      window.removeEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
+    };
   }, []);
 
   const handleOpenCreatePlan = () => {
@@ -241,44 +258,71 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     const adminId = profile?.id || 1;
     const adminEmail = profile?.email || user?.email || 'admin@platform.com';
 
-    if (editingPlan && editingPlan.id && !editingPlan.id.includes('-copy-')) {
-      const updated = await updateSubscriptionPlan(editingPlan.id, planData, adminId, adminEmail);
+    const targetPlanId = editingPlan?.id || planData.id;
+    const isUpdate = Boolean(targetPlanId && !targetPlanId.includes('-copy-') && editingPlan);
+
+    if (isUpdate && targetPlanId) {
+      const updated = await updateSubscriptionPlan(targetPlanId, planData, adminId, adminEmail);
       dialog.toast.success(`Plan "${updated.name}" updated successfully`);
     } else {
       const created = await createSubscriptionPlan(planData as any, adminId, adminEmail);
       dialog.toast.success(`Plan "${created.name}" created and published`);
     }
+    window.dispatchEvent(new CustomEvent('subscription_plans_updated'));
     await loadPlans();
   };
 
-  const handleDeletePlan = async (p: PlanTierConfig) => {
-    if (p.isBuiltIn || ['starter', 'professional', 'enterprise'].includes(p.id)) {
-      dialog.toast.warning('Built-in system plans are protected and cannot be deleted.');
+  const handleDeletePlan = (p: PlanTierConfig) => {
+    if (p.isBuiltIn || ['free', 'starter', 'professional', 'enterprise'].includes(p.id)) {
+      dialog.toast.warning('Built-in system plans (Free, Starter, Professional, Enterprise) are protected and cannot be deleted.');
       return;
     }
 
     const assignedCount = workspaces.filter((w) => w.plan === p.id).length;
     if (assignedCount > 0) {
       dialog.toast.warning(
-        `Cannot delete "${p.name}": ${assignedCount} active workspace(s) are currently assigned to this tier. Reassign them first.`
+        `Protected Deletion Blocked: ${assignedCount} active workspace(s) are currently enrolled in "${p.name}". Migrate these workspaces before deleting.`
       );
       return;
     }
 
-    const confirmed = await dialog.confirm({
-      title: `Delete Plan "${p.name}"?`,
-      message: `Are you sure you want to permanently delete the "${p.name}" subscription tier? This action cannot be undone.`,
-      confirmText: 'Delete Plan',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
+    // Open high-security Protected Plan Deletion Facility
+    setPlanToDelete(p);
+    setDeleteConfirmationSlug('');
+    setDeleteAdminAuthorized(false);
+  };
 
+  const handleConfirmPermanentDelete = async () => {
+    if (!planToDelete) return;
+
+    if (deleteConfirmationSlug.trim().toLowerCase() !== planToDelete.id.toLowerCase()) {
+      dialog.toast.warning(`Security Check Failed: Please type "${planToDelete.id}" exactly to verify deletion.`);
+      return;
+    }
+
+    if (!deleteAdminAuthorized) {
+      dialog.toast.warning('Super Admin Authorization required: Please check the verification checkbox.');
+      return;
+    }
+
+    setDeletingPlan(true);
     try {
-      await deleteSubscriptionPlan(p.id, profile?.id || 1, profile?.email || user?.email || 'admin@platform.com');
-      dialog.toast.success(`Plan "${p.name}" removed from platform catalog`);
+      await deleteSubscriptionPlan(
+        planToDelete.id,
+        profile?.id || 1,
+        profile?.email || user?.email || 'admin@platform.com'
+      );
+      dialog.toast.success(`Plan "${planToDelete.name}" permanently deleted from catalog`);
+      setPlanToDelete(null);
+      setDeleteConfirmationSlug('');
+      setDeleteAdminAuthorized(false);
+      window.dispatchEvent(new CustomEvent('subscription_plans_updated'));
       await loadPlans();
+      await loadAuditLogs();
     } catch (err: any) {
       dialog.toast.error(err.message || 'Failed to delete plan');
+    } finally {
+      setDeletingPlan(false);
     }
   };
 
@@ -292,6 +336,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
         profile?.email || user?.email || 'admin@platform.com'
       );
       dialog.toast.success(`Plan "${p.name}" is now ${nextStatus}`);
+      window.dispatchEvent(new CustomEvent('subscription_plans_updated'));
       await loadPlans();
     } catch (err: any) {
       dialog.toast.error(err.message || 'Failed to update plan status');
@@ -409,21 +454,21 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
       await loadWorkspaces();
 
       // Offer to switch to newly created workspace
-      dialog.confirm({
+      const switchConfirmed = await dialog.confirm({
         title: 'Switch to New Workspace?',
         message: `Workspace "${newWs.name}" is ready. Would you like to switch into this workspace now?`,
         confirmText: 'Switch Workspace',
         cancelText: 'Stay Here',
         variant: 'primary',
-        onConfirm: () => {
-          setActiveWorkspaceId(newWs.id);
-          if (onSwitchWorkspace) {
-            onSwitchWorkspace(newWs);
-          } else {
-            window.location.reload();
-          }
-        },
       });
+      if (switchConfirmed) {
+        setActiveWorkspaceId(newWs.id);
+        if (onSwitchWorkspace) {
+          onSwitchWorkspace(newWs);
+        } else {
+          window.location.reload();
+        }
+      }
     } catch (err: any) {
       console.error('Failed to create workspace:', err);
       dialog.toast.error(err?.message || 'Failed to create workspace');
@@ -493,32 +538,23 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     }
   };
 
-  const handleDeleteWorkspace = (ws: Workspace) => {
-    if (ws.isDefault) {
-      dialog.alert({
-        title: 'Action Restricted',
-        message: 'The primary default workspace cannot be deleted to preserve root system records.',
-        variant: 'warning',
-      });
-      return;
-    }
-
-    dialog.confirm({
+  const handleDeleteWorkspace = async (ws: Workspace) => {
+    const confirmed = await dialog.confirm({
       title: `Delete Workspace "${ws.name}"?`,
       message: 'This will permanently remove this workspace and its tenant profile. This action cannot be undone.',
       confirmText: 'Delete Workspace',
       cancelText: 'Cancel',
       variant: 'danger',
-      onConfirm: async () => {
-        try {
-          await deleteWorkspace(ws.id, profile?.email || 'nawarkuldeep@gmail.com');
-          dialog.toast.success('Workspace deleted');
-          await loadWorkspaces();
-        } catch (err: any) {
-          dialog.toast.error(err?.message || 'Failed to delete workspace');
-        }
-      },
     });
+    if (!confirmed) return;
+
+    try {
+      await deleteWorkspace(ws.id, profile?.email || 'nawarkuldeep@gmail.com');
+      dialog.toast.success('Workspace deleted');
+      await loadWorkspaces();
+    } catch (err: any) {
+      dialog.toast.error(err?.message || 'Failed to delete workspace');
+    }
   };
 
   // Filtered List
@@ -597,6 +633,18 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
               {/* Header Action Controls */}
               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                 <button
+                  type="button"
+                  id="superadmin-firestore-diagnostics-btn"
+                  onClick={() => setShowFirestoreModal(true)}
+                  title="Cloud Firestore Diagnostics & Cluster Telemetry"
+                  className="px-3.5 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 transition flex items-center gap-2 text-xs font-semibold cursor-pointer shadow-lg shadow-emerald-500/10"
+                >
+                  <Database className="w-4 h-4 text-emerald-400" />
+                  <span className="hidden sm:inline">Firestore Diagnostics</span>
+                  <span className="sm:hidden">Diagnostics</span>
+                </button>
+
+                <button
                   onClick={loadWorkspaces}
                   disabled={loading}
                   title="Refresh Workspace Records"
@@ -620,10 +668,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
             {/* Live Multi-Tenant Cloud Architecture Badge */}
             <div className="mt-6 pt-4 border-t border-indigo-500/15 flex flex-wrap items-center justify-between gap-4 text-xs">
               <div className="flex items-center gap-4 text-slate-400">
-                <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                <button
+                  type="button"
+                  onClick={() => setShowFirestoreModal(true)}
+                  title="Click to inspect real-time Firestore cluster telemetry"
+                  className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-medium transition cursor-pointer"
+                >
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Firestore Tenant DB Online</span>
-                </div>
+                </button>
                 <span className="hidden sm:inline text-slate-600">•</span>
                 <div className="flex items-center gap-1.5 text-slate-300">
                   <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
@@ -1092,15 +1145,13 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                     </button>
 
                     {/* Delete Workspace */}
-                    {!ws.isDefault && (
-                      <button
-                        onClick={() => handleDeleteWorkspace(ws)}
-                        title="Delete Workspace"
-                        className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleDeleteWorkspace(ws)}
+                      title="Delete Workspace"
+                      className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               );
@@ -1251,7 +1302,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                             </div>
                             <div className="text-right">
                               <div className="text-sm font-bold text-slate-200">{formatINR(p.annualPrice)}/yr</div>
-                              <div className="text-[10px] text-emerald-400">₹{p.monthlyEquivalentAnnual}/mo equivalent</div>
+                              <div className="text-[10px] text-emerald-400">{formatINR(p.monthlyEquivalentAnnual)}/mo equivalent</div>
                             </div>
                           </div>
                           <div className="mt-2 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-500">
@@ -1362,26 +1413,30 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                         </div>
 
                         <div>
-                          {p.isBuiltIn ? (
-                            <span className="text-[10px] text-slate-500 font-mono px-2 py-1 rounded bg-slate-900 border border-slate-800">
-                              Protected
-                            </span>
+                          {p.isBuiltIn || ['free', 'starter', 'professional', 'enterprise'].includes(p.id) ? (
+                            <div
+                              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-purple-300 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1.5 rounded-xl"
+                              title="Protected Core System Tier: Deletion is permanently disabled to safeguard platform operations"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                              <span>Protected Tier</span>
+                            </div>
+                          ) : assignedCount > 0 ? (
+                            <div
+                              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1.5 rounded-xl"
+                              title={`Protected In-Use Tier: Cannot delete because ${assignedCount} active workspace(s) are currently enrolled`}
+                            >
+                              <Lock className="w-3.5 h-3.5 text-amber-400" />
+                              <span>In Use ({assignedCount} Ws)</span>
+                            </div>
                           ) : (
                             <button
                               onClick={() => handleDeletePlan(p)}
-                              disabled={assignedCount > 0}
-                              className={`p-1.5 rounded-xl transition cursor-pointer ${
-                                assignedCount > 0
-                                  ? 'text-slate-600 bg-slate-900 cursor-not-allowed'
-                                  : 'text-rose-400 hover:bg-rose-500/20 bg-rose-500/10'
-                              }`}
-                              title={
-                                assignedCount > 0
-                                  ? `Cannot delete: ${assignedCount} workspace(s) assigned`
-                                  : 'Delete plan'
-                              }
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition cursor-pointer"
+                              title="Protected Deletion Facility: Securely purge unassigned custom plan tier"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
                             </button>
                           )}
                         </div>
@@ -2373,10 +2428,152 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
             setEditingPlan(null);
           }}
           onSave={handleSavePlan}
+          plan={editingPlan}
           initialPlan={editingPlan}
           existingPlans={plans}
+          assignedWorkspacesCount={editingPlan ? workspaces.filter((w) => w.plan === editingPlan.id).length : 0}
         />
       )}
+
+      {/* ---------------- PROTECTED PLAN DELETION MODAL ---------------- */}
+      {planToDelete && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/30 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-800 bg-rose-500/10 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Protected Plan Deletion</span>
+                  </h3>
+                  <p className="text-xs text-rose-300/80">
+                    High-security tier destruction facility
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setPlanToDelete(null);
+                  setDeleteConfirmationSlug('');
+                  setDeleteAdminAuthorized(false);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Target Plan Tier:</span>
+                  <span className="font-bold text-white text-sm">{planToDelete.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400 font-mono text-[11px]">
+                  <span>Slug Identifier:</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">{planToDelete.id}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Configured Rate:</span>
+                  <span className="font-semibold text-emerald-400">
+                    {formatINR(planToDelete.monthlyPrice)}/mo • {formatINR(planToDelete.annualPrice)}/yr
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Assigned Workspaces:</span>
+                  <span className="font-semibold text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> 0 Workspaces (Safe to delete)
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-200 leading-relaxed">
+                <strong>Warning:</strong> Permanently purging this tier deletes its document from the Firestore <code className="text-rose-300">subscription_plans</code> collection and removes it from the public pricing catalog. This action cannot be reversed.
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Type <code className="px-1.5 py-0.5 rounded bg-slate-800 text-rose-300 font-mono font-bold">{planToDelete.id}</code> to verify deletion:
+                  </label>
+                  <input
+                    type="text"
+                    value={deleteConfirmationSlug}
+                    onChange={(e) => setDeleteConfirmationSlug(e.target.value)}
+                    placeholder={planToDelete.id}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 transition"
+                  />
+                </div>
+
+                <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer select-none pt-1">
+                  <input
+                    type="checkbox"
+                    checked={deleteAdminAuthorized}
+                    onChange={(e) => setDeleteAdminAuthorized(e.target.checked)}
+                    className="mt-0.5 rounded bg-slate-950 border-slate-700 text-rose-600 focus:ring-rose-500 cursor-pointer w-4 h-4"
+                  />
+                  <span>
+                    I confirm as Super Admin that this custom plan tier is retired and authorized for permanent removal from the platform.
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setPlanToDelete(null);
+                  setDeleteConfirmationSlug('');
+                  setDeleteAdminAuthorized(false);
+                }}
+                disabled={deletingPlan}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPermanentDelete}
+                disabled={
+                  deletingPlan ||
+                  deleteConfirmationSlug.trim().toLowerCase() !== planToDelete.id.toLowerCase() ||
+                  !deleteAdminAuthorized
+                }
+                className={`px-5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  deletingPlan ||
+                  deleteConfirmationSlug.trim().toLowerCase() !== planToDelete.id.toLowerCase() ||
+                  !deleteAdminAuthorized
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60 border border-slate-700'
+                    : 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/30 cursor-pointer'
+                }`}
+              >
+                {deletingPlan ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Purging Plan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Permanently Delete Plan</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Cloud Firestore Diagnostics & Cluster Telemetry Modal */}
+      <FirestoreConnectionModal
+        isOpen={showFirestoreModal}
+        onClose={() => setShowFirestoreModal(false)}
+      />
     </div>
   );
 };

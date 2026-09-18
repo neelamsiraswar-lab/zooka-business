@@ -34,6 +34,7 @@ import {
 import { RefreshCw, AlertCircle, Menu, ShieldAlert, Eye } from 'lucide-react';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
 import { getActiveWorkspace } from './db/workspaces';
+import { getPlatformSettings } from './db/platformSettings';
 import { canPerformTransactionalAction } from './lib/subscriptionEnforcement';
 import {
   canAccessTab,
@@ -158,11 +159,49 @@ export default function App() {
 
   const [platformFooterCompliance, setPlatformFooterCompliance] = useState(() => localStorage.getItem('platform_footer_compliance') || 'GST Act 2017 & ITC Section 16 Compliant');
   const [platformFooterSupport, setPlatformFooterSupport] = useState(() => localStorage.getItem('platform_footer_support') || 'Support: support@apextally.com | +91 9876543210');
+  
+  // Master Business Details linked to Footer Place of Supply
+  const [masterBusinessName, setMasterBusinessName] = useState(() => localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+  const [masterBusinessStateCode, setMasterBusinessStateCode] = useState(() => localStorage.getItem('platform_invoice_state_code') || '27');
+  const [masterBusinessStateName, setMasterBusinessStateName] = useState(() => localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
+  const [masterBusinessGstin, setMasterBusinessGstin] = useState(() => localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
 
   useEffect(() => {
+    // Initial fetch from cloud Firestore platform settings
+    getPlatformSettings().then((settings) => {
+      if (settings) {
+        if (settings.invoiceBusinessName) {
+          setMasterBusinessName(settings.invoiceBusinessName);
+          localStorage.setItem('platform_invoice_name', settings.invoiceBusinessName);
+        }
+        if (settings.invoiceStateCode) {
+          setMasterBusinessStateCode(settings.invoiceStateCode);
+          localStorage.setItem('platform_invoice_state_code', settings.invoiceStateCode);
+        } else if (settings.defaultStateCode) {
+          setMasterBusinessStateCode(settings.defaultStateCode);
+        }
+        if (settings.invoiceStateName) {
+          setMasterBusinessStateName(settings.invoiceStateName);
+          localStorage.setItem('platform_invoice_state_name', settings.invoiceStateName);
+        } else if (settings.defaultStateName) {
+          setMasterBusinessStateName(settings.defaultStateName);
+        }
+        if (settings.invoiceGstin) {
+          setMasterBusinessGstin(settings.invoiceGstin);
+          localStorage.setItem('platform_invoice_gstin', settings.invoiceGstin);
+        }
+        if (settings.footerCompliance) setPlatformFooterCompliance(settings.footerCompliance);
+        if (settings.footerSupport) setPlatformFooterSupport(settings.footerSupport);
+      }
+    }).catch((err) => console.warn('Platform settings fetch:', err));
+
     const handleBrandingUpdate = () => {
       setPlatformFooterCompliance(localStorage.getItem('platform_footer_compliance') || 'GST Act 2017 & ITC Section 16 Compliant');
       setPlatformFooterSupport(localStorage.getItem('platform_footer_support') || 'Support: support@apextally.com | +91 9876543210');
+      setMasterBusinessName(localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+      setMasterBusinessStateCode(localStorage.getItem('platform_invoice_state_code') || '27');
+      setMasterBusinessStateName(localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
+      setMasterBusinessGstin(localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
     };
     window.addEventListener('platform_branding_updated', handleBrandingUpdate);
     return () => {
@@ -261,11 +300,16 @@ export default function App() {
     }
   };
 
-  // Manual trigger with instant UI toast feedback for books synchronization
+  // Manual trigger with instant UI toast feedback for synchronization
   const handleManualSync = async () => {
-    isFetchingDataRef.current = false;
-    await loadData(false);
-    dialog.toast.success('Double-Entry books & accounts synchronized with Cloud database');
+    if (currentTab === 'super_admin') {
+      window.dispatchEvent(new CustomEvent('refresh-super-admin'));
+      dialog.toast.success('Super Admin multi-tenant workspace records synchronized with Cloud database');
+    } else {
+      isFetchingDataRef.current = false;
+      await loadData(false);
+      dialog.toast.success('Double-Entry books & accounts synchronized with Cloud database');
+    }
   };
 
   // Initial load when authenticated user UID changes
@@ -962,6 +1006,17 @@ export default function App() {
               activityLogs={activityLogs}
               invoices={invoices}
               cheques={cheques}
+              workspace={activeWorkspace}
+              companyProfile={company}
+              onWorkspaceUpdated={(updatedWs) => {
+                setActiveWorkspace(updatedWs);
+              }}
+              onCompanyUpdated={(updatedComp) => {
+                setCompany(updatedComp);
+              }}
+              onNavigateToConsolidatedReports={() => {
+                setActiveTab('reports');
+              }}
               onQuickInvoice={() => setActiveTab('sales')}
               onQuickExpense={() => setActiveTab('expenses')}
               onQuickReceipt={() => handleOpenPaymentWithContext('receipt')}
@@ -1154,6 +1209,7 @@ export default function App() {
           {currentTab === 'settings' && (
             <CompanySettingsView
               company={company}
+              workspace={activeWorkspace}
               onSaveCompany={handleSaveCompany}
               onClearMasterLedger={handleClearMasterLedger}
               loading={dataLoading}
@@ -1162,21 +1218,45 @@ export default function App() {
           )}
         </main>
 
-        {/* Bottom Sticky Status Bar (Tally-inspired) */}
-        <footer className="bg-slate-900 border-t border-slate-800 text-[11px] text-slate-400 px-4 py-2.5 mt-auto">
+        {/* Bottom Sticky Status Bar */}
+        <footer className="bg-slate-900/80 border-t border-slate-800/80 text-[11px] text-slate-400 px-4 sm:px-6 py-2 mt-auto transition-colors">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <span className="font-mono text-emerald-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                Cloud Firestore Connected
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Cloud Synced
               </span>
-              <span>|</span>
-              <span>Place of Supply: {company?.stateName || 'Maharashtra'} ({company?.stateCode || '27'})</span>
-              <span className="hidden md:inline">|</span>
-              <span className="hidden md:inline">Logged in as: {user.email}</span>
+              <span className="text-slate-700">|</span>
+              <button
+                type="button"
+                id="footer-place-of-supply-btn"
+                onClick={() => {
+                  if (isUserSuperAdmin) {
+                    setActiveTab('super_admin');
+                    dialog.toast.info(`Master Business: ${masterBusinessName} | State: ${masterBusinessStateName} (${masterBusinessStateCode})`);
+                  } else {
+                    dialog.toast.info(`Master Business: ${masterBusinessName} | Place of Supply: ${masterBusinessStateName} (${masterBusinessStateCode}) | GSTIN: ${masterBusinessGstin}`);
+                  }
+                }}
+                title={`Master Business: ${masterBusinessName} | Place of Supply: ${masterBusinessStateName} (${masterBusinessStateCode}) | GSTIN: ${masterBusinessGstin}${isUserSuperAdmin ? ' - Click to configure Master Business' : ''}`}
+                className="flex items-center gap-1.5 text-slate-300 hover:text-white transition cursor-pointer text-left focus:outline-none"
+              >
+                <span className="text-slate-400">Place of Supply:</span>
+                <span className="text-slate-200 font-medium">
+                  {masterBusinessStateName}
+                </span>
+                <span className="font-mono text-[10px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-medium">
+                  {masterBusinessStateCode}
+                </span>
+                <span className="text-slate-500 hidden lg:inline text-[10px]">
+                  ({masterBusinessName})
+                </span>
+              </button>
+              <span className="text-slate-700 hidden md:inline">|</span>
+              <span className="hidden md:inline text-slate-500">User: {user.email}</span>
             </div>
 
-            <div className="flex items-center gap-3 text-slate-500">
+            <div className="flex items-center gap-2.5 text-slate-500 text-[10px]">
               <span>{platformFooterCompliance}</span>
               <span>•</span>
               <span>{platformFooterSupport}</span>

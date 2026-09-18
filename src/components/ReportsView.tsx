@@ -11,8 +11,11 @@ import {
   Layers,
   FileText,
   ShieldCheck,
+  Building2,
+  Sparkles,
 } from 'lucide-react';
 import { Gstr2bReportView } from './Gstr2bReportView';
+import { ConsolidatedFinancialReportsView } from './ConsolidatedFinancialReportsView';
 
 interface ReportsViewProps {
   summary: FinancialSummary | null;
@@ -29,7 +32,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   parties = [],
   company,
 }) => {
-  const [reportType, setReportType] = useState<'pnl' | 'gstr1' | 'gstr2b' | 'gstr3b' | 'balanceSheet'>('pnl');
+  const [reportType, setReportType] = useState<'pnl' | 'gstr1' | 'gstr2b' | 'gstr3b' | 'balanceSheet' | 'consolidated'>('pnl');
 
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
@@ -161,6 +164,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           }`}
         >
           Balance Sheet Schedule
+        </button>
+
+        <button
+          onClick={() => setReportType('consolidated')}
+          className={`px-4 py-2 rounded-xl font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            reportType === 'consolidated'
+              ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-500/25'
+              : 'text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 border border-indigo-500/30'
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>Consolidated Reports (Multi-Entity)</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">
+            SAAS
+          </span>
         </button>
       </div>
 
@@ -423,6 +441,13 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 6. CONSOLIDATED FINANCIAL REPORTS (MULTI-ENTITY / MULTI-TENANT) */}
+      {reportType === 'consolidated' && (
+        <div className="animate-fade-in">
+          <ConsolidatedFinancialReportsView />
         </div>
       )}
     </div>

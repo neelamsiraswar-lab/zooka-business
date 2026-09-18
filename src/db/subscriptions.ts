@@ -171,6 +171,9 @@ export async function recordSubscriptionInvoice(params: {
   transactionReference?: string;
   notes?: string;
   creatorEmail?: string;
+  baseAmountOverride?: number;
+  taxAmountOverride?: number;
+  totalAmountOverride?: number;
 }): Promise<SubscriptionInvoice> {
   const {
     workspaceId,
@@ -180,6 +183,9 @@ export async function recordSubscriptionInvoice(params: {
     transactionReference = `TXN-${Date.now().toString(36).toUpperCase()}`,
     notes = '',
     creatorEmail = 'nawarkuldeep@gmail.com',
+    baseAmountOverride,
+    taxAmountOverride,
+    totalAmountOverride,
   } = params;
 
   const cost = calculateSubscriptionCost(plan, billingCycle);
@@ -203,6 +209,10 @@ export async function recordSubscriptionInvoice(params: {
     periodEnd.setMonth(periodEnd.getMonth() + 1);
   }
 
+  const finalBaseAmount = baseAmountOverride !== undefined ? baseAmountOverride : cost.baseAmount;
+  const finalTaxAmount = taxAmountOverride !== undefined ? taxAmountOverride : cost.gstAmount;
+  const finalTotalAmount = totalAmountOverride !== undefined ? totalAmountOverride : cost.totalAmount;
+
   const newInvoice: SubscriptionInvoice = {
     id: `sub-inv-${seq}-${Date.now().toString(36)}`,
     workspaceId,
@@ -210,10 +220,10 @@ export async function recordSubscriptionInvoice(params: {
     date: now.toISOString(),
     plan,
     billingCycle,
-    baseAmount: cost.baseAmount,
+    baseAmount: finalBaseAmount,
     gstRate: cost.gstRate,
-    taxAmount: cost.gstAmount,
-    totalAmount: cost.totalAmount,
+    taxAmount: finalTaxAmount,
+    totalAmount: finalTotalAmount,
     status: 'paid',
     paymentMethod,
     transactionReference,

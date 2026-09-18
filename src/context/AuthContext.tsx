@@ -14,50 +14,29 @@ import { UserRole } from '../lib/permissions';
 import { getOrCreateUser, updateUserProfile, updateUserRole, DbUser } from '../db/users';
 import { seedDemoDataForUser } from '../db/seed';
 import { db, COLLECTIONS } from '../db/index';
+import {
+  getSystemPersonas,
+  getPersonaByEmail,
+  getPersonaByRole,
+  INITIAL_SYSTEM_PERSONAS,
+  SystemPersona,
+} from '../db/systemPersonas';
 
+// Kept for backward compatibility with components importing KNOWN_DEFAULT_ACCOUNTS or DEMO_RBAC_PERSONAS
 export const KNOWN_DEFAULT_ACCOUNTS: Record<string, {
   name: string;
   role: UserRole;
   passwords: string[];
   photoURL?: string;
-}> = {
-  'nawarkuldeep@gmail.com': {
-    name: 'Kuldeep Siraswar',
-    role: 'super_admin',
-    passwords: ['Kuldeep@2785', '9999', 'admin', 'password', '123456'],
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
-  },
-  'admin.rohit@apexaccounting.com': {
-    name: 'Rohit Sharma',
-    role: 'admin',
-    passwords: ['Admin@2026', '9999', 'admin', 'password', '123456'],
-    photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&crop=faces',
-  },
-  'ca.kuldeep@apexaccounting.com': {
-    name: 'CA Kuldeep Nawar',
-    role: 'accountant',
-    passwords: ['Accountant@2026', '2222', 'ca', 'password', '123456'],
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
-  },
-  'billing.vikram@apexaccounting.com': {
-    name: 'Vikram Patel',
-    role: 'billing_operator',
-    passwords: ['Billing@2026', '1111', 'billing', 'password', '123456'],
-    photoURL: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop&crop=faces',
-  },
-  'auditor.kavita@apexaccounting.com': {
-    name: 'CA Kavita Sharma',
-    role: 'auditor',
-    passwords: ['Auditor@2026', '3333', 'auditor', 'password', '123456'],
-    photoURL: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=faces',
-  },
-  'auditor.neha@apexaccounting.com': {
-    name: 'CA Neha Gupta',
-    role: 'auditor',
-    passwords: ['Auditor@2026', '3333', 'auditor', 'password', '123456'],
-    photoURL: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=faces',
-  },
-};
+}> = INITIAL_SYSTEM_PERSONAS.reduce((acc, p) => {
+  acc[p.email] = {
+    name: p.displayName,
+    role: p.role,
+    passwords: p.passwords,
+    photoURL: p.photoURL,
+  };
+  return acc;
+}, {} as Record<string, { name: string; role: UserRole; passwords: string[]; photoURL?: string }>);
 
 export const DEMO_RBAC_PERSONAS: Record<UserRole, {
   uid: string;
@@ -68,58 +47,19 @@ export const DEMO_RBAC_PERSONAS: Record<UserRole, {
   title: string;
   subtitle: string;
   defaultPin: string;
-}> = {
-  super_admin: {
-    uid: 'super-admin-kuldeep',
-    email: 'nawarkuldeep@gmail.com',
-    displayName: 'Kuldeep Siraswar',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
-    role: 'super_admin',
-    title: 'Super Administrator',
-    subtitle: 'Supreme Multi-Tenant & Workspace Governance',
-    defaultPin: '9999',
-  },
-  admin: {
-    uid: 'admin-workspace-user',
-    email: 'admin.rohit@apexaccounting.com',
-    displayName: 'Rohit Sharma',
-    photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&crop=faces',
-    role: 'admin',
-    title: 'Administrator',
-    subtitle: 'Full System & Security Management',
-    defaultPin: '9999',
-  },
-  accountant: {
-    uid: 'accountant-ca-kuldeep',
-    email: 'ca.kuldeep@apexaccounting.com',
-    displayName: 'CA Kuldeep Nawar',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
-    role: 'accountant',
-    title: 'Senior Accountant',
-    subtitle: 'Ledgers, Vouchers & Tax Filings',
-    defaultPin: '2222',
-  },
-  billing_operator: {
-    uid: 'billing-operator-vikram',
-    email: 'billing.vikram@apexaccounting.com',
-    displayName: 'Vikram Patel',
-    photoURL: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&h=100&fit=crop&crop=faces',
-    role: 'billing_operator',
-    title: 'Billing Operator',
-    subtitle: 'Point-of-Sale, Counter Invoices & Stock Check',
-    defaultPin: '1111',
-  },
-  auditor: {
-    uid: 'auditor-neha',
-    email: 'auditor.neha@apexaccounting.com',
-    displayName: 'CA Neha Gupta',
-    photoURL: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop&crop=faces',
-    role: 'auditor',
-    title: 'Statutory Auditor',
-    subtitle: 'Read-Only Ledger & GSTR-2B Inspection',
-    defaultPin: '3333',
-  },
-};
+}> = INITIAL_SYSTEM_PERSONAS.reduce((acc, p) => {
+  acc[p.role] = {
+    uid: p.uid,
+    email: p.email,
+    displayName: p.displayName,
+    photoURL: p.photoURL,
+    role: p.role,
+    title: p.title,
+    subtitle: p.subtitle,
+    defaultPin: p.defaultPin,
+  };
+  return acc;
+}, {} as Record<UserRole, any>);
 
 interface AuthContextType {
   user: User | { uid: string; email: string | null; displayName: string | null; photoURL: string | null; role?: UserRole } | null;
@@ -417,31 +357,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // 2. Validate against Known Default Accounts (Admin, Accountant, Billing, Auditor, Super Admin)
+    // 2. Validate against Cloud-backed System Personas (Admin, Accountant, Billing, Auditor, Super Admin)
     try {
-      const knownAccount = KNOWN_DEFAULT_ACCOUNTS[trimmedEmail];
-      if (knownAccount) {
+      const cloudPersona = await getPersonaByEmail(trimmedEmail);
+      if (cloudPersona) {
         const isPasswordValid =
           !trimmedPass ||
-          knownAccount.passwords.some((p) => p.toLowerCase() === trimmedPass.toLowerCase()) ||
+          cloudPersona.passwords.some((p) => p.toLowerCase() === trimmedPass.toLowerCase()) ||
           trimmedPass.length >= 4;
 
         if (isPasswordValid) {
           const isSuperAdminEmail = trimmedEmail === 'nawarkuldeep@gmail.com';
-          const defaultRole = isSuperAdminEmail ? 'super_admin' : knownAccount.role;
+          const defaultRole = isSuperAdminEmail ? 'super_admin' : cloudPersona.role;
           const userRecord = await getOrCreateUser(
-            `user-${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
+            cloudPersona.uid || `user-${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
             trimmedEmail,
-            knownAccount.name,
-            knownAccount.photoURL,
+            cloudPersona.displayName,
+            cloudPersona.photoURL,
             defaultRole
           );
 
           const memberUser = {
-            uid: userRecord.uid || `user-${userRecord.id}`,
+            uid: userRecord.uid || cloudPersona.uid || `user-${userRecord.id}`,
             email: userRecord.email,
-            displayName: userRecord.displayName || knownAccount.name,
-            photoURL: userRecord.avatarUrl || knownAccount.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(knownAccount.name)}`,
+            displayName: userRecord.displayName || cloudPersona.displayName,
+            photoURL: userRecord.avatarUrl || cloudPersona.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cloudPersona.displayName)}`,
             role: userRecord.role || defaultRole,
           };
 
@@ -567,7 +507,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     setError(null);
     try {
-      const persona = DEMO_RBAC_PERSONAS[role] || DEMO_RBAC_PERSONAS.accountant;
+      const cloudPersona = await getPersonaByRole(role);
+      const fallbackPersona = DEMO_RBAC_PERSONAS[role] || DEMO_RBAC_PERSONAS.accountant;
+      const persona = cloudPersona || fallbackPersona;
       const demoUser = {
         uid: persona.uid,
         email: persona.email,

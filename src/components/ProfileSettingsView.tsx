@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   User,
@@ -17,9 +17,15 @@ import {
   Sparkles,
   Image,
   Upload,
+  MapPin,
+  Landmark,
+  AlertTriangle,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
+import { getPlatformSettings, updatePlatformSettings } from '../db/platformSettings';
+import { INDIAN_STATES } from '../data/indianStates';
 
 export const ProfileSettingsView: React.FC = () => {
   const { profile, user, updateProfile } = useAuth();
@@ -38,28 +44,108 @@ export const ProfileSettingsView: React.FC = () => {
   const [phone, setPhone] = useState(profile?.phone || '+91 9876543210');
 
   // App Branding & White-Labeling state
-  const [appName, setAppName] = useState(() => localStorage.getItem('platform_app_name') || 'TallyGST ERP');
-  const [appTagline, setAppTagline] = useState(() => localStorage.getItem('platform_app_tagline') || 'Multi-Tenant Cloud Accounting Platform');
-  const [appLogoUrl, setAppLogoUrl] = useState(() => localStorage.getItem('platform_app_logo') || '');
+  const [appName, setAppName] = useState('Apex TallyGST Cloud');
+  const [appTagline, setAppTagline] = useState('Enterprise GST Billing & Cloud Accounting');
+  const [appLogoUrl, setAppLogoUrl] = useState('');
 
   // Master Business Details for Subscription Invoices
-  const [invoiceBusinessName, setInvoiceBusinessName] = useState(() => localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
-  const [invoiceGstin, setInvoiceGstin] = useState(() => localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
-  const [invoicePan, setInvoicePan] = useState(() => localStorage.getItem('platform_invoice_pan') || 'AAECB9382M');
-  const [invoiceSac, setInvoiceSac] = useState(() => localStorage.getItem('platform_invoice_sac') || '998315');
-  const [invoiceAddress, setInvoiceAddress] = useState(() => localStorage.getItem('platform_invoice_address') || 'BKC, Bandra East, Mumbai, MH - 400051');
-  const [invoiceBank, setInvoiceBank] = useState(() => localStorage.getItem('platform_invoice_bank') || 'HDFC Bank, A/C 50200012345678, IFSC HDFC0000001');
+  const [invoiceBusinessName, setInvoiceBusinessName] = useState('Apex Cloud Technologies');
+  const [invoiceGstin, setInvoiceGstin] = useState('27AAECB9382M1ZR');
+  const [invoiceStateCode, setInvoiceStateCode] = useState('27');
+  const [invoiceStateName, setInvoiceStateName] = useState('Maharashtra');
+  const [invoicePan, setInvoicePan] = useState('AAECB9382M');
+  const [invoiceSac, setInvoiceSac] = useState('998315');
+  const [invoiceAddress, setInvoiceAddress] = useState('BKC, Bandra East, Mumbai, MH - 400051');
+  const [invoiceBank, setInvoiceBank] = useState('HDFC Bank Ltd, A/C 50200012345678, IFSC HDFC0000001');
+
+  // Handle Master Business GSTIN change with automated State Code & PAN derivation
+  const handleInvoiceGstinChange = (value: string) => {
+    const upper = value.toUpperCase().trim();
+    setInvoiceGstin(upper);
+
+    if (upper.length >= 2) {
+      const detectedCode = upper.slice(0, 2);
+      const matchedState = INDIAN_STATES.find((s) => s.code === detectedCode);
+      if (matchedState) {
+        setInvoiceStateCode(matchedState.code);
+        setInvoiceStateName(matchedState.name);
+      }
+    }
+
+    if (upper.length >= 12 && (!invoicePan || invoicePan === invoiceGstin.slice(2, 12))) {
+      setInvoicePan(upper.slice(2, 12));
+    }
+  };
+
+  // Handle Master Business State Selection
+  const handleInvoiceStateChange = (code: string) => {
+    const matchedState = INDIAN_STATES.find((s) => s.code === code);
+    if (matchedState) {
+      setInvoiceStateCode(matchedState.code);
+      setInvoiceStateName(matchedState.name);
+    }
+  };
+
+  // One-click helper to align the GSTIN prefix with selected state code
+  const handleAlignGstinPrefix = () => {
+    if (!invoiceStateCode) return;
+    if (invoiceGstin && invoiceGstin.length >= 2) {
+      const remainder = invoiceGstin.slice(2);
+      setInvoiceGstin(`${invoiceStateCode}${remainder}`);
+      dialog.toast.success(`GSTIN prefix updated to state code ${invoiceStateCode} (${invoiceStateName})`);
+    } else {
+      setInvoiceGstin(`${invoiceStateCode}`);
+      dialog.toast.info(`GSTIN initialized with state code ${invoiceStateCode}`);
+    }
+  };
 
   // Subscription Invoice Series & Numbering Settings
-  const [subInvoicePrefix, setSubInvoicePrefix] = useState(() => localStorage.getItem('platform_sub_invoice_prefix') || 'SUB');
-  const [subInvoiceSuffix, setSubInvoiceSuffix] = useState(() => localStorage.getItem('platform_sub_invoice_suffix') || '2026-27');
-  const [subInvoiceNextNum, setSubInvoiceNextNum] = useState(() => localStorage.getItem('platform_sub_invoice_next_num') || '42');
-  const [subInvoicePadding, setSubInvoicePadding] = useState(() => localStorage.getItem('platform_sub_invoice_padding') || '4');
+  const [subInvoicePrefix, setSubInvoicePrefix] = useState('SUB');
+  const [subInvoiceSuffix, setSubInvoiceSuffix] = useState('2026-27');
+  const [subInvoiceNextNum, setSubInvoiceNextNum] = useState('42');
+  const [subInvoicePadding, setSubInvoicePadding] = useState('4');
 
   // Footer Customization state
-  const [footerCopyright, setFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. All rights reserved.');
-  const [footerCompliance, setFooterCompliance] = useState(() => localStorage.getItem('platform_footer_compliance') || 'GST Act 2017 & ITC Section 16 Compliant');
-  const [footerSupport, setFooterSupport] = useState(() => localStorage.getItem('platform_footer_support') || 'Support: support@apextally.com | +91 9876543210');
+  const [footerCopyright, setFooterCopyright] = useState('© 2026 Apex TallyGST Accounting Platform. All rights reserved.');
+  const [footerCompliance, setFooterCompliance] = useState('GST Act 2017 & ITC Section 16 Compliant');
+  const [footerSupport, setFooterSupport] = useState('Support: nawarkuldeep@gmail.com | +91 98201 23456');
+
+  useEffect(() => {
+    let mounted = true;
+    getPlatformSettings().then((settings) => {
+      if (mounted && settings) {
+        if (settings.appName) setAppName(settings.appName);
+        if (settings.tagline) setAppTagline(settings.tagline);
+        if (settings.appLogoUrl) setAppLogoUrl(settings.appLogoUrl);
+        if (settings.invoiceBusinessName) setInvoiceBusinessName(settings.invoiceBusinessName);
+        if (settings.invoiceGstin) setInvoiceGstin(settings.invoiceGstin);
+        if (settings.invoiceStateCode) {
+          setInvoiceStateCode(settings.invoiceStateCode);
+        } else if (settings.defaultStateCode) {
+          setInvoiceStateCode(settings.defaultStateCode);
+        }
+        if (settings.invoiceStateName) {
+          setInvoiceStateName(settings.invoiceStateName);
+        } else if (settings.defaultStateName) {
+          setInvoiceStateName(settings.defaultStateName);
+        }
+        if (settings.invoicePan) setInvoicePan(settings.invoicePan);
+        if (settings.invoiceSac) setInvoiceSac(settings.invoiceSac);
+        if (settings.invoiceAddress) setInvoiceAddress(settings.invoiceAddress);
+        if (settings.invoiceBank) setInvoiceBank(settings.invoiceBank);
+        if (settings.subInvoicePrefix) setSubInvoicePrefix(settings.subInvoicePrefix);
+        if (settings.subInvoiceSuffix) setSubInvoiceSuffix(settings.subInvoiceSuffix);
+        if (settings.subInvoiceNextNum) setSubInvoiceNextNum(settings.subInvoiceNextNum);
+        if (settings.subInvoicePadding) setSubInvoicePadding(settings.subInvoicePadding);
+        if (settings.footerCopyright) setFooterCopyright(settings.footerCopyright);
+        if (settings.footerCompliance) setFooterCompliance(settings.footerCompliance);
+        if (settings.footerSupport) setFooterSupport(settings.footerSupport);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Password Form state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -105,11 +191,38 @@ export const ProfileSettingsView: React.FC = () => {
     e.preventDefault();
     setSavingBranding(true);
     try {
+      // Save directly to Google Cloud Firestore
+      await updatePlatformSettings({
+        appName,
+        tagline: appTagline,
+        appLogoUrl,
+        invoiceBusinessName,
+        invoiceGstin,
+        invoiceStateCode,
+        invoiceStateName,
+        defaultStateCode: invoiceStateCode,
+        defaultStateName: invoiceStateName,
+        invoicePan,
+        invoiceSac,
+        invoiceAddress,
+        invoiceBank,
+        subInvoicePrefix,
+        subInvoiceSuffix,
+        subInvoiceNextNum,
+        subInvoicePadding,
+        footerCopyright,
+        footerCompliance,
+        footerSupport,
+      }, user?.email || undefined);
+
+      // Also keep local cache synchronized for instant transitions
       localStorage.setItem('platform_app_name', appName);
       localStorage.setItem('platform_app_tagline', appTagline);
       localStorage.setItem('platform_app_logo', appLogoUrl);
       localStorage.setItem('platform_invoice_name', invoiceBusinessName);
       localStorage.setItem('platform_invoice_gstin', invoiceGstin);
+      localStorage.setItem('platform_invoice_state_code', invoiceStateCode);
+      localStorage.setItem('platform_invoice_state_name', invoiceStateName);
       localStorage.setItem('platform_invoice_pan', invoicePan);
       localStorage.setItem('platform_invoice_sac', invoiceSac);
       localStorage.setItem('platform_invoice_address', invoiceAddress);
@@ -123,9 +236,9 @@ export const ProfileSettingsView: React.FC = () => {
       localStorage.setItem('platform_footer_support', footerSupport);
 
       window.dispatchEvent(new Event('platform_branding_updated'));
-      dialog.toast.success('App branding & invoice master business details updated successfully');
+      dialog.toast.success('App branding & platform settings saved to Google Cloud Firestore successfully');
     } catch (err: any) {
-      dialog.toast.error('Failed to save platform branding');
+      dialog.toast.error('Failed to save platform branding: ' + (err?.message || 'Error'));
     } finally {
       setSavingBranding(false);
     }
@@ -457,9 +570,9 @@ export const ProfileSettingsView: React.FC = () => {
                   <p className="text-[11px] text-slate-400">These details will appear on all issued GST subscription tax invoices generated for customer workspaces.</p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-semibold text-slate-300 mb-1.5">Invoice Business / Legal Name</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-1">
+                    <label className="block font-semibold text-slate-300 mb-1.5">Invoice Business / Legal Name <span className="text-rose-400">*</span></label>
                     <input
                       type="text"
                       value={invoiceBusinessName}
@@ -469,16 +582,135 @@ export const ProfileSettingsView: React.FC = () => {
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-bold"
                     />
                   </div>
-                  <div>
-                    <label className="block font-semibold text-slate-300 mb-1.5">Invoice GSTIN</label>
+                  <div className="sm:col-span-1">
+                    <label className="block font-semibold text-slate-300 mb-1.5">Invoice GSTIN (15 Characters) <span className="text-rose-400">*</span></label>
                     <input
                       type="text"
+                      maxLength={15}
                       value={invoiceGstin}
-                      onChange={(e) => setInvoiceGstin(e.target.value)}
+                      onChange={(e) => handleInvoiceGstinChange(e.target.value)}
                       placeholder="27AAECB9382M1ZR"
                       required
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono tracking-wider font-bold uppercase"
                     />
+                  </div>
+                  <div className="sm:col-span-1">
+                    <label className="block font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Master State Jurisdiction <span className="text-rose-400">*</span></span>
+                      </span>
+                      <span className="text-[10px] text-indigo-400 font-mono font-bold bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                        Code: {invoiceStateCode}
+                      </span>
+                    </label>
+                    <select
+                      id="master-business-state-select"
+                      value={invoiceStateCode}
+                      onChange={(e) => handleInvoiceStateChange(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                    >
+                      {INDIAN_STATES.map((state) => (
+                        <option key={state.code} value={state.code}>
+                          {state.code} - {state.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* State Jurisdiction & GSTIN Synchronization Status Banner */}
+                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    {invoiceGstin.length >= 2 && invoiceGstin.slice(0, 2) === invoiceStateCode ? (
+                      <>
+                        <div className="p-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-emerald-300">GSTIN State Code Validated</p>
+                          <p className="text-[11px] text-slate-400">
+                            GSTIN prefix <span className="font-mono font-bold text-white">{invoiceStateCode}</span> matches <span className="text-slate-200 font-semibold">{invoiceStateName}</span> jurisdiction (Place of Supply).
+                          </p>
+                        </div>
+                      </>
+                    ) : invoiceGstin.length >= 2 ? (
+                      <>
+                        <div className="p-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          <AlertTriangle className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-amber-300">GSTIN Prefix & State Mismatch</p>
+                          <p className="text-[11px] text-slate-400">
+                            GSTIN starts with <span className="font-mono font-bold text-amber-400">{invoiceGstin.slice(0, 2)}</span> but selected state is <span className="text-white font-semibold">{invoiceStateName} ({invoiceStateCode})</span>.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-1 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                          <Landmark className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-indigo-300">Registered State Jurisdiction: {invoiceStateName}</p>
+                          <p className="text-[11px] text-slate-400">
+                            Enter master GSTIN or synchronize prefix with state code <span className="font-mono font-bold text-white">{invoiceStateCode}</span>.
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {invoiceGstin.slice(0, 2) !== invoiceStateCode && (
+                    <button
+                      type="button"
+                      onClick={handleAlignGstinPrefix}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border border-indigo-500/30 font-semibold text-[11px] transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Sync GSTIN Prefix to {invoiceStateCode}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Indian State Shortcuts */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-semibold text-slate-400">Quick Select Commercial Jurisdictions:</span>
+                    <span className="text-[10px] text-slate-500">Auto-updates tax origin & POS</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { code: '27', name: 'Maharashtra' },
+                      { code: '07', name: 'Delhi' },
+                      { code: '24', name: 'Gujarat' },
+                      { code: '29', name: 'Karnataka' },
+                      { code: '33', name: 'Tamil Nadu' },
+                      { code: '36', name: 'Telangana' },
+                      { code: '09', name: 'Uttar Pradesh' },
+                      { code: '19', name: 'West Bengal' },
+                      { code: '08', name: 'Rajasthan' },
+                      { code: '06', name: 'Haryana' },
+                    ].map((st) => {
+                      const isCurrent = invoiceStateCode === st.code;
+                      return (
+                        <button
+                          key={st.code}
+                          type="button"
+                          onClick={() => handleInvoiceStateChange(st.code)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                            isCurrent
+                              ? 'bg-indigo-600 text-white font-bold shadow-sm shadow-indigo-500/20 border border-indigo-400'
+                              : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <span className={`font-mono text-[10px] ${isCurrent ? 'text-indigo-200' : 'text-slate-500'}`}>
+                            {st.code}
+                          </span>
+                          <span>{st.name}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
