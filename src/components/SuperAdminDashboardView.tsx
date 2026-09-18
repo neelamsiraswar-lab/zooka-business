@@ -81,6 +81,7 @@ import {
 } from '../db/subscriptionPlans';
 import { FirestoreConnectionModal } from './FirestoreConnectionModal';
 import { SessionSecurityModal } from './SessionSecurityModal';
+import { WorkspaceDetailsUsersModal } from './WorkspaceDetailsUsersModal';
 
 interface SuperAdminDashboardViewProps {
   onSwitchWorkspace?: (workspace: Workspace) => void;
@@ -120,6 +121,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
   };
 
   const [subManagingWorkspace, setSubManagingWorkspace] = useState<Workspace | null>(null);
+  const [viewingDetailsWorkspace, setViewingDetailsWorkspace] = useState<Workspace | null>(null);
 
   // Subscription Plan Governance State
   const [plans, setPlans] = useState<PlanTierConfig[]>(DEFAULT_BUILTIN_PLANS);
@@ -647,18 +649,6 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                 </button>
 
                 <button
-                  type="button"
-                  id="superadmin-firestore-diagnostics-btn"
-                  onClick={() => setShowFirestoreModal(true)}
-                  title="Cloud Firestore Diagnostics & Cluster Telemetry"
-                  className="px-3.5 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 transition flex items-center gap-2 text-xs font-semibold cursor-pointer shadow-lg shadow-emerald-500/10"
-                >
-                  <Database className="w-4 h-4 text-emerald-400" />
-                  <span className="hidden sm:inline">Firestore Diagnostics</span>
-                  <span className="sm:hidden">Diagnostics</span>
-                </button>
-
-                <button
                   onClick={loadWorkspaces}
                   disabled={loading}
                   title="Refresh Workspace Records"
@@ -682,15 +672,10 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
             {/* Live Multi-Tenant Cloud Architecture Badge */}
             <div className="mt-6 pt-4 border-t border-indigo-500/15 flex flex-wrap items-center justify-between gap-4 text-xs">
               <div className="flex items-center gap-4 text-slate-400">
-                <button
-                  type="button"
-                  onClick={() => setShowFirestoreModal(true)}
-                  title="Click to inspect real-time Firestore cluster telemetry"
-                  className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-medium transition cursor-pointer"
-                >
+                <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Firestore Tenant DB Online</span>
-                </button>
+                </div>
                 <span className="hidden sm:inline text-slate-600">•</span>
                 <div className="flex items-center gap-1.5 text-slate-300">
                   <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
@@ -1025,9 +1010,16 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                       </div>
                       <div className="min-w-0 flex-1 pr-12">
                         <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-white truncate group-hover:text-indigo-300 transition">
-                            {ws.name}
-                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => setViewingDetailsWorkspace(ws)}
+                            className="text-left group/title flex items-center gap-1.5 focus:outline-none"
+                            title="Click to view all users, credentials and workspace details"
+                          >
+                            <h3 className="text-sm font-bold text-white truncate group-hover/title:text-indigo-400 group-hover:text-indigo-300 transition cursor-pointer">
+                              {ws.name}
+                            </h3>
+                          </button>
                           {ws.isDefault && (
                             <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[9px] font-semibold text-slate-400 uppercase">
                               Primary
@@ -1095,7 +1087,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                   </div>
 
                   {/* Card Bottom Action Bar */}
-                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
+                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
                     {/* Switch / Enter Books Button */}
                     <button
                       onClick={() => {
@@ -1115,38 +1107,48 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                       {isActive && hasEnteredWorkspace ? (
                         <>
                           <Check className="w-3.5 h-3.5" />
-                          <span>Open Workspace Books</span>
+                          <span>Open Books</span>
                         </>
                       ) : (
                         <>
                           <ArrowRight className="w-3.5 h-3.5" />
-                          <span>Enter Workspace Books</span>
+                          <span>Enter Books</span>
                         </>
                       )}
+                    </button>
+
+                    {/* View Workspace Users & Details */}
+                    <button
+                      type="button"
+                      onClick={() => setViewingDetailsWorkspace(ws)}
+                      title="Inspect Workspace Users, Credentials & Permissions"
+                      className="px-2.5 py-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Users className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Users & Details</span>
                     </button>
 
                     {/* Manage Subscription */}
                     <button
                       onClick={() => setSubManagingWorkspace(ws)}
                       title="Manage Workspace Subscription & Billing"
-                      className="px-2.5 py-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition cursor-pointer flex items-center gap-1"
+                      className="px-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer flex items-center gap-1"
                     >
                       <CreditCard className="w-3.5 h-3.5" />
-                      <span className="text-[11px] font-semibold hidden sm:inline">Billing</span>
+                      <span className="text-[11px] font-semibold hidden lg:inline">Billing</span>
                     </button>
 
                     {/* Toggle Suspend / Active Status */}
                     <button
                       onClick={() => handleToggleWorkspaceStatus(ws)}
                       title={ws.status === 'suspended' ? 'Reactivate Workspace Access' : 'Suspend Workspace for Compliance/Default'}
-                      className={`px-2.5 py-2 rounded-xl text-xs font-semibold transition cursor-pointer border flex items-center gap-1 ${
+                      className={`p-2 rounded-xl text-xs font-semibold transition cursor-pointer border flex items-center gap-1 ${
                         ws.status === 'suspended'
                           ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
                           : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
                       }`}
                     >
                       <ShieldAlert className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">{ws.status === 'suspended' ? 'Reactivate' : 'Suspend'}</span>
                     </button>
 
                     {/* Edit Metadata */}
@@ -1615,6 +1617,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                             </td>
                             <td className="py-3.5 px-4 text-right">
                               <div className="inline-flex items-center gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDetailsWorkspace(ws)}
+                                  title="View Workspace Users & Details"
+                                  className="px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer"
+                                >
+                                  <Users className="w-3.5 h-3.5 text-indigo-400" />
+                                  <span>Users</span>
+                                </button>
                                 <button
                                   onClick={() => handleToggleWorkspaceStatus(ws)}
                                   title={ws.status === 'suspended' ? 'Reactivate Workspace' : 'Suspend Workspace'}
@@ -2594,6 +2605,24 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
         isOpen={showSessionSecurityModal}
         onClose={() => setShowSessionSecurityModal(false)}
       />
+
+      {/* Workspace Details & Users Management Modal (with Right to Change Password) */}
+      {viewingDetailsWorkspace && (
+        <WorkspaceDetailsUsersModal
+          workspace={viewingDetailsWorkspace}
+          isOpen={!!viewingDetailsWorkspace}
+          onClose={() => setViewingDetailsWorkspace(null)}
+          onWorkspaceUpdated={loadWorkspaces}
+          onEnterWorkspace={(ws) => {
+            setActiveWorkspaceId(ws.id);
+            if (onSwitchWorkspace) {
+              onSwitchWorkspace(ws);
+            } else {
+              window.location.reload();
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -23,20 +23,34 @@ import {
   KeyRound,
   X,
   ArrowRight,
+  Calculator,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  BarChart3,
+  BookOpen,
+  Receipt,
+  FileSpreadsheet,
+  Layers,
+  ArrowUpRight,
+  Check,
+  Clock,
+  Fingerprint,
 } from 'lucide-react';
 
 import { createWorkspace } from '../db/workspaces';
 import { INDIAN_STATES } from '../data/indianStates';
 import { SuperAdminSecurityGateModal } from './SuperAdminSecurityGateModal';
-import { getRememberedCredentials } from '../lib/sessionSecurity';
+import { RoleMatrixModal } from './RoleMatrixModal';
+import { GstQuickCalculatorWidget } from './GstQuickCalculatorWidget';
+import { getRememberedCredentials, getStoredSession, getDeviceSessionCountdown, SessionCountdownInfo } from '../lib/sessionSecurity';
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
-import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, formatINR, PLAN_COLOR_PRESETS } from '../data/subscriptionPlans';
+import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, formatINR } from '../data/subscriptionPlans';
 
 export const LoginView: React.FC = () => {
   const {
     signInWithEmail,
     signUpWithEmail,
-    signInSuperAdmin,
     loading,
     error,
     clearError,
@@ -49,10 +63,28 @@ export const LoginView: React.FC = () => {
   const [email, setEmail] = useState(() => remembered.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(() => remembered.isEnabled);
+  const [rememberMe, setRememberMe] = useState(() => (remembered.isEnabled !== undefined ? remembered.isEnabled : true));
 
-  // Super Admin Security Gate Modal State
+  // Device Countdown Telemetry State
+  const [deviceCountdown, setDeviceCountdown] = useState<SessionCountdownInfo | null>(null);
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      const stored = getStoredSession();
+      if (stored && stored.rememberMe) {
+        setDeviceCountdown(getDeviceSessionCountdown(stored));
+      } else {
+        setDeviceCountdown(null);
+      }
+    };
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Modal States
   const [showSuperAdminModal, setShowSuperAdminModal] = useState(false);
+  const [showRoleMatrixModal, setShowRoleMatrixModal] = useState(false);
 
   // Dynamic Subscription Plans State (Synced with Super Admin Firestore Catalog)
   const [availablePlans, setAvailablePlans] = useState<PlanTierConfig[]>(DEFAULT_BUILTIN_PLANS);
@@ -64,7 +96,7 @@ export const LoginView: React.FC = () => {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
-  const [signupRole, setSignupRole] = useState<UserRole>('accountant');
+  const [signupRole, setSignupRole] = useState<UserRole>('admin');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
   const [signupWorkspaceName, setSignupWorkspaceName] = useState('');
@@ -80,11 +112,14 @@ export const LoginView: React.FC = () => {
   const [localSuccess, setLocalSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Active FAQ Accordion State
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
+
   // Platform White-Label Branding
-  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Apex TallyGST');
+  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Zooka Business');
   const [platformAppTagline, setPlatformAppTagline] = useState(() => localStorage.getItem('platform_app_tagline') || 'Multi-Tenant Accounting & GST Compliance');
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
-  const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
+  const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Zooka Business Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
 
   // Load live subscription plans from Super Admin Firestore Catalog
   const loadPlans = async () => {
@@ -92,12 +127,10 @@ export const LoginView: React.FC = () => {
     try {
       const fetched = await getAllSubscriptionPlans();
       if (fetched && fetched.length > 0) {
-        // Filter out archived plans from public landing page
         const activeOnly = fetched.filter((p) => p.status !== 'archived');
         const listToUse = activeOnly.length > 0 ? activeOnly : fetched;
         setAvailablePlans(listToUse);
 
-        // Ensure selected plan is valid in catalog
         setSignupPlan((prev) => {
           if (listToUse.some((p) => p.id === prev)) return prev;
           const proPlan = listToUse.find((p) => p.id === 'professional');
@@ -113,13 +146,9 @@ export const LoginView: React.FC = () => {
 
   useEffect(() => {
     loadPlans();
-    const handlePlansUpdate = () => {
-      loadPlans();
-    };
+    const handlePlansUpdate = () => loadPlans();
     window.addEventListener('subscription_plans_updated', handlePlansUpdate);
-    return () => {
-      window.removeEventListener('subscription_plans_updated', handlePlansUpdate);
-    };
+    return () => window.removeEventListener('subscription_plans_updated', handlePlansUpdate);
   }, []);
 
   useEffect(() => {
@@ -130,11 +159,8 @@ export const LoginView: React.FC = () => {
       setPlatformFooterCopyright(localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
     };
     window.addEventListener('platform_branding_updated', handleBrandingUpdate);
-    return () => {
-      window.removeEventListener('platform_branding_updated', handleBrandingUpdate);
-    };
+    return () => window.removeEventListener('platform_branding_updated', handleBrandingUpdate);
   }, []);
-
 
   // Handle Sign In Submit
   const handleSignInSubmit = async (e: React.FormEvent) => {
@@ -249,26 +275,45 @@ export const LoginView: React.FC = () => {
 
   const activeError = localError || error;
 
+  const faqs = [
+    {
+      q: 'How does multi-tenant isolation work for our financial records?',
+      a: 'Each organization operates in its own isolated Firestore workspace context with distinct company settings, chart of accounts, vouchers, and audit logs. Data is encrypted in transit via TLS 1.3 and partitioned with strict role-based authorization rules.',
+    },
+    {
+      q: 'Does Zooka Business support automated HSN codes and GST splits?',
+      a: 'Yes. The system automatically computes Intra-State (CGST + SGST) vs Inter-State (IGST) calculations based on Place of Supply rules, generates compliant e-invoice formats, day books, and prepares real-time GSTR-1, GSTR-3B, and GSTR-2B reconciliations.',
+    },
+    {
+      q: 'Can we import existing party ledgers and bank statements?',
+      a: 'Absolutely. The platform includes smart PDF/Excel/CSV parsers for ICICI, HDFC, SBI, and Axis Bank statements with automated BRS voucher matching, as well as bulk party ledger and inventory imports.',
+    },
+    {
+      q: 'What roles are supported for internal control and statutory audits?',
+      a: 'Five distinct privilege tiers: Super Administrator (platform governance), Workspace Admin (full company control), Senior Accountant (vouchers, journals & taxes), Billing Operator (sales & inventory), and Statutory Auditor (read-only compliance inspection).',
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white relative">
       {/* Top Navigation Bar */}
-      <header className="px-4 sm:px-6 py-3.5 border-b border-slate-800/60 bg-slate-950/80 backdrop-blur-md max-w-7xl mx-auto w-full flex items-center justify-between sticky top-0 z-30">
+      <header className="px-4 sm:px-6 py-3.5 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md max-w-7xl mx-auto w-full flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
           {platformAppLogo ? (
             <img
               src={platformAppLogo}
               alt="Logo"
               referrerPolicy="no-referrer"
-              className="w-9 h-9 rounded-xl object-contain bg-slate-900 border border-slate-800/80 p-1 shadow-xs"
+              className="w-9 h-9 rounded-xl object-contain bg-slate-900 border border-slate-800 p-1 shadow-sm"
             />
           ) : (
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 shadow-xs">
-              <Building2 className="w-4 h-4 font-bold" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 shadow-sm font-bold">
+              <Building2 className="w-5 h-5 text-slate-950" />
             </div>
           )}
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-base tracking-tight text-white">
+              <span className="font-bold text-base tracking-tight text-white">
                 {platformAppName}
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider font-semibold">
@@ -279,13 +324,28 @@ export const LoginView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {/* Super Admin Login Action from Home Header */}
+        {/* Navigation jump links & Actions */}
+        <div className="flex items-center gap-2 sm:gap-4">
+          <nav className="hidden md:flex items-center gap-4 text-xs text-slate-400">
+            <a href="#features-section" className="hover:text-white transition">Features</a>
+            <a href="#gst-calculator-section" className="hover:text-emerald-400 transition">GST Simulator</a>
+            <button
+              type="button"
+              onClick={() => setShowRoleMatrixModal(true)}
+              className="hover:text-white transition cursor-pointer"
+            >
+              Role Matrix
+            </button>
+            <a href="#pricing-section" className="hover:text-white transition">Pricing</a>
+            <a href="#faq-section" className="hover:text-white transition">FAQs</a>
+          </nav>
+
+          {/* Super Admin Login Action */}
           <button
             type="button"
             id="btn-header-super-admin-login"
             onClick={() => setShowSuperAdminModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-semibold transition cursor-pointer shadow-xs active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-semibold transition cursor-pointer shadow-sm active:scale-95"
             title="Access Super Administrator Console"
           >
             <Crown className="w-3.5 h-3.5 text-amber-400" />
@@ -300,74 +360,114 @@ export const LoginView: React.FC = () => {
         onClose={() => setShowSuperAdminModal(false)}
       />
 
+      {/* Role Matrix Modal Dialog */}
+      <RoleMatrixModal
+        isOpen={showRoleMatrixModal}
+        onClose={() => setShowRoleMatrixModal(false)}
+      />
+
       {/* Main Content Area */}
       <main className="flex-1 px-4 py-8 sm:py-12 max-w-7xl mx-auto w-full space-y-16">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-          {/* Left Column: Platform Overview & Enterprise Trust */}
-          <div className="lg:col-span-6 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-medium">
+        
+        {/* ================= HERO & AUTH SECTION ================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+          
+          {/* Left Column: Value Proposition & 1-Click Role Sandbox */}
+          <div className="lg:col-span-6 space-y-6 pt-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-medium shadow-xs">
               <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Full GST Compliance (CGST, SGST, IGST &amp; ITC)</span>
+              <span>India GST Statutory Compliance • Real-Time Cloud Sync</span>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-tight">
-              Enterprise Cloud Accounting &amp; GST Compliance
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
+              Enterprise GST Invoicing &amp; Double-Entry Accounting
             </h1>
 
-            <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl">
-              Secure role-based accounting, double-entry general ledgers, statutory tax filings, and automated GSTR-2B reconciliation backed by Google Cloud Firestore.
+            <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
+              Power your business with automated HSN calculations, real-time GSTR-1/3B summaries, bank statement auto-reconciliation, multi-branch bookkeeping, and immutable audit trails.
             </p>
 
-            {/* Key Features Overview */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
-                <div className="flex items-center gap-2 text-emerald-400">
-                  <FileText className="w-4 h-4" />
-                  <span className="text-xs font-bold text-white">Full GST Invoicing</span>
+            {/* Enterprise Core Features Summary */}
+            <div className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
+                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Statutory GST Compliance</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Intra/Inter-State dual tax engine, HSN auto-lookup &amp; real-time GSTR-1/3B.
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-snug">
-                  Automated HSN calculation, tax splits, GSTR-1, GSTR-3B preparation and Day Book tracking.
-                </p>
+
+                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
+                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                    <Building2 className="w-4 h-4 text-indigo-400" />
+                    <span>Multi-Tenant Workspaces</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Isolated company databases, multiple branches &amp; secure session tokens.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
+                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                    <FileText className="w-4 h-4 text-purple-400" />
+                    <span>Double-Entry Bookkeeping</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Day books, general ledgers, trial balance, and automatic P&amp;L / balance sheet.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
+                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                    <Landmark className="w-4 h-4 text-teal-400" />
+                    <span>Automated Bank BRS</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Instant CSV/Excel bank statement parsing &amp; smart voucher auto-matching.
+                  </p>
+                </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
-                <div className="flex items-center gap-2 text-teal-400">
-                  <Users className="w-4 h-4" />
-                  <span className="text-xs font-bold text-white">Role-Based Access (RBAC)</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-snug">
-                  Fine-grained permissions for Workspace Admins, Senior Accountants, Billing Clerks, and Auditors.
-                </p>
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-400">
+                  Granular role permissions for Administrators, Accountants, Billing &amp; Auditors
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowRoleMatrixModal(true)}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold underline cursor-pointer shrink-0"
+                >
+                  View Role Matrix →
+                </button>
               </div>
+            </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
-                <div className="flex items-center gap-2 text-indigo-400">
-                  <Landmark className="w-4 h-4" />
-                  <span className="text-xs font-bold text-white">Banking &amp; Auto BRS</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-snug">
-                  Cheque management, PDF/Excel bank statement parsing, and instant ledger reconciliation.
-                </p>
+            {/* Trust Metrics Bar */}
+            <div className="pt-2 grid grid-cols-3 gap-3 border-t border-slate-800/80">
+              <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60">
+                <div className="text-base font-bold text-white font-mono">100%</div>
+                <div className="text-[10px] text-slate-400">GST Calculation Accuracy</div>
               </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800/80 space-y-1.5 transition-colors hover:border-slate-700/80">
-                <div className="flex items-center gap-2 text-purple-400">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span className="text-xs font-bold text-white">Audit Trail Logging</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-snug">
-                  Immutable audit records for all vouchers, master edits, ledger syncs, and user sessions.
-                </p>
+              <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60">
+                <div className="text-base font-bold text-emerald-400 font-mono">0-Loss</div>
+                <div className="text-[10px] text-slate-400">ITC Tax Credit Tracking</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60">
+                <div className="text-base font-bold text-white font-mono">256-Bit</div>
+                <div className="text-[10px] text-slate-400">Encrypted Cloud Ledgers</div>
               </div>
             </div>
           </div>
 
-          {/* Right Column: Authentication Card with Sign In / Create Account tabs */}
+          {/* Right Column: Authentication Card (Sign In / Register Company) */}
           <div className="lg:col-span-6">
-            <div className="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xs">
-              <div className="absolute -top-16 -right-16 w-44 h-44 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="bg-slate-900/95 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-md">
+              <div className="absolute -top-16 -right-16 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-              {/* Mode Toggle Tabs (Sign In vs Create Account) */}
+              {/* Mode Toggle Tabs */}
               <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 mb-5">
                 <button
                   type="button"
@@ -403,7 +503,7 @@ export const LoginView: React.FC = () => {
                   }`}
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>Create Account / Register</span>
+                  <span>Register Company / Account</span>
                 </button>
               </div>
 
@@ -411,7 +511,7 @@ export const LoginView: React.FC = () => {
               {activeError && (
                 <div
                   id="auth-error-banner"
-                  className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5 animate-fade-in"
+                  className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5"
                 >
                   <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
                   <div className="flex-1 leading-relaxed">{activeError}</div>
@@ -421,7 +521,7 @@ export const LoginView: React.FC = () => {
               {localSuccess && (
                 <div
                   id="auth-success-banner"
-                  className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2.5 animate-fade-in"
+                  className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2.5"
                 >
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
                   <div className="flex-1 leading-relaxed">{localSuccess}</div>
@@ -471,22 +571,37 @@ export const LoginView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Remember Me & Security Status */}
-                  <div className="flex items-center justify-between pt-0.5">
-                    <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 text-xs">
-                      <input
-                        type="checkbox"
-                        id="checkbox-auth-remember-me"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
-                      />
-                      <span>Remember this device (30 Days)</span>
-                    </label>
-                    <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                      TLS 1.3
-                    </span>
+                  {/* Remember Me & Security Status with 24hr Window & Countdown */}
+                  <div className="space-y-2 pt-0.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 text-xs">
+                        <input
+                          type="checkbox"
+                          id="checkbox-auth-remember-me"
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                        />
+                        <span className="font-medium">Remember this device (24 Hours)</span>
+                      </label>
+                      <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                        TLS 1.3
+                      </span>
+                    </div>
+
+                    {/* Live countdown of remembered device session if present */}
+                    {deviceCountdown && !deviceCountdown.isExpired && (
+                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-300">
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                          <span>Active 24h device remember session:</span>
+                        </span>
+                        <span className="font-mono font-bold text-emerald-200">
+                          {deviceCountdown.formattedText}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Submit Button */}
@@ -498,7 +613,7 @@ export const LoginView: React.FC = () => {
                   >
                     {isSubmitting || loading ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
                         <span>Authenticating...</span>
                       </>
                     ) : (
@@ -542,7 +657,16 @@ export const LoginView: React.FC = () => {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="block font-medium text-slate-300">Assign Security Role *</label>
+                    <div className="flex justify-between items-center">
+                      <label className="font-medium text-slate-300">Assign Security Role *</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowRoleMatrixModal(true)}
+                        className="text-[10px] text-emerald-400 hover:underline"
+                      >
+                        Compare Roles
+                      </button>
+                    </div>
                     <select
                       id="select-signup-role"
                       value={signupRole}
@@ -560,7 +684,7 @@ export const LoginView: React.FC = () => {
                   <div className="pt-2 border-t border-slate-800 space-y-3">
                     <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                       <Building2 className="w-3.5 h-3.5" />
-                      <span>Workspace & Company Details</span>
+                      <span>Workspace &amp; Company Details</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -571,7 +695,7 @@ export const LoginView: React.FC = () => {
                           required
                           value={signupWorkspaceName}
                           onChange={(e) => setSignupWorkspaceName(e.target.value)}
-                          placeholder="e.g. Apex Industrial Tech"
+                          placeholder="e.g. Zooka Industrial Tech"
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition text-xs"
                         />
                       </div>
@@ -582,7 +706,7 @@ export const LoginView: React.FC = () => {
                           type="text"
                           value={signupBusinessName}
                           onChange={(e) => setSignupBusinessName(e.target.value)}
-                          placeholder="e.g. Apex Industrial Pvt Ltd"
+                          placeholder="e.g. Zooka Business Pvt Ltd"
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition text-xs"
                         />
                       </div>
@@ -612,7 +736,7 @@ export const LoginView: React.FC = () => {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="block font-medium text-slate-300">GST State & Jurisdiction</label>
+                        <label className="block font-medium text-slate-300">GST State &amp; Jurisdiction</label>
                         <select
                           value={signupStateCode}
                           onChange={(e) => setSignupStateCode(e.target.value)}
@@ -714,7 +838,7 @@ export const LoginView: React.FC = () => {
                   >
                     {isSubmitting || loading ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
                         <span>Creating Account...</span>
                       </>
                     ) : (
@@ -748,8 +872,75 @@ export const LoginView: React.FC = () => {
           </div>
         </div>
 
-        {/* ----------------- PRICING & SUBSCRIPTION PLANS TABLE SECTION ----------------- */}
-        <section className="mt-16 pt-12 border-t border-slate-800/80 space-y-8">
+        {/* ================= INTERACTIVE GST TAX SIMULATOR WIDGET ================= */}
+        <section id="gst-calculator-section" className="pt-4 scroll-mt-20">
+          <GstQuickCalculatorWidget />
+        </section>
+
+        {/* ================= KEY PLATFORM CAPABILITIES ================= */}
+        <section id="features-section" className="space-y-6 pt-4 scroll-mt-20">
+          <div className="text-center max-w-2xl mx-auto space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+              <Layers className="w-3.5 h-3.5" />
+              <span>Core Architectural Pillars</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white">
+              Built specifically for India's Statutory Accounting Standards
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              Designed from the ground up to replace legacy desktop bookkeeping software with real-time multi-branch cloud infrastructure.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Feature 1 */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                <Receipt className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-white">Automated GST Invoicing</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Smart HSN/SAC lookups, dual CGST+SGST vs IGST calculation, reverse-charge management, and printable thermal/A4 formats.
+              </p>
+            </div>
+
+            {/* Feature 2 */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
+              <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                <BookOpen className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-white">Double-Entry Journals</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Real-time Day Book, Balance Sheet, Profit &amp; Loss, and auto-balancing Trial Balance synchronized instantly across books.
+              </p>
+            </div>
+
+            {/* Feature 3 */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
+                <Landmark className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-white">Automated BRS &amp; Banking</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Direct PDF/Excel statement imports with heuristic auto-matching, cheque deposit clearing, and unpresented cheque tracking.
+              </p>
+            </div>
+
+            {/* Feature 4 */}
+            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
+              <div className="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-white">Immutable Audit Trail</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Every modification, deletion, voucher print, and user login is cryptographically timestamped for flawless statutory audits.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ================= PRICING & SUBSCRIPTION PLANS SECTION ================= */}
+        <section id="pricing-section" className="pt-8 border-t border-slate-800/80 space-y-8 scroll-mt-20">
           <div className="text-center max-w-2xl mx-auto space-y-3">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
               <Sparkles className="w-3.5 h-3.5" />
@@ -758,7 +949,7 @@ export const LoginView: React.FC = () => {
             <h2 className="text-2xl sm:text-3xl font-bold text-white">
               Choose the Right Plan for Your Business Growth
             </h2>
-            <p className="text-sm text-slate-400 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
               Scale your accounting operations from single proprietorships to multi-branch enterprises with transparent billing and full GST compliance.
             </p>
 
@@ -910,11 +1101,63 @@ export const LoginView: React.FC = () => {
             })}
           </div>
         </section>
+
+        {/* ================= FAQS ACCORDION SECTION ================= */}
+        <section id="faq-section" className="pt-8 border-t border-slate-800/80 space-y-6 max-w-3xl mx-auto scroll-mt-20">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold uppercase tracking-wider">
+              <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Frequently Asked Questions</span>
+            </div>
+            <h2 className="text-2xl font-bold text-white">Got Questions? We Have Answers.</h2>
+          </div>
+
+          <div className="space-y-3">
+            {faqs.map((faq, idx) => {
+              const isOpen = openFaqIndex === idx;
+              return (
+                <div
+                  key={idx}
+                  className="rounded-xl bg-slate-900/80 border border-slate-800 overflow-hidden transition"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
+                    className="w-full px-5 py-3.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold text-white hover:text-emerald-400 transition cursor-pointer"
+                  >
+                    <span>{faq.q}</span>
+                    {isOpen ? (
+                      <ChevronUp className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+                    )}
+                  </button>
+                  {isOpen && (
+                    <div className="px-5 pb-4 text-xs text-slate-400 leading-relaxed border-t border-slate-800/50 pt-3">
+                      {faq.a}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </main>
 
       {/* Page Footer */}
-      <footer className="px-6 py-4 border-t border-slate-900 text-center text-xs text-slate-600">
-        {platformFooterCopyright}
+      <footer className="px-6 py-6 border-t border-slate-900 text-center text-xs text-slate-500 max-w-7xl mx-auto w-full space-y-2">
+        <div className="flex flex-wrap items-center justify-center gap-4 text-slate-400 text-[11px]">
+          <span>GSTN Rule 46 Compliant</span>
+          <span>•</span>
+          <span>Double-Entry General Ledger</span>
+          <span>•</span>
+          <span>SHA-256 Audit Trail</span>
+          <span>•</span>
+          <span>Automated BRS Reconciliation</span>
+        </div>
+        <div className="text-slate-600 text-[11px] pt-1">
+          {platformFooterCopyright}
+        </div>
       </footer>
     </div>
   );

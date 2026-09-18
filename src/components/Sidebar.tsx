@@ -128,12 +128,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [plansCount, setPlansCount] = useState<number>(3);
   const [activeWsId, setActiveWsId] = useState<string>(getActiveWorkspaceId());
 
-  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'TallyGST ERP');
+  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Zooka Business');
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
 
   useEffect(() => {
     const handleBrandingUpdate = () => {
-      setPlatformAppName(localStorage.getItem('platform_app_name') || 'TallyGST ERP');
+      setPlatformAppName(localStorage.getItem('platform_app_name') || 'Zooka Business');
       setPlatformAppLogo(localStorage.getItem('platform_app_logo') || '');
     };
     window.addEventListener('platform_branding_updated', handleBrandingUpdate);

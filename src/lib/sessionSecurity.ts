@@ -38,18 +38,24 @@ export interface SuperAdminSecurityStatus {
 }
 
 const STORAGE_KEYS = {
-  SESSION: 'apex_active_session',
-  REMEMBERED_EMAIL: 'apex_remembered_email',
-  REMEMBER_ME_ENABLED: 'apex_remember_me_enabled',
-  SUPER_ADMIN_ATTEMPTS: 'apex_sa_failed_attempts',
-  SUPER_ADMIN_LOCK_UNTIL: 'apex_sa_lock_until',
-  LEGACY_DEV_TOKEN: 'apex_gst_dev_token',
-  LEGACY_DEV_USER: 'apex_gst_dev_user',
+  SESSION: 'zooka_active_session',
+  REMEMBERED_EMAIL: 'zooka_remembered_email',
+  REMEMBER_ME_ENABLED: 'zooka_remember_me_enabled',
+  SUPER_ADMIN_ATTEMPTS: 'zooka_sa_failed_attempts',
+  SUPER_ADMIN_LOCK_UNTIL: 'zooka_sa_lock_until',
+  LEGACY_DEV_TOKEN: 'zooka_gst_dev_token',
+  LEGACY_DEV_USER: 'zooka_gst_dev_user',
+  // Backward compatibility keys
+  FALLBACK_SESSION: 'apex_active_session',
+  FALLBACK_REMEMBERED_EMAIL: 'apex_remembered_email',
+  FALLBACK_REMEMBER_ME_ENABLED: 'apex_remember_me_enabled',
 };
 
 // Expiry configurations
 export const SESSION_CONFIG = {
-  REMEMBER_ME_DAYS: 30, // 30 days when Remember Me is enabled
+  REMEMBER_DEVICE_HOURS: 24, // 24 hours when Remember This Device is enabled
+  REMEMBER_ME_HOURS: 24, // 24 hours remember window
+  REMEMBER_ME_DAYS: 1, // 1 day (24 hours)
   TRANSIENT_HOURS: 8, // 8 hours when Remember Me is false
   IDLE_TIMEOUT_MINUTES: 60, // 60 minutes of inactivity warning / lock
   SUPER_ADMIN_ELEVATION_MINUTES: 30, // 30 minutes elevated access window
@@ -118,27 +124,102 @@ export function generateIpFingerprint(): string {
   return `ip_fp_${Math.abs(hash).toString(16)}`;
 }
 
+export interface SessionCountdownInfo {
+  remainingSeconds: number;
+  formattedText: string;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  isExpired: boolean;
+  isRemembered: boolean;
+  percentageRemaining: number;
+  totalDurationHours: number;
+}
+
+/**
+ * Calculates live remaining time, countdown metrics and formatted string for device session
+ */
+export function getDeviceSessionCountdown(session: UserSessionData | null): SessionCountdownInfo {
+  if (!session || !session.expiresAt) {
+    return {
+      remainingSeconds: 0,
+      formattedText: '00h 00m 00s',
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      isExpired: true,
+      isRemembered: false,
+      percentageRemaining: 0,
+      totalDurationHours: SESSION_CONFIG.REMEMBER_DEVICE_HOURS,
+    };
+  }
+
+  const now = Date.now();
+  const expiresAtMs = new Date(session.expiresAt).getTime();
+  const totalDurationHours = session.rememberMe ? SESSION_CONFIG.REMEMBER_DEVICE_HOURS : SESSION_CONFIG.TRANSIENT_HOURS;
+  const createdAtMs = session.createdAt
+    ? new Date(session.createdAt).getTime()
+    : expiresAtMs - totalDurationHours * 3600 * 1000;
+  const totalDurationMs = Math.max(1000, expiresAtMs - createdAtMs);
+  const diffMs = expiresAtMs - now;
+
+  if (diffMs <= 0) {
+    return {
+      remainingSeconds: 0,
+      formattedText: 'Session Expired',
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      isExpired: true,
+      isRemembered: Boolean(session.rememberMe),
+      percentageRemaining: 0,
+      totalDurationHours,
+    };
+  }
+
+  const remainingSeconds = Math.ceil(diffMs / 1000);
+  const hours = Math.floor(remainingSeconds / 3600);
+  const minutes = Math.floor((remainingSeconds % 3600) / 60);
+  const seconds = remainingSeconds % 60;
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formattedText = `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+  const percentageRemaining = Math.max(0, Math.min(100, Math.round((diffMs / totalDurationMs) * 100)));
+
+  return {
+    remainingSeconds,
+    formattedText,
+    hours,
+    minutes,
+    seconds,
+    isExpired: false,
+    isRemembered: Boolean(session.rememberMe),
+    percentageRemaining,
+    totalDurationHours,
+  };
+}
+
 /**
  * Read active session from either localStorage or sessionStorage
  */
 export function getStoredSession(): UserSessionData | null {
   try {
     // 1. Check localStorage first
-    const localRaw = localStorage.getItem(STORAGE_KEYS.SESSION);
+    const localRaw = localStorage.getItem(STORAGE_KEYS.SESSION) || localStorage.getItem(STORAGE_KEYS.FALLBACK_SESSION);
     if (localRaw) {
       const parsed = JSON.parse(localRaw) as UserSessionData;
       if (isValidSession(parsed)) return parsed;
     }
 
     // 2. Check sessionStorage
-    const sessionRaw = sessionStorage.getItem(STORAGE_KEYS.SESSION);
+    const sessionRaw = sessionStorage.getItem(STORAGE_KEYS.SESSION) || sessionStorage.getItem(STORAGE_KEYS.FALLBACK_SESSION);
     if (sessionRaw) {
       const parsed = JSON.parse(sessionRaw) as UserSessionData;
       if (isValidSession(parsed)) return parsed;
     }
 
     // 3. Backward compatibility check for legacy dev user
-    const legacyUser = localStorage.getItem(STORAGE_KEYS.LEGACY_DEV_USER);
+    const legacyUser = localStorage.getItem(STORAGE_KEYS.LEGACY_DEV_USER) || localStorage.getItem('apex_gst_dev_user');
     if (legacyUser) {
       try {
         const parsed = JSON.parse(legacyUser);
@@ -168,7 +249,7 @@ export function isValidSession(session: UserSessionData | null): boolean {
 }
 
 /**
- * Creates a structured UserSessionData object
+ * Creates a structured UserSessionData object with 24hr remember device window
  */
 export function createSessionData(
   user: { uid: string; email: string; displayName?: string | null; photoURL?: string | null; role?: UserRole; userId?: number | string },
@@ -178,7 +259,8 @@ export function createSessionData(
   const now = new Date();
   const expiresDate = new Date();
   if (rememberMe) {
-    expiresDate.setDate(expiresDate.getDate() + SESSION_CONFIG.REMEMBER_ME_DAYS);
+    // 24 Hours validity for Remembered Device
+    expiresDate.setHours(expiresDate.getHours() + SESSION_CONFIG.REMEMBER_DEVICE_HOURS);
   } else {
     expiresDate.setHours(expiresDate.getHours() + SESSION_CONFIG.TRANSIENT_HOURS);
   }
@@ -418,8 +500,13 @@ export function terminateActiveSession() {
  */
 export function getRememberedCredentials(): { email: string; isEnabled: boolean } {
   try {
-    const isEnabled = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME_ENABLED) === 'true';
-    const email = localStorage.getItem(STORAGE_KEYS.REMEMBERED_EMAIL) || '';
+    const isEnabled =
+      localStorage.getItem(STORAGE_KEYS.REMEMBER_ME_ENABLED) === 'true' ||
+      localStorage.getItem(STORAGE_KEYS.FALLBACK_REMEMBER_ME_ENABLED) === 'true';
+    const email =
+      localStorage.getItem(STORAGE_KEYS.REMEMBERED_EMAIL) ||
+      localStorage.getItem(STORAGE_KEYS.FALLBACK_REMEMBERED_EMAIL) ||
+      '';
     return { email: isEnabled ? email : '', isEnabled };
   } catch {
     return { email: '', isEnabled: false };
@@ -427,7 +514,7 @@ export function getRememberedCredentials(): { email: string; isEnabled: boolean 
 }
 
 /**
- * Set Remember Me preference
+ * Set Remember Me preference (24 Hours Device Session)
  */
 export function setRememberedCredentials(email: string, isEnabled: boolean) {
   try {
@@ -437,6 +524,8 @@ export function setRememberedCredentials(email: string, isEnabled: boolean) {
     } else {
       localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME_ENABLED);
       localStorage.removeItem(STORAGE_KEYS.REMEMBERED_EMAIL);
+      localStorage.removeItem(STORAGE_KEYS.FALLBACK_REMEMBER_ME_ENABLED);
+      localStorage.removeItem(STORAGE_KEYS.FALLBACK_REMEMBERED_EMAIL);
     }
   } catch (err) {
     console.warn('Failed to save remember me preference:', err);
@@ -509,6 +598,29 @@ export function resetSuperAdminAttempts() {
     localStorage.removeItem(STORAGE_KEYS.SUPER_ADMIN_ATTEMPTS);
     localStorage.removeItem(STORAGE_KEYS.SUPER_ADMIN_LOCK_UNTIL);
   } catch {}
+}
+
+/**
+ * Extends/refreshes the active session expiration by 24 hours
+ */
+export function extendRememberedDeviceSession(): UserSessionData | null {
+  const current = getStoredSession();
+  if (!current || !isValidSession(current)) return null;
+
+  const now = new Date();
+  const expiresDate = new Date();
+  expiresDate.setHours(expiresDate.getHours() + SESSION_CONFIG.REMEMBER_DEVICE_HOURS);
+
+  const updated: UserSessionData = {
+    ...current,
+    rememberMe: true,
+    lastActiveAt: now.toISOString(),
+    expiresAt: expiresDate.toISOString(),
+  };
+
+  saveSessionToStorage(updated, true);
+  setRememberedCredentials(updated.email, true);
+  return updated;
 }
 
 /**

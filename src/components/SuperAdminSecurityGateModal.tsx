@@ -266,7 +266,7 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
                 />
-                <span>Remember Super Admin session (30 Days)</span>
+                <span>Remember Super Admin on this device (24 Hours)</span>
               </label>
             </div>
 
