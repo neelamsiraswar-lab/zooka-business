@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useDialog } from './context/DialogContext';
 import { LoginView } from './components/LoginView';
+import { SessionLockScreen } from './components/SessionLockScreen';
 import { DashboardView } from './components/DashboardView';
 import { InvoiceView } from './components/InvoiceView';
 import { ExpenseView } from './components/ExpenseView';
@@ -81,7 +82,7 @@ import {
 } from './db/dataService';
 
 export default function App() {
-  const { user, profile, token, loading: authLoading, logout, getToken } = useAuth();
+  const { user, profile, token, loading: authLoading, logout, getToken, isSessionLocked } = useAuth();
   const dialog = useDialog();
 
   const userRole: UserRole = (profile?.role as UserRole) || 'accountant';
@@ -877,6 +878,10 @@ export default function App() {
     return <LoginView />;
   }
 
+  if (isSessionLocked) {
+    return <SessionLockScreen />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex">
       {/* Collapsible Side Navigation Bar */}
@@ -1239,7 +1244,7 @@ export default function App() {
                   }
                 }}
                 title={`Master Business: ${masterBusinessName} | Place of Supply: ${masterBusinessStateName} (${masterBusinessStateCode}) | GSTIN: ${masterBusinessGstin}${isUserSuperAdmin ? ' - Click to configure Master Business' : ''}`}
-                className="flex items-center gap-1.5 text-slate-300 hover:text-white transition cursor-pointer text-left focus:outline-none"
+                className="flex items-center gap-1.5 px-2 py-0.5 -my-0.5 rounded-lg border border-transparent hover:border-amber-500/40 hover:bg-amber-500/10 hover:shadow-[0_0_14px_rgba(245,158,11,0.25)] hover:scale-[1.02] active:scale-[0.98] text-slate-300 hover:text-white transition-all duration-200 transform cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-amber-500/30"
               >
                 <span className="text-slate-400">Place of Supply:</span>
                 <span className="text-slate-200 font-medium">

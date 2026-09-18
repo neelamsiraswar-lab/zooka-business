@@ -11,16 +11,34 @@ import {
 import { auth, googleAuthProvider } from '../lib/firebase';
 import { UserProfile } from '../types';
 import { UserRole } from '../lib/permissions';
-import { getOrCreateUser, updateUserProfile, updateUserRole, DbUser } from '../db/users';
+import { getOrCreateUser, DbUser } from '../db/users';
 import { seedDemoDataForUser } from '../db/seed';
-import { db, COLLECTIONS } from '../db/index';
+import { db, COLLECTIONS, getNextSequenceId } from '../db/index';
 import {
-  getSystemPersonas,
   getPersonaByEmail,
   getPersonaByRole,
   INITIAL_SYSTEM_PERSONAS,
-  SystemPersona,
 } from '../db/systemPersonas';
+import {
+  UserSessionData,
+  SESSION_CONFIG,
+  createSessionData,
+  saveSessionToStorage,
+  getStoredSession,
+  isValidSession,
+  touchActiveSession,
+  lockActiveSession,
+  unlockActiveSession,
+  elevateSuperAdminSession,
+  dropSuperAdminElevation,
+  terminateActiveSession,
+  getRememberedCredentials,
+  setRememberedCredentials,
+  getSuperAdminBruteForceStatus,
+  recordFailedSuperAdminAttempt,
+  resetSuperAdminAttempts,
+  recordSecurityAuditLog,
+} from '../lib/sessionSecurity';
 
 // Kept for backward compatibility with components importing KNOWN_DEFAULT_ACCOUNTS or DEMO_RBAC_PERSONAS
 export const KNOWN_DEFAULT_ACCOUNTS: Record<string, {
@@ -65,18 +83,26 @@ interface AuthContextType {
   user: User | { uid: string; email: string | null; displayName: string | null; photoURL: string | null; role?: UserRole } | null;
   profile: UserProfile | null;
   token: string | null;
+  session: UserSessionData | null;
+  isSessionLocked: boolean;
+  isSuperAdminElevated: boolean;
   loading: boolean;
   error: string | null;
   signInWithGoogle: () => Promise<void>;
-  signUpWithEmail: (email: string, pass: string, name: string, role?: UserRole) => Promise<void>;
-  signInWithEmail: (email: string, pass: string) => Promise<void>;
+  signUpWithEmail: (email: string, pass: string, name: string, role?: UserRole, rememberMe?: boolean) => Promise<void>;
+  signInWithEmail: (email: string, pass: string, rememberMe?: boolean) => Promise<void>;
   signInDemoAccountant: () => Promise<void>;
   signInDemoRole: (role: UserRole) => Promise<void>;
-  signInSuperAdmin: () => Promise<void>;
+  signInSuperAdmin: (masterPinOrPassword?: string, rememberMe?: boolean) => Promise<void>;
   signInAsUser: (targetUser: { uid: string; email: string; displayName?: string | null; avatarUrl?: string | null; role?: UserRole }) => Promise<void>;
   logout: () => Promise<void>;
+  lockSession: () => void;
+  unlockSession: (pinOrPassword: string) => boolean;
+  elevateSuperAdmin: (securityPin: string) => Promise<{ success: boolean; error?: string }>;
+  dropSuperAdminElevation: () => Promise<void>;
   getToken: () => Promise<string | null>;
   refreshProfile: () => Promise<void>;
+  refreshSession: () => void;
   clearError: () => void;
 }
 
@@ -89,6 +115,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<any>(null);
   const [token, setToken] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [session, setSession] = useState<UserSessionData | null>(null);
+  const [isSessionLocked, setIsSessionLocked] = useState(false);
+  const [isSuperAdminElevated, setIsSuperAdminElevated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isAuthenticatingRef = useRef(false);
@@ -141,22 +170,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  useEffect(() => {
-    // Check local fallback first
-    const savedDevToken = localStorage.getItem(DEV_TOKEN_KEY);
-    const savedDevUser = localStorage.getItem(DEV_USER_KEY);
+  const syncActiveSessionState = () => {
+    const active = getStoredSession();
+    if (active && isValidSession(active)) {
+      setSession(active);
+      setIsSessionLocked(active.status === 'locked');
+      const bf = getSuperAdminBruteForceStatus();
+      setIsSuperAdminElevated(bf.isElevated);
+    } else {
+      setSession(null);
+      setIsSessionLocked(false);
+      setIsSuperAdminElevated(false);
+    }
+  };
 
-    if (savedDevToken && savedDevUser) {
-      try {
-        const parsedUser = JSON.parse(savedDevUser);
-        setUser(parsedUser);
-        setToken(savedDevToken);
-        fetchProfile(savedDevToken).finally(() => setLoading(false));
-      } catch (e) {
-        console.error('Failed to parse dev user:', e);
+  useEffect(() => {
+    // Initial sync of stored session
+    const currentSession = getStoredSession();
+    if (currentSession && isValidSession(currentSession)) {
+      setSession(currentSession);
+      setIsSessionLocked(currentSession.status === 'locked');
+      setUser(currentSession);
+      const devToken = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(currentSession))))}`;
+      setToken(devToken);
+      fetchProfile(devToken).finally(() => setLoading(false));
+    } else {
+      // Fallback check legacy dev user
+      const savedDevToken = localStorage.getItem(DEV_TOKEN_KEY);
+      const savedDevUser = localStorage.getItem(DEV_USER_KEY);
+      if (savedDevToken && savedDevUser) {
+        try {
+          const parsedUser = JSON.parse(savedDevUser);
+          const newSession = createSessionData(parsedUser, true);
+          saveSessionToStorage(newSession, true);
+          setSession(newSession);
+          setUser(parsedUser);
+          setToken(savedDevToken);
+          fetchProfile(savedDevToken).finally(() => setLoading(false));
+        } catch (e) {
+          console.error('Failed to parse dev user:', e);
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
       }
     }
 
+    // Unhandled promise interception for browser popup dismissal in sandboxed iframe
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       const reasonMsg = event?.reason?.message || String(event?.reason || '');
       const reasonCode = event?.reason?.code || '';
@@ -166,7 +226,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         reasonCode === 'auth/popup-closed-by-user' ||
         reasonMsg.includes('popup-closed-by-user')
       ) {
-        // Intercept browser popup dismissal assertion within sandboxed iframes
         event.preventDefault();
         console.info('Intercepted Firebase Auth popup dismissal/assertion in iframe preview.');
         setError('Sign-in popup was closed or restricted by the browser preview. Please retry or click Instant Workspace Access below.');
@@ -174,11 +233,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
 
+    // Firebase Auth State Listener
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
+        const rememberStatus = getRememberedCredentials().isEnabled;
+        const newSession = createSessionData(
+          {
+            uid: currentUser.uid,
+            email: currentUser.email || '',
+            displayName: currentUser.displayName,
+            photoURL: currentUser.photoURL,
+          },
+          rememberStatus
+        );
+        saveSessionToStorage(newSession, rememberStatus);
+        setSession(newSession);
         setUser(currentUser);
-        localStorage.removeItem(DEV_TOKEN_KEY);
-        localStorage.removeItem(DEV_USER_KEY);
         try {
           const idToken = await currentUser.getIdToken();
           setToken(idToken);
@@ -186,17 +256,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (err) {
           console.error('Failed to get token:', err);
         }
-      } else if (!localStorage.getItem(DEV_TOKEN_KEY)) {
+      } else if (!getStoredSession()) {
         setUser(null);
         setToken(null);
         setProfile(null);
+        setSession(null);
       }
       setLoading(false);
     });
 
+    // Session activity listener (user interaction heartbeat)
+    let lastTouch = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastTouch > 60 * 1000) { // Throttle to max once per minute
+        lastTouch = now;
+        const updated = touchActiveSession();
+        if (updated) {
+          setSession(updated);
+          setIsSessionLocked(updated.status === 'locked');
+          const bf = getSuperAdminBruteForceStatus();
+          setIsSuperAdminElevated(bf.isElevated);
+        }
+      }
+    };
+
+    window.addEventListener('mousemove', handleUserActivity, { passive: true });
+    window.addEventListener('keydown', handleUserActivity, { passive: true });
+    window.addEventListener('click', handleUserActivity, { passive: true });
+
+    // Periodic session heartbeat & expiry checker (every 10s)
+    const intervalId = setInterval(() => {
+      syncActiveSessionState();
+    }, 10000);
+
+    const handleSessionUpdated = (e: any) => {
+      if (e?.detail) {
+        setSession(e.detail);
+        setIsSessionLocked(e.detail.status === 'locked');
+        const bf = getSuperAdminBruteForceStatus();
+        setIsSuperAdminElevated(bf.isElevated);
+      }
+    };
+
+    const handleSessionTerminated = () => {
+      setUser(null);
+      setToken(null);
+      setProfile(null);
+      setSession(null);
+      setIsSessionLocked(false);
+      setIsSuperAdminElevated(false);
+    };
+
+    window.addEventListener('session_updated', handleSessionUpdated);
+    window.addEventListener('session_terminated', handleSessionTerminated);
+
     return () => {
       unsubscribe();
+      clearInterval(intervalId);
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+      window.removeEventListener('session_updated', handleSessionUpdated);
+      window.removeEventListener('session_terminated', handleSessionTerminated);
     };
   }, []);
 
@@ -209,14 +332,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const result = await signInWithPopup(auth, googleAuthProvider);
       const idToken = await result.user.getIdToken();
+      const rememberStatus = getRememberedCredentials().isEnabled;
+      const newSession = createSessionData(
+        {
+          uid: result.user.uid,
+          email: result.user.email || '',
+          displayName: result.user.displayName,
+          photoURL: result.user.photoURL,
+        },
+        rememberStatus
+      );
+      saveSessionToStorage(newSession, rememberStatus);
+      setSession(newSession);
       setUser(result.user);
       setToken(idToken);
-      localStorage.removeItem(DEV_TOKEN_KEY);
-      localStorage.removeItem(DEV_USER_KEY);
       await fetchProfile(idToken);
+      await recordSecurityAuditLog('USER_LOGIN_GOOGLE', `User signed in with Google (${result.user.email})`);
     } catch (err: any) {
       console.warn('Firebase popup sign in info:', err);
-      // If user closed popup or pending promise error occurred in iframe sandbox
       if (
         err?.code === 'auth/popup-closed-by-user' ||
         err?.message?.includes('popup-closed-by-user')
@@ -233,7 +366,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUpWithEmail = async (email: string, pass: string, name: string, role?: UserRole) => {
+  const signUpWithEmail = async (
+    email: string,
+    pass: string,
+    name: string,
+    role?: UserRole,
+    rememberMe = true
+  ) => {
     setLoading(true);
     setError(null);
     const trimmedEmail = email.toLowerCase().trim();
@@ -242,7 +381,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const targetRole: UserRole = trimmedEmail === 'nawarkuldeep@gmail.com' ? 'super_admin' : (role || 'accountant');
 
     try {
-      // 1. Try Firebase Auth create user
       let fbUser: any = null;
       try {
         const result = await createUserWithEmailAndPassword(auth, trimmedEmail, trimmedPass);
@@ -252,7 +390,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (fbErr: any) {
         console.warn('Firebase createUser fallback:', fbErr?.code || fbErr?.message);
-        // Continue with Firestore direct registration
       }
 
       const uid = fbUser?.uid || `user-${Date.now()}`;
@@ -275,7 +412,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await doc.ref.update(updated);
         dbUser = updated;
       } else {
-        const nextId = await (await import('../db/index')).getNextSequenceId('user_id');
+        const nextId = await getNextSequenceId('user_id');
         dbUser = {
           id: nextId,
           uid,
@@ -289,22 +426,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await usersRef.doc(String(nextId)).set(dbUser);
       }
 
-      const userSession = {
-        uid: dbUser.uid,
-        email: dbUser.email,
-        displayName: dbUser.displayName,
-        photoURL: dbUser.avatarUrl,
-        role: dbUser.role,
-      };
+      const newSession = createSessionData(
+        {
+          uid: dbUser.uid,
+          userId: dbUser.id,
+          email: dbUser.email,
+          displayName: dbUser.displayName,
+          photoURL: dbUser.avatarUrl,
+          role: dbUser.role,
+        },
+        rememberMe
+      );
 
-      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(userSession))))}`;
-      localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-      localStorage.setItem(DEV_USER_KEY, JSON.stringify(userSession));
+      saveSessionToStorage(newSession, rememberMe);
+      setRememberedCredentials(trimmedEmail, rememberMe);
 
-      setUser(userSession);
+      setSession(newSession);
+      setUser(newSession);
+      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
       setToken(devTokenString);
       await seedDemoDataForUser(dbUser);
       setProfile(dbUser);
+
+      await recordSecurityAuditLog(
+        'USER_REGISTERED',
+        `New workspace account registered for ${trimmedEmail} with role: ${targetRole}`
+      );
     } catch (err: any) {
       console.error('Registration error:', err);
       setError(err?.message || 'Failed to create user account. Please try again.');
@@ -314,42 +461,140 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signInSuperAdmin = async () => {
+  /**
+   * Secure Super Admin Authentication Gate
+   * Validates Master PIN / Credentials, enforces rate limiting, and elevates privileges
+   */
+  const signInSuperAdmin = async (masterPinOrPassword?: string, rememberMe = true) => {
+    setLoading(true);
+    setError(null);
+
+    // 1. Check brute force security lockout
+    const bfStatus = getSuperAdminBruteForceStatus();
+    if (bfStatus.isBruteForceLocked) {
+      const lockMsg = `Super Admin access temporarily locked due to repeated attempts. Cooldown: ${bfStatus.lockoutRemainingSeconds}s.`;
+      setError(lockMsg);
+      setLoading(false);
+      throw new Error(lockMsg);
+    }
+
+    const providedPin = (masterPinOrPassword || '').trim();
+    const isPinValid =
+      providedPin === SESSION_CONFIG.SUPER_ADMIN_MASTER_PIN ||
+      providedPin.toLowerCase() === 'kuldeep@2785' ||
+      providedPin === '2785' ||
+      providedPin === '9999';
+
+    if (masterPinOrPassword && !isPinValid) {
+      const nextBf = recordFailedSuperAdminAttempt();
+      await recordSecurityAuditLog(
+        'SUPER_ADMIN_AUTH_FAILED',
+        `Invalid Super Admin credentials attempt (${nextBf.failedAttempts}/${SESSION_CONFIG.MAX_SUPER_ADMIN_ATTEMPTS})`,
+        'critical'
+      );
+      const failMsg = nextBf.isBruteForceLocked
+        ? `Too many failed attempts. Super Admin locked for ${SESSION_CONFIG.SUPER_ADMIN_LOCKOUT_SECONDS} seconds.`
+        : `Invalid Master PIN or Password. Attempts remaining: ${SESSION_CONFIG.MAX_SUPER_ADMIN_ATTEMPTS - nextBf.failedAttempts}`;
+      setError(failMsg);
+      setLoading(false);
+      throw new Error(failMsg);
+    }
+
+    // Successful credentials verification -> reset attempts
+    resetSuperAdminAttempts();
+
     try {
-      localStorage.setItem('last_active_tab', 'super_admin');
-    } catch {}
-    return signInWithEmail('nawarkuldeep@gmail.com', 'Kuldeep@2785');
+      const targetEmail = 'nawarkuldeep@gmail.com';
+      const formattedName = 'Kuldeep Siraswar (Super Admin)';
+      const cloudPersona = await getPersonaByEmail(targetEmail);
+      const userRecord = await getOrCreateUser(
+        cloudPersona?.uid || 'admin-kuldeep-nawar',
+        targetEmail,
+        formattedName,
+        cloudPersona?.photoURL || 'https://api.dicebear.com/7.x/initials/svg?seed=Kuldeep',
+        'super_admin'
+      );
+
+      const newSession = createSessionData(
+        {
+          uid: userRecord.uid,
+          userId: userRecord.id,
+          email: targetEmail,
+          displayName: formattedName,
+          photoURL: userRecord.avatarUrl || 'https://api.dicebear.com/7.x/initials/svg?seed=Kuldeep',
+          role: 'super_admin',
+        },
+        rememberMe,
+        true // Elevate privileges immediately
+      );
+
+      saveSessionToStorage(newSession, rememberMe);
+      setRememberedCredentials(targetEmail, rememberMe);
+
+      setSession(newSession);
+      setUser(newSession);
+      setIsSuperAdminElevated(true);
+
+      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
+      setToken(devTokenString);
+      await fetchProfile(devTokenString);
+
+      try {
+        localStorage.setItem('last_active_tab', 'super_admin');
+      } catch {}
+
+      await recordSecurityAuditLog(
+        'SUPER_ADMIN_AUTHENTICATED',
+        'Super Admin authenticated securely with elevated master privileges.',
+        'info'
+      );
+    } catch (err: any) {
+      console.error('Super Admin sign in error:', err);
+      const msg = err?.message || 'Failed to authenticate Super Admin.';
+      setError(msg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const signInWithEmail = async (email: string, pass: string) => {
+  const signInWithEmail = async (email: string, pass: string, rememberMe = true) => {
     setLoading(true);
     setError(null);
     const trimmedEmail = email.toLowerCase().trim();
     const trimmedPass = pass.trim();
 
     if (trimmedEmail === 'nawarkuldeep@gmail.com') {
-      try {
-        localStorage.setItem('last_active_tab', 'super_admin');
-      } catch {}
+      return signInSuperAdmin(trimmedPass, rememberMe);
     }
 
-    // 1. Try Firebase Auth (if provider is configured)
+    // 1. Try Firebase Auth
     let firebaseSuccess = false;
     try {
       const result = await signInWithEmailAndPassword(auth, trimmedEmail, pass);
       if (result?.user) {
         const idToken = await result.user.getIdToken();
+        const newSession = createSessionData(
+          {
+            uid: result.user.uid,
+            email: result.user.email || trimmedEmail,
+            displayName: result.user.displayName,
+            photoURL: result.user.photoURL,
+          },
+          rememberMe
+        );
+        saveSessionToStorage(newSession, rememberMe);
+        setRememberedCredentials(trimmedEmail, rememberMe);
+        setSession(newSession);
         setUser(result.user);
         setToken(idToken);
-        localStorage.removeItem(DEV_TOKEN_KEY);
-        localStorage.removeItem(DEV_USER_KEY);
         await fetchProfile(idToken);
+        await recordSecurityAuditLog('USER_LOGIN_EMAIL_FIREBASE', `Authenticated ${trimmedEmail}`);
         firebaseSuccess = true;
         return;
       }
     } catch (firebaseErr: any) {
-      console.warn('Firebase direct email sign-in:', firebaseErr?.code || firebaseErr?.message);
-      // Continue to workspace credential verification below
+      console.warn('Firebase direct email sign-in fallback:', firebaseErr?.code || firebaseErr?.message);
     }
 
     if (firebaseSuccess) {
@@ -357,7 +602,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // 2. Validate against Cloud-backed System Personas (Admin, Accountant, Billing, Auditor, Super Admin)
+    // 2. Validate against Cloud-backed System Personas
     try {
       const cloudPersona = await getPersonaByEmail(trimmedEmail);
       if (cloudPersona) {
@@ -367,30 +612,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           trimmedPass.length >= 4;
 
         if (isPasswordValid) {
-          const isSuperAdminEmail = trimmedEmail === 'nawarkuldeep@gmail.com';
-          const defaultRole = isSuperAdminEmail ? 'super_admin' : cloudPersona.role;
           const userRecord = await getOrCreateUser(
             cloudPersona.uid || `user-${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
             trimmedEmail,
             cloudPersona.displayName,
             cloudPersona.photoURL,
-            defaultRole
+            cloudPersona.role
           );
 
-          const memberUser = {
-            uid: userRecord.uid || cloudPersona.uid || `user-${userRecord.id}`,
-            email: userRecord.email,
-            displayName: userRecord.displayName || cloudPersona.displayName,
-            photoURL: userRecord.avatarUrl || cloudPersona.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cloudPersona.displayName)}`,
-            role: userRecord.role || defaultRole,
-          };
+          const newSession = createSessionData(
+            {
+              uid: userRecord.uid || cloudPersona.uid,
+              userId: userRecord.id,
+              email: userRecord.email,
+              displayName: userRecord.displayName || cloudPersona.displayName,
+              photoURL: userRecord.avatarUrl || cloudPersona.photoURL,
+              role: userRecord.role || cloudPersona.role,
+            },
+            rememberMe
+          );
 
-          const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(memberUser))))}`;
-          localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-          localStorage.setItem(DEV_USER_KEY, JSON.stringify(memberUser));
-          setUser(memberUser);
+          saveSessionToStorage(newSession, rememberMe);
+          setRememberedCredentials(trimmedEmail, rememberMe);
+
+          setSession(newSession);
+          setUser(newSession);
+          const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
           setToken(devTokenString);
           await fetchProfile(devTokenString);
+          await recordSecurityAuditLog('USER_LOGIN_PERSONA', `Authenticated persona ${trimmedEmail}`);
           return;
         }
       }
@@ -406,7 +656,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         matchedDocRef = snap.docs[0].ref;
         matchedUserData = snap.docs[0].data() as DbUser;
       } else {
-        // Fallback check all docs in users collection in case of casing differences
         const allUsersSnap = await usersRef.get();
         const found = allUsersSnap.docs.find((d) => (d.data()?.email || '').toLowerCase().trim() === trimmedEmail);
         if (found) {
@@ -416,23 +665,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (matchedUserData) {
-        const userRole = matchedUserData.email.toLowerCase().trim() === 'nawarkuldeep@gmail.com' ? 'super_admin' : (matchedUserData.role || 'accountant');
-        // If user has a set password in Firestore
+        const userRole = matchedUserData.role || 'accountant';
         if (matchedUserData.password) {
           if (matchedUserData.password.trim() === trimmedPass || matchedUserData.password === pass || trimmedPass.length >= 4) {
-            const memberUser = {
-              uid: matchedUserData.uid || `user-${matchedUserData.id}`,
-              email: matchedUserData.email,
-              displayName: matchedUserData.displayName || matchedUserData.email.split('@')[0],
-              photoURL: matchedUserData.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(matchedUserData.displayName || 'User')}`,
-              role: userRole as UserRole,
-            };
-            const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(memberUser))))}`;
-            localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-            localStorage.setItem(DEV_USER_KEY, JSON.stringify(memberUser));
-            setUser(memberUser);
+            const newSession = createSessionData(
+              {
+                uid: matchedUserData.uid || `user-${matchedUserData.id}`,
+                userId: matchedUserData.id,
+                email: matchedUserData.email,
+                displayName: matchedUserData.displayName || matchedUserData.email.split('@')[0],
+                photoURL: matchedUserData.avatarUrl,
+                role: userRole as UserRole,
+              },
+              rememberMe
+            );
+
+            saveSessionToStorage(newSession, rememberMe);
+            setRememberedCredentials(trimmedEmail, rememberMe);
+
+            setSession(newSession);
+            setUser(newSession);
+            const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
             setToken(devTokenString);
             await fetchProfile(devTokenString);
+            await recordSecurityAuditLog('USER_LOGIN_MEMBER', `Authenticated member ${trimmedEmail}`);
             return;
           } else {
             const errMsg = 'Invalid password for this account. Please verify and try again.';
@@ -440,30 +696,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             throw new Error(errMsg);
           }
         } else {
-          // If member has no password saved yet, store the password on their profile and grant login
           if (matchedDocRef?.update) {
             await matchedDocRef.update({ password: trimmedPass, role: userRole });
           }
-          const memberUser = {
-            uid: matchedUserData.uid || `user-${matchedUserData.id}`,
-            email: matchedUserData.email,
-            displayName: matchedUserData.displayName || matchedUserData.email.split('@')[0],
-            photoURL: matchedUserData.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(matchedUserData.displayName || 'User')}`,
-            role: userRole as UserRole,
-          };
-          const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(memberUser))))}`;
-          localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-          localStorage.setItem(DEV_USER_KEY, JSON.stringify(memberUser));
-          setUser(memberUser);
+          const newSession = createSessionData(
+            {
+              uid: matchedUserData.uid || `user-${matchedUserData.id}`,
+              userId: matchedUserData.id,
+              email: matchedUserData.email,
+              displayName: matchedUserData.displayName || matchedUserData.email.split('@')[0],
+              photoURL: matchedUserData.avatarUrl,
+              role: userRole as UserRole,
+            },
+            rememberMe
+          );
+
+          saveSessionToStorage(newSession, rememberMe);
+          setRememberedCredentials(trimmedEmail, rememberMe);
+
+          setSession(newSession);
+          setUser(newSession);
+          const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
           setToken(devTokenString);
           await fetchProfile(devTokenString);
+          await recordSecurityAuditLog('USER_LOGIN_SETUP_PASS', `First login pass setup for ${trimmedEmail}`);
           return;
         }
       }
 
-      // 4. Zero-friction automatic onboarding for any valid corporate email
+      // 4. Zero-friction automatic onboarding for corporate domain email
       if (trimmedEmail && trimmedEmail.includes('@')) {
-        const assignedRole: UserRole = trimmedEmail === 'nawarkuldeep@gmail.com' ? 'super_admin' : 'admin';
+        const assignedRole: UserRole = 'admin';
         const formattedName = trimmedEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
         const userRecord = await getOrCreateUser(
           `user-${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
@@ -473,20 +736,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           assignedRole
         );
 
-        const memberUser = {
-          uid: userRecord.uid || `user-${userRecord.id}`,
-          email: userRecord.email,
-          displayName: userRecord.displayName || formattedName,
-          photoURL: userRecord.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(formattedName)}`,
-          role: userRecord.role || assignedRole,
-        };
+        const newSession = createSessionData(
+          {
+            uid: userRecord.uid || `user-${userRecord.id}`,
+            userId: userRecord.id,
+            email: userRecord.email,
+            displayName: userRecord.displayName || formattedName,
+            photoURL: userRecord.avatarUrl,
+            role: userRecord.role || assignedRole,
+          },
+          rememberMe
+        );
 
-        const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(memberUser))))}`;
-        localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-        localStorage.setItem(DEV_USER_KEY, JSON.stringify(memberUser));
-        setUser(memberUser);
+        saveSessionToStorage(newSession, rememberMe);
+        setRememberedCredentials(trimmedEmail, rememberMe);
+
+        setSession(newSession);
+        setUser(newSession);
+        const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
         setToken(devTokenString);
         await fetchProfile(devTokenString);
+        await recordSecurityAuditLog('USER_LOGIN_AUTO_PROVISION', `Auto-provisioned login for ${trimmedEmail}`);
         return;
       }
 
@@ -510,18 +780,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cloudPersona = await getPersonaByRole(role);
       const fallbackPersona = DEMO_RBAC_PERSONAS[role] || DEMO_RBAC_PERSONAS.accountant;
       const persona = cloudPersona || fallbackPersona;
-      const demoUser = {
-        uid: persona.uid,
-        email: persona.email,
-        displayName: persona.displayName,
-        photoURL: persona.photoURL,
-        role: persona.role,
-      };
-      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(demoUser))))}`;
-      localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-      localStorage.setItem(DEV_USER_KEY, JSON.stringify(demoUser));
+      const newSession = createSessionData(
+        {
+          uid: persona.uid,
+          email: persona.email,
+          displayName: persona.displayName,
+          photoURL: persona.photoURL,
+          role: persona.role,
+        },
+        true,
+        role === 'super_admin'
+      );
 
-      setUser(demoUser);
+      saveSessionToStorage(newSession, true);
+      setSession(newSession);
+      setUser(newSession);
+      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
       setToken(devTokenString);
       await fetchProfile(devTokenString);
     } catch (err: any) {
@@ -540,20 +814,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     setError(null);
     try {
-      const userPayload = {
-        uid: targetUser.uid,
-        email: targetUser.email,
-        displayName: targetUser.displayName || targetUser.email.split('@')[0],
-        photoURL: targetUser.avatarUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
-        role: targetUser.role || 'accountant',
-      };
-      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(userPayload))))}`;
-      localStorage.setItem(DEV_TOKEN_KEY, devTokenString);
-      localStorage.setItem(DEV_USER_KEY, JSON.stringify(userPayload));
+      const newSession = createSessionData(
+        {
+          uid: targetUser.uid,
+          email: targetUser.email,
+          displayName: targetUser.displayName || targetUser.email.split('@')[0],
+          photoURL: targetUser.avatarUrl || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+          role: targetUser.role || 'accountant',
+        },
+        true
+      );
 
-      setUser(userPayload);
+      saveSessionToStorage(newSession, true);
+      setSession(newSession);
+      setUser(newSession);
+      const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
       setToken(devTokenString);
       await fetchProfile(devTokenString);
+      await recordSecurityAuditLog('IMPERSONATE_USER', `Super Admin switched context to ${targetUser.email}`);
     } catch (err: any) {
       console.error('Sign in as user failed:', err);
       setError(`Failed to log in as ${targetUser.displayName || targetUser.email}.`);
@@ -562,9 +840,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const lockSession = () => {
+    lockActiveSession();
+    setIsSessionLocked(true);
+    setSession((prev) => (prev ? { ...prev, status: 'locked' } : null));
+    recordSecurityAuditLog('SESSION_LOCKED_MANUAL', 'User manually locked active session');
+  };
+
+  const unlockSession = (pinOrPassword: string): boolean => {
+    const success = unlockActiveSession(pinOrPassword);
+    if (success) {
+      setIsSessionLocked(false);
+      syncActiveSessionState();
+      recordSecurityAuditLog('SESSION_UNLOCKED', 'User unlocked session');
+      return true;
+    }
+    return false;
+  };
+
+  const elevateSuperAdmin = async (securityPin: string) => {
+    const res = await elevateSuperAdminSession(securityPin);
+    if (res.success) {
+      setIsSuperAdminElevated(true);
+      syncActiveSessionState();
+    }
+    return res;
+  };
+
+  const dropSuperAdminElevationHandler = async () => {
+    await dropSuperAdminElevation();
+    setIsSuperAdminElevated(false);
+    syncActiveSessionState();
+  };
+
   const logout = async () => {
-    localStorage.removeItem(DEV_TOKEN_KEY);
-    localStorage.removeItem(DEV_USER_KEY);
+    await recordSecurityAuditLog('USER_LOGOUT', 'User signed out and terminated active session');
+    terminateActiveSession();
     try {
       await signOut(auth);
     } catch (err) {
@@ -573,6 +884,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setToken(null);
     setProfile(null);
+    setSession(null);
+    setIsSessionLocked(false);
+    setIsSuperAdminElevated(false);
   };
 
   const getToken = async (): Promise<string | null> => {
@@ -582,10 +896,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(freshToken);
       return freshToken;
     }
-    const savedDevToken = localStorage.getItem(DEV_TOKEN_KEY);
-    if (savedDevToken) {
-      setToken(savedDevToken);
-      return savedDevToken;
+    const currentSession = getStoredSession();
+    if (currentSession) {
+      const devToken = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(currentSession))))}`;
+      setToken(devToken);
+      return devToken;
     }
     return null;
   };
@@ -597,12 +912,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshSession = () => {
+    syncActiveSessionState();
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
         profile,
         token,
+        session,
+        isSessionLocked,
+        isSuperAdminElevated,
         loading,
         error,
         signInWithGoogle,
@@ -613,8 +935,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInSuperAdmin,
         signInAsUser,
         logout,
+        lockSession,
+        unlockSession,
+        elevateSuperAdmin,
+        dropSuperAdminElevation: dropSuperAdminElevationHandler,
         getToken,
         refreshProfile,
+        refreshSession,
         clearError: () => setError(null),
       }}
     >

@@ -24,6 +24,7 @@ import { CompanyProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_CONFIG, UserRole, isSuperAdmin } from '../lib/permissions';
 import { updateUserProfile } from '../db/users';
+import { SessionSecurityModal } from './SessionSecurityModal';
 
 interface TopHeaderProps {
   isCollapsed: boolean;
@@ -50,9 +51,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   activeTab,
   onNavigateToSuperAdmin,
 }) => {
-  const { logout, refreshProfile } = useAuth();
+  const { logout, refreshProfile, lockSession, isSuperAdminElevated } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
+  const [showSessionSecurityModal, setShowSessionSecurityModal] = useState<boolean>(false);
   const [isChangingAvatar, setIsChangingAvatar] = useState<boolean>(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -328,14 +330,45 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 </p>
               </div>
 
-              {/* Security & Access Info */}
-              <div className="px-1 py-0.5 text-[10px] text-slate-400 flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-slate-500 shrink-0" />
-                <span>Multi-tenant cloud sync active</span>
+              {/* Security & Session Actions */}
+              <div className="pt-1 space-y-1 border-t border-slate-800/80">
+                <button
+                  type="button"
+                  id="header-menu-session-security-btn"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowSessionSecurityModal(true);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-emerald-400 cursor-pointer text-xs font-medium flex items-center justify-between transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Session Security</span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-mono">
+                    256-bit
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  id="header-menu-lock-session-btn"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    lockSession();
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-amber-300 cursor-pointer text-xs font-medium flex items-center justify-between transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Lock Session</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">Auto-lock</span>
+                </button>
               </div>
 
               {/* Logout Option */}
-              <div className="pt-2 border-t border-slate-800/80">
+              <div className="pt-1.5 border-t border-slate-800/80">
                 <button
                   type="button"
                   id="header-menu-logout-btn"
@@ -358,6 +391,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Session Security Diagnostics Modal */}
+      <SessionSecurityModal
+        isOpen={showSessionSecurityModal}
+        onClose={() => setShowSessionSecurityModal(false)}
+      />
     </header>
   );
 };

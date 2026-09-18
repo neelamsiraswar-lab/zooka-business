@@ -27,7 +27,8 @@ import {
 
 import { createWorkspace } from '../db/workspaces';
 import { INDIAN_STATES } from '../data/indianStates';
-import { FirestoreConnectionModal } from './FirestoreConnectionModal';
+import { SuperAdminSecurityGateModal } from './SuperAdminSecurityGateModal';
+import { getRememberedCredentials } from '../lib/sessionSecurity';
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, formatINR, PLAN_COLOR_PRESETS } from '../data/subscriptionPlans';
 
@@ -44,18 +45,14 @@ export const LoginView: React.FC = () => {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
 
   // Sign In Form States
-  const [email, setEmail] = useState('');
+  const remembered = getRememberedCredentials();
+  const [email, setEmail] = useState(() => remembered.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => remembered.isEnabled);
 
-  // Super Admin Modal States
+  // Super Admin Security Gate Modal State
   const [showSuperAdminModal, setShowSuperAdminModal] = useState(false);
-  const [showFirestoreModal, setShowFirestoreModal] = useState(false);
-  const [superAdminEmail, setSuperAdminEmail] = useState('');
-  const [superAdminPassword, setSuperAdminPassword] = useState('');
-  const [showSuperAdminPassword, setShowSuperAdminPassword] = useState(false);
-  const [superAdminLoading, setSuperAdminLoading] = useState(false);
-  const [superAdminError, setSuperAdminError] = useState<string | null>(null);
 
   // Dynamic Subscription Plans State (Synced with Super Admin Firestore Catalog)
   const [availablePlans, setAvailablePlans] = useState<PlanTierConfig[]>(DEFAULT_BUILTIN_PLANS);
@@ -138,38 +135,6 @@ export const LoginView: React.FC = () => {
     };
   }, []);
 
-  // Handle Quick Super Admin 1-Click Login
-  const handleInstantSuperAdminLogin = async () => {
-    setSuperAdminError(null);
-    setSuperAdminLoading(true);
-    try {
-      await signInSuperAdmin();
-    } catch (err: any) {
-      setSuperAdminError(err?.message || 'Failed to authenticate Super Admin.');
-    } finally {
-      setSuperAdminLoading(false);
-    }
-  };
-
-  // Handle Super Admin Form Submit
-  const handleSuperAdminSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSuperAdminError(null);
-    const trimmedEmail = superAdminEmail.trim();
-    const trimmedPass = superAdminPassword.trim();
-    if (!trimmedEmail || !trimmedPass) {
-      setSuperAdminError('Please provide Super Admin email and credentials.');
-      return;
-    }
-    setSuperAdminLoading(true);
-    try {
-      await signInWithEmail(trimmedEmail, trimmedPass);
-    } catch (err: any) {
-      setSuperAdminError(err?.message || 'Super Admin authentication failed.');
-    } finally {
-      setSuperAdminLoading(false);
-    }
-  };
 
   // Handle Sign In Submit
   const handleSignInSubmit = async (e: React.FormEvent) => {
@@ -191,7 +156,7 @@ export const LoginView: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await signInWithEmail(trimmedEmail, password);
+      await signInWithEmail(trimmedEmail, password, rememberMe);
     } catch (err: any) {
       const msg = err?.message || 'Authentication failed. Please check your credentials.';
       if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password') || msg.includes('auth/user-not-found')) {
@@ -245,7 +210,7 @@ export const LoginView: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await signUpWithEmail(trimmedEmail, trimmedPass, trimmedName, signupRole);
+      await signUpWithEmail(trimmedEmail, trimmedPass, trimmedName, signupRole, rememberMe);
 
       // Create workspace with full details from selected live plan
       const wsName = signupWorkspaceName.trim() || `${trimmedName.split(' ')[0]}'s Company`;
@@ -319,154 +284,21 @@ export const LoginView: React.FC = () => {
           <button
             type="button"
             id="btn-header-super-admin-login"
-            onClick={() => {
-              setSuperAdminError(null);
-              setShowSuperAdminModal(true);
-            }}
+            onClick={() => setShowSuperAdminModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-semibold transition cursor-pointer shadow-xs active:scale-95"
             title="Access Super Administrator Console"
           >
             <Crown className="w-3.5 h-3.5 text-amber-400" />
             <span>Super Admin</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => setShowFirestoreModal(true)}
-            title="Cloud Firestore Connection Diagnostics"
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[11px] text-emerald-300 font-medium transition cursor-pointer"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Firestore Synced</span>
-          </button>
         </div>
       </header>
 
-      {/* Super Admin Login Modal Dialog */}
-      {showSuperAdminModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
-          <div
-            id="modal-super-admin-login"
-            className="w-full max-w-md bg-slate-900 border border-amber-500/40 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
-          >
-            <div className="absolute -top-12 -right-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
-
-            {/* Modal Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-inner">
-                  <Crown className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    Super Admin Portal
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase font-bold">
-                      Master Access
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400">Supreme Multi-Tenant Governance</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                id="btn-close-super-admin-modal"
-                onClick={() => setShowSuperAdminModal(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-slate-800/60 hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Super Admin Error Banner */}
-            {superAdminError && (
-              <div className="mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-                <div className="flex-1">{superAdminError}</div>
-              </div>
-            )}
-
-            {/* Quick 1-Click Super Admin Login Button */}
-            <div className="mt-5 space-y-3">
-              <button
-                type="button"
-                id="btn-super-admin-1click"
-                disabled={superAdminLoading || loading}
-                onClick={handleInstantSuperAdminLogin}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition cursor-pointer disabled:opacity-50 active:scale-[0.99]"
-              >
-                {superAdminLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
-                    <span>Entering Super Admin Console...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>Instant 1-Click Super Admin Access</span>
-                    <ArrowRight className="w-4 h-4 ml-auto" />
-                  </>
-                )}
-              </button>
-
-              <div className="relative flex py-2 items-center">
-                <div className="flex-grow border-t border-slate-800"></div>
-                <span className="flex-shrink mx-3 text-[11px] text-slate-500">or sign in with credentials</span>
-                <div className="flex-grow border-t border-slate-800"></div>
-              </div>
-
-              {/* Super Admin Credential Form */}
-              <form onSubmit={handleSuperAdminSubmit} className="space-y-3.5 text-xs">
-                <div className="space-y-1">
-                  <label className="block font-medium text-slate-300">Super Admin Email</label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-2.5 pointer-events-none" />
-                    <input
-                      type="email"
-                      id="input-super-admin-email"
-                      required
-                      value={superAdminEmail}
-                      onChange={(e) => setSuperAdminEmail(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition font-mono text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block font-medium text-slate-300">Master Password</label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-2.5 pointer-events-none" />
-                    <input
-                      type={showSuperAdminPassword ? 'text' : 'password'}
-                      id="input-super-admin-password"
-                      required
-                      value={superAdminPassword}
-                      onChange={(e) => setSuperAdminPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-10 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSuperAdminPassword(!showSuperAdminPassword)}
-                      className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 cursor-pointer"
-                    >
-                      {showSuperAdminPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  id="btn-super-admin-submit-form"
-                  disabled={superAdminLoading || loading}
-                  className="w-full py-2.5 rounded-xl font-bold text-xs text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>Authenticate Super Admin Credentials</span>
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Super Admin Security Gate Modal Dialog */}
+      <SuperAdminSecurityGateModal
+        isOpen={showSuperAdminModal}
+        onClose={() => setShowSuperAdminModal(false)}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1 px-4 py-8 sm:py-12 max-w-7xl mx-auto w-full space-y-16">
@@ -637,6 +469,24 @@ export const LoginView: React.FC = () => {
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+                  </div>
+
+                  {/* Remember Me & Security Status */}
+                  <div className="flex items-center justify-between pt-0.5">
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 text-xs">
+                      <input
+                        type="checkbox"
+                        id="checkbox-auth-remember-me"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                      />
+                      <span>Remember this device (30 Days)</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      TLS 1.3
+                    </span>
                   </div>
 
                   {/* Submit Button */}
@@ -1066,12 +916,6 @@ export const LoginView: React.FC = () => {
       <footer className="px-6 py-4 border-t border-slate-900 text-center text-xs text-slate-600">
         {platformFooterCopyright}
       </footer>
-
-      {/* Cloud Firestore Diagnostic Modal */}
-      <FirestoreConnectionModal
-        isOpen={showFirestoreModal}
-        onClose={() => setShowFirestoreModal(false)}
-      />
     </div>
   );
 };

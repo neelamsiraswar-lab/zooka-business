@@ -80,6 +80,7 @@ import {
   deleteSubscriptionPlan,
 } from '../db/subscriptionPlans';
 import { FirestoreConnectionModal } from './FirestoreConnectionModal';
+import { SessionSecurityModal } from './SessionSecurityModal';
 
 interface SuperAdminDashboardViewProps {
   onSwitchWorkspace?: (workspace: Workspace) => void;
@@ -158,6 +159,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
 
   // Modal States
   const [showFirestoreModal, setShowFirestoreModal] = useState(false);
+  const [showSessionSecurityModal, setShowSessionSecurityModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
@@ -632,6 +634,18 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
 
               {/* Header Action Controls */}
               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <button
+                  type="button"
+                  id="superadmin-session-security-btn"
+                  onClick={() => setShowSessionSecurityModal(true)}
+                  title="Super Admin Session Security & Privilege Elevation"
+                  className="px-3.5 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition flex items-center gap-2 text-xs font-semibold cursor-pointer shadow-lg shadow-amber-500/10"
+                >
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span className="hidden sm:inline">Session Security</span>
+                  <span className="sm:hidden">Security</span>
+                </button>
+
                 <button
                   type="button"
                   id="superadmin-firestore-diagnostics-btn"
@@ -2573,6 +2587,12 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
       <FirestoreConnectionModal
         isOpen={showFirestoreModal}
         onClose={() => setShowFirestoreModal(false)}
+      />
+
+      {/* Session Security & Super Admin Elevation Modal */}
+      <SessionSecurityModal
+        isOpen={showSessionSecurityModal}
+        onClose={() => setShowSessionSecurityModal(false)}
       />
     </div>
   );
