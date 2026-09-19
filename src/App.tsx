@@ -952,6 +952,18 @@ export default function App() {
           profile={profile}
           activeTab={currentTab}
           onNavigateToSuperAdmin={isUserSuperAdmin ? handleReturnToSuperAdmin : undefined}
+          masterBusinessName={masterBusinessName}
+          masterBusinessStateName={masterBusinessStateName}
+          masterBusinessStateCode={masterBusinessStateCode}
+          masterBusinessGstin={masterBusinessGstin}
+          onPlaceOfSupplyClick={() => {
+            if (isUserSuperAdmin) {
+              setActiveTab('super_admin');
+              dialog.toast.info(`Master Business: ${masterBusinessName} | State: ${masterBusinessStateName} (${masterBusinessStateCode})`);
+            } else {
+              dialog.toast.info(`Master Business: ${masterBusinessName} | Place of Supply: ${masterBusinessStateName} (${masterBusinessStateCode}) | GSTIN: ${masterBusinessGstin}`);
+            }
+          }}
         />
 
         {/* Network / Sync Warning Banner if present (suppressed while on master super admin view) */}

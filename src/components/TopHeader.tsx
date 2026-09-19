@@ -38,6 +38,11 @@ interface TopHeaderProps {
   activeTab?: string;
   onNavigateToSuperAdmin?: () => void;
   isOnline?: boolean;
+  masterBusinessName?: string;
+  masterBusinessStateName?: string;
+  masterBusinessStateCode?: string;
+  masterBusinessGstin?: string;
+  onPlaceOfSupplyClick?: () => void;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -52,6 +57,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   activeTab,
   onNavigateToSuperAdmin,
   isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true,
+  masterBusinessName,
+  masterBusinessStateName,
+  masterBusinessStateCode,
+  masterBusinessGstin,
+  onPlaceOfSupplyClick,
 }) => {
   const { logout, refreshProfile, lockSession, isSuperAdminElevated } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -192,72 +202,58 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </button>
         )}
 
-        {/* Place of supply / Master Mode badge with pulsing visual indicator */}
-        {activeTab === 'super_admin' ? (
-          <div
-            title={`Master Business: ${localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies'} | Place of Supply: ${localStorage.getItem('platform_invoice_state_name') || 'Maharashtra'} (${localStorage.getItem('platform_invoice_state_code') || '27'}) | Sync: ${!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Online & Synchronized'}`}
-            className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/60 border border-slate-800/60 text-[11px] text-slate-300"
-          >
-            {/* Pulsing Visual Indicator (Green = Online, Yellow = Syncing, Red = Offline) */}
-            <span
-              className="relative flex h-2 w-2 items-center justify-center shrink-0"
-              aria-label={!isOnline ? 'Offline' : dataLoading ? 'Syncing' : 'Online'}
+        {/* Place of supply / Master Mode Button with pulsing visual indicator */}
+        {(() => {
+          const effectiveName = masterBusinessName || localStorage.getItem('platform_invoice_name') || 'Zooka Business Technologies';
+          const effectiveStateName = masterBusinessStateName || localStorage.getItem('platform_invoice_state_name') || company?.stateName || 'Maharashtra';
+          const effectiveStateCode = masterBusinessStateCode || localStorage.getItem('platform_invoice_state_code') || company?.stateCode || '27';
+          const effectiveGstin = masterBusinessGstin || localStorage.getItem('platform_invoice_gstin') || company?.gstin || '27AAECB9382M1ZR';
+
+          return (
+            <button
+              type="button"
+              id="header-place-of-supply-btn"
+              onClick={onPlaceOfSupplyClick || onNavigateToSuperAdmin}
+              title={`Master Business: ${effectiveName} | Place of Supply: ${effectiveStateName} (${effectiveStateCode}) | GSTIN: ${effectiveGstin} | Sync: ${!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Online & Synchronized'}`}
+              className="hidden sm:flex items-center gap-2 px-2.5 py-1 -my-0.5 rounded-lg bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/60 hover:border-amber-500/40 hover:shadow-[0_0_12px_rgba(245,158,11,0.2)] text-[11px] text-slate-300 hover:text-white transition-all cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-amber-500/30 group"
             >
+              {/* Pulsing Visual Indicator (Green = Online, Yellow = Syncing, Red = Offline) */}
               <span
-                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  !isOnline
-                    ? 'bg-rose-500'
-                    : dataLoading
-                    ? 'bg-amber-400'
-                    : 'bg-emerald-400'
-                }`}
-              />
-              <span
-                className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-                  !isOnline
-                    ? 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]'
-                    : dataLoading
-                    ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]'
-                    : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                }`}
-              />
-            </span>
-            <span className="text-slate-400">Master Supply:</span>
-            <span className="text-slate-200 font-medium">{localStorage.getItem('platform_invoice_state_name') || 'Maharashtra'}</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">{localStorage.getItem('platform_invoice_state_code') || '27'}</span>
-          </div>
-        ) : (
-          <div
-            title={`Workspace Supply: ${company?.stateName || 'Maharashtra'} (${company?.stateCode || '27'}) | Sync: ${!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Online & Synchronized'}`}
-            className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900/60 border border-slate-800/60 text-[11px] text-slate-400"
-          >
-            {/* Pulsing Visual Indicator (Green = Online, Yellow = Syncing, Red = Offline) */}
-            <span
-              className="relative flex h-2 w-2 items-center justify-center shrink-0"
-              aria-label={!isOnline ? 'Offline' : dataLoading ? 'Syncing' : 'Online'}
-            >
-              <span
-                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  !isOnline
-                    ? 'bg-rose-500'
-                    : dataLoading
-                    ? 'bg-amber-400'
-                    : 'bg-emerald-400'
-                }`}
-              />
-              <span
-                className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-                  !isOnline
-                    ? 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]'
-                    : dataLoading
-                    ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]'
-                    : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                }`}
-              />
-            </span>
-            <span>State: <strong className="text-slate-200 font-medium">{company?.stateName || 'Maharashtra'}</strong> <span className="font-mono text-[10px] text-slate-400">({company?.stateCode || '27'})</span></span>
-          </div>
-        )}
+                className="relative flex h-2 w-2 items-center justify-center shrink-0"
+                aria-label={!isOnline ? 'Master Business Data: Offline' : dataLoading ? 'Master Business Data: Syncing' : 'Master Business Data: Online & Synchronized'}
+              >
+                <span
+                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    !isOnline
+                      ? 'bg-rose-500'
+                      : dataLoading
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                  }`}
+                />
+                <span
+                  className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
+                    !isOnline
+                      ? 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]'
+                      : dataLoading
+                      ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]'
+                      : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                  }`}
+                />
+              </span>
+              <span className="text-slate-400">Place of Supply:</span>
+              <span className="text-slate-200 font-medium truncate max-w-[90px] md:max-w-none">
+                {effectiveStateName}
+              </span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-medium">
+                {effectiveStateCode}
+              </span>
+              <span className="text-slate-500 hidden xl:inline text-[10px] truncate max-w-[120px]">
+                ({effectiveName})
+              </span>
+            </button>
+          );
+        })()}
 
         {/* Fullscreen Button */}
         <button
@@ -275,33 +271,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           id="header-refresh-sync-btn"
           onClick={onRefresh}
           title={`Sync books now with Cloud Firestore | Status: ${!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Online & Synchronized'}`}
-          className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-medium flex items-center gap-2 cursor-pointer transition group"
+          className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
         >
-          {/* Small Pulsing Visual Indicator */}
-          <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
-            <span
-              className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                !isOnline
-                  ? 'bg-rose-500'
-                  : dataLoading
-                  ? 'bg-amber-400'
-                  : 'bg-emerald-400'
-              }`}
-            />
-            <span
-              className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-                !isOnline
-                  ? 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]'
-                  : dataLoading
-                  ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]'
-                  : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-              }`}
-            />
-          </span>
-          <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin text-amber-400' : isOnline ? 'text-slate-400 group-hover:text-emerald-400' : 'text-rose-400'}`} />
-          <span className="hidden sm:inline">
-            {!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Sync Books'}
-          </span>
+          <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin text-amber-400' : 'text-slate-400 hover:text-emerald-400'}`} />
+          <span className="hidden sm:inline">{dataLoading ? 'Syncing...' : 'Sync Books'}</span>
         </button>
 
         {/* User Profile Chip & Account Details Menu */}
