@@ -239,6 +239,20 @@ export default function App() {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Initial state for pre-populating a new voucher from another tab
   const [paymentInitialState, setPaymentInitialState] = useState<{
@@ -933,6 +947,7 @@ export default function App() {
           company={company}
           onRefresh={handleManualSync}
           dataLoading={dataLoading}
+          isOnline={isOnline}
           user={user}
           profile={profile}
           activeTab={currentTab}
@@ -1243,9 +1258,40 @@ export default function App() {
                     dialog.toast.info(`Master Business: ${masterBusinessName} | Place of Supply: ${masterBusinessStateName} (${masterBusinessStateCode}) | GSTIN: ${masterBusinessGstin}`);
                   }
                 }}
-                title={`Master Business: ${masterBusinessName} | Place of Supply: ${masterBusinessStateName} (${masterBusinessStateCode}) | GSTIN: ${masterBusinessGstin}${isUserSuperAdmin ? ' - Click to configure Master Business' : ''}`}
-                className="flex items-center gap-1.5 px-2 py-0.5 -my-0.5 rounded-lg border border-transparent hover:border-amber-500/40 hover:bg-amber-500/10 hover:shadow-[0_0_14px_rgba(245,158,11,0.25)] hover:scale-[1.02] active:scale-[0.98] text-slate-300 hover:text-white transition-all duration-200 transform cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+                title={`Master Business: ${masterBusinessName} | Place of Supply: ${masterBusinessStateName} (${masterBusinessStateCode}) | GSTIN: ${masterBusinessGstin} | Sync: ${!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Online & Synchronized'}${isUserSuperAdmin ? ' - Click to configure Master Business' : ''}`}
+                className="flex items-center gap-2 px-2 py-0.5 -my-0.5 rounded-lg border border-transparent hover:border-amber-500/40 hover:bg-amber-500/10 hover:shadow-[0_0_14px_rgba(245,158,11,0.25)] hover:scale-[1.02] active:scale-[0.98] text-slate-300 hover:text-white transition-all duration-200 transform cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-amber-500/30 group"
               >
+                {/* Small Pulsing Visual Indicator for Master Business Sync State */}
+                <span
+                  className="relative flex h-2 w-2 items-center justify-center shrink-0"
+                  aria-label={
+                    !isOnline
+                      ? 'Master Business Data: Offline'
+                      : dataLoading
+                      ? 'Master Business Data: Syncing'
+                      : 'Master Business Data: Online & Synchronized'
+                  }
+                >
+                  <span
+                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                      !isOnline
+                        ? 'bg-rose-500'
+                        : dataLoading
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-400'
+                    }`}
+                  />
+                  <span
+                    className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
+                      !isOnline
+                        ? 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]'
+                        : dataLoading
+                        ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]'
+                        : 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                    }`}
+                  />
+                </span>
+
                 <span className="text-slate-400">Place of Supply:</span>
                 <span className="text-slate-200 font-medium">
                   {masterBusinessStateName}

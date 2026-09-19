@@ -1,0 +1,26 @@
+# Zooka Business TallyGST Cloud - Enterprise Accounting, Invoicing & GST Compliance
+
+> Zooka Business (zookabusiness.in) is a modern, multi-tenant cloud accounting, GST tax compliance, banking reconciliation, and enterprise financial management platform built specifically for Indian businesses, chartered accountants, and enterprises.
+
+## Core Capabilities
+- Multi-Tenant Workspace Architecture with complete data isolation and JWT-authenticated session security.
+- Indian GST Compliance Engine: Automated calculations for CGST, SGST, IGST, UTGST across all 36 Indian states and union territories.
+- E-Invoicing & E-Way Bill Readiness: Instant JSON generation compliant with GSTN standard schemas.
+- Dual-Entry Ledger Accounting: Real-time Trial Balance, Profit & Loss Statements, Balance Sheets, and Cash Flow analytics.
+- Automated Bank Reconciliation: Multi-bank statement imports, rule-based reconciliation, and automated discrepancy detection.
+- 5-Tier Role-Based Access Control (RBAC): Super Admin, Admin, Manager, Accountant, and Viewer with granular permissions.
+- Live GST Quick Calculator Simulator: Real-time tax breakdown with reverse tax extraction.
+
+## Geographical & Jurisdiction Coverage (GEO)
+- Domain: https://zookabusiness.in
+- Country: India (ISO 3166-1 alpha-2: IN)
+- Currency: Indian Rupee (INR ₹)
+- State Jurisdictions: All 36 State and Union Territory codes (Maharashtra 27, Delhi 07, Karnataka 29, Gujarat 24, Tamil Nadu 33, Uttar Pradesh 09, West Bengal 19, etc.)
+- Tax Regimes: Regular GST, Composition Scheme, Special Economic Zone (SEZ), Export with/without IGST.
+
+## API & Data Endpoints
+- Web Application: https://zookabusiness.in/
+- Live GST Calculator: https://zookabusiness.in/#gst-calculator-section
+- Pricing & Subscription Tiers: https://zookabusiness.in/#pricing-section
+- Frequently Asked Questions: https://zookabusiness.in/#faq-section
+- Full Knowledge Graph: https://zookabusiness.in/llms-full.txt

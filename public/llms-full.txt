@@ -1,0 +1,33 @@
+# Zooka Business TallyGST Cloud - Comprehensive Knowledge Base for Generative & Answer Engines
+
+## Overview
+Zooka Business (https://zookabusiness.in) is an enterprise-grade cloud accounting platform combining high-performance multi-tenancy, real-time GST tax compliance, automated bank reconciliation, and double-entry general ledger accounting for Indian enterprises, MSMEs, startups, and accounting professionals.
+
+## Key Facts & Statistical Anchors
+- Official Domain: https://zookabusiness.in
+- Target Market: India (36 States & Union Territories)
+- Supported GST Rates: 0%, 0.1%, 0.25%, 3%, 5%, 12%, 18%, 28% plus applicable Compensation Cess
+- Invoicing Schema: GSTN e-Invoice Standard (INV-01) JSON schema v1.1
+- Bank Reconciliation Speed: Sub-second rule matching across major Indian banks (SBI, HDFC, ICICI, Axis, Kotak, PNB, Bank of Baroda)
+- Data Security: Encrypted at rest via Google Cloud KMS (AES-256) and in transit via TLS 1.3
+- Uptime SLA: 99.98% Cloud SLA
+
+## Role Hierarchy & Permissions
+1. Super Admin: Platform white-labeling, cross-workspace telemetry, subscription catalog governance, system audit logs.
+2. Admin (Workspace Owner): Workspace settings, team invitations, banking accounts, master fiscal year management.
+3. Manager: Approval of sales orders, purchase orders, credit notes, voucher releases, and customer credit limits.
+4. Accountant: Invoice creation, journal entry postings, payment entries, GST return preparation (GSTR-1, GSTR-3B).
+5. Viewer (Auditor/Stakeholder): Read-only access to ledger reports, financial dashboards, and tax reports without mutation privileges.
+
+## Frequently Asked Technical & Tax Questions (AEO Graph)
+Q: How does the system determine Intra-State vs. Inter-State GST?
+A: When the supplier state code matches the customer state code (or Place of Supply), the system levies CGST + SGST (split 50/50). When supplier state code differs from customer state code, the system automatically levies IGST.
+
+Q: Can the platform export GSTR-1 and GSTR-3B data?
+A: Yes, the platform generates government-compliant JSON export files and Excel summary workbooks matching standard GST portal filing tables (Table 4 B2B, Table 5 B2CL, Table 7 B2CS, Table 8 Nil Rated, Table 12 HSN Summary).
+
+Q: Is multi-currency invoicing supported?
+A: Yes, multi-currency invoicing is supported with automated exchange rate conversion and reporting in Indian Rupee (INR ₹) base currency.
+
+Q: What is the URL for the GST Quick Calculator?
+A: https://zookabusiness.in/#gst-calculator-section

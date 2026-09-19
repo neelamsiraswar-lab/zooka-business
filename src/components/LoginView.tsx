@@ -63,6 +63,7 @@ import { getAllHomepageSections, DEFAULT_HOMEPAGE_SECTIONS } from '../db/homepag
 import { HomepageSection, HomepageFaq } from '../types';
 import { getAllHomepageFaqs, DEFAULT_HOMEPAGE_FAQS } from '../db/homepageFaqs';
 import { getPlatformSettings, subscribeToPlatformSettings, PlatformSettings } from '../db/platformSettings';
+import { useSeoAeoGeo } from '../hooks/useSeoAeoGeo';
 
 export const LoginView: React.FC = () => {
   const {
@@ -356,6 +357,24 @@ export const LoginView: React.FC = () => {
       window.removeEventListener('platform_settings_updated', handleBrandingUpdate as EventListener);
     };
   }, []);
+
+  // Synchronize dynamic SEA (Search), AEO (Answer Engine), and GEO (Generative & Regional) metadata
+  useSeoAeoGeo({
+    customConfig: {
+      appName: platformAppName,
+      tagline: platformAppTagline,
+      businessName: platformBusinessName,
+      gstin: platformGstin,
+      stateCode: platformStateCode,
+      stateName: platformStateName,
+      supportPhone: platformSupportPhone,
+      supportEmail: platformSupportEmail,
+      logoUrl: platformAppLogo,
+    },
+    faqs,
+    reviews,
+    plans: availablePlans,
+  });
 
   // Handle Sign In Submit
   const handleSignInSubmit = async (e: React.FormEvent) => {

@@ -58,6 +58,7 @@ import { FeatureBadgeManager } from './FeatureBadgeManager';
 import { CustomerReviewManager } from './CustomerReviewManager';
 import { HomepageFaqManager } from './HomepageFaqManager';
 import { HomepageHeaderManager } from './HomepageHeaderManager';
+import { SeoAeoGeoManager } from './SeoAeoGeoManager';
 
 export function renderSectionIcon(iconName: string, className = 'w-4 h-4') {
   switch (iconName) {
@@ -128,7 +129,8 @@ export type HomepageGovernanceSubTab =
   | 'pillars'
   | 'badges'
   | 'reviews'
-  | 'faqs';
+  | 'faqs'
+  | 'seo';
 
 interface HomepageCustomizationManagerProps {
   sections: HomepageSection[];
@@ -475,6 +477,16 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
       activeCount: internalFaqs.filter((f) => f.isActive !== false).length,
       color: 'text-blue-400',
     },
+    {
+      id: 'seo' as const,
+      label: 'SEA • AEO • GEO Governance Engine',
+      shortLabel: 'SEA / AEO / GEO Engine',
+      icon: Sparkles,
+      count: 100,
+      activeCount: 100,
+      badgeText: 'Active',
+      color: 'text-indigo-400',
+    },
   ];
 
   return (
@@ -505,7 +517,7 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
                       : 'bg-slate-800 text-slate-400'
                   }`}
                 >
-                  {tab.activeCount}/{tab.count}
+                  {'badgeText' in tab && tab.badgeText ? tab.badgeText : `${tab.activeCount}/${tab.count}`}
                 </span>
               </button>
             );
@@ -629,7 +641,7 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
               <button
                 type="button"
                 onClick={() => setActiveSubTab('faqs')}
-                className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-blue-500/40 text-left transition group cursor-pointer col-span-2 sm:col-span-1"
+                className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-blue-500/40 text-left transition group cursor-pointer"
               >
                 <div className="text-[11px] text-blue-400 font-medium flex items-center justify-between">
                   <span>Frequently Asked Qs</span>
@@ -637,6 +649,20 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
                 </div>
                 <div className="text-base font-bold text-white mt-1">
                   {internalFaqs.length} Q&amp;A Entries
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('seo')}
+                className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-indigo-500/40 text-left transition group cursor-pointer col-span-2 sm:col-span-1"
+              >
+                <div className="text-[11px] text-indigo-400 font-medium flex items-center justify-between">
+                  <span>SEA • AEO • GEO</span>
+                  <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition" />
+                </div>
+                <div className="text-base font-bold text-white mt-1">
+                  AI &amp; Search Engine
                 </div>
               </button>
             </div>
@@ -1283,6 +1309,29 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
           <HomepageFaqManager
             faqs={internalFaqs}
             onRefresh={handleRefreshFaqs}
+          />
+        </div>
+      )}
+
+      {/* ---------------- 6. SEA • AEO • GEO GOVERNANCE ENGINE (SUB TAB) ---------------- */}
+      {activeSubTab === 'seo' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <span className="text-emerald-400 font-semibold">Homepage Governance</span>
+              <span>/</span>
+              <span className="text-white font-bold">SEA • AEO • GEO Governance Engine</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('layout')}
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition cursor-pointer"
+            >
+              <span>← Back to Layout Overview</span>
+            </button>
+          </div>
+          <SeoAeoGeoManager
+            onNavigateToLandingPage={onNavigateToLandingPage}
           />
         </div>
       )}
