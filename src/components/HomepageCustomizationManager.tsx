@@ -57,6 +57,7 @@ import { ArchitecturalPillarManager } from './ArchitecturalPillarManager';
 import { FeatureBadgeManager } from './FeatureBadgeManager';
 import { CustomerReviewManager } from './CustomerReviewManager';
 import { HomepageFaqManager } from './HomepageFaqManager';
+import { HomepageHeaderManager } from './HomepageHeaderManager';
 
 export function renderSectionIcon(iconName: string, className = 'w-4 h-4') {
   switch (iconName) {
@@ -123,6 +124,7 @@ const CATEGORY_STYLES: Record<
 
 export type HomepageGovernanceSubTab =
   | 'layout'
+  | 'header'
   | 'pillars'
   | 'badges'
   | 'reviews'
@@ -429,6 +431,15 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
       color: 'text-emerald-400',
     },
     {
+      id: 'header' as const,
+      label: 'Landing Page Header & Business Details',
+      shortLabel: 'Header & Business Info',
+      icon: Sliders,
+      count: 1,
+      activeCount: 1,
+      color: 'text-teal-400',
+    },
+    {
       id: 'pillars' as const,
       label: 'Core Architectural Pillars',
       shortLabel: 'Architectural Pillars',
@@ -558,7 +569,21 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
             </div>
 
             {/* Quick Governance Links Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-800/80">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-6 pt-5 border-t border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('header')}
+                className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-teal-500/40 text-left transition group cursor-pointer"
+              >
+                <div className="text-[11px] text-teal-400 font-medium flex items-center justify-between">
+                  <span>Header &amp; Business</span>
+                  <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition" />
+                </div>
+                <div className="text-base font-bold text-white mt-1">
+                  Branding &amp; GSTIN
+                </div>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setActiveSubTab('pillars')}
@@ -604,7 +629,7 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
               <button
                 type="button"
                 onClick={() => setActiveSubTab('faqs')}
-                className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-blue-500/40 text-left transition group cursor-pointer"
+                className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/60 hover:border-blue-500/40 text-left transition group cursor-pointer col-span-2 sm:col-span-1"
               >
                 <div className="text-[11px] text-blue-400 font-medium flex items-center justify-between">
                   <span>Frequently Asked Qs</span>
@@ -1143,7 +1168,30 @@ export const HomepageCustomizationManager: React.FC<HomepageCustomizationManager
         </div>
       )}
 
-      {/* ---------------- 2. CORE ARCHITECTURAL PILLARS (SUB TAB) ---------------- */}
+      {/* ---------------- 2. LANDING PAGE HEADER & BUSINESS DETAILS (SUB TAB) ---------------- */}
+      {activeSubTab === 'header' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <span className="text-emerald-400 font-semibold">Homepage Governance</span>
+              <span>/</span>
+              <span className="text-white font-bold">Landing Page Header &amp; Business Details</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('layout')}
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition cursor-pointer"
+            >
+              <span>← Back to Layout Overview</span>
+            </button>
+          </div>
+          <HomepageHeaderManager
+            onNavigateToLandingPage={onNavigateToLandingPage}
+          />
+        </div>
+      )}
+
+      {/* ---------------- 3. CORE ARCHITECTURAL PILLARS (SUB TAB) ---------------- */}
       {activeSubTab === 'pillars' && (
         <div className="space-y-4 animate-in fade-in duration-150">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">

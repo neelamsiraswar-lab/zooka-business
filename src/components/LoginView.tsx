@@ -36,6 +36,9 @@ import {
   Check,
   Clock,
   Fingerprint,
+  PhoneCall,
+  Phone,
+  MapPin,
 } from 'lucide-react';
 
 import { createWorkspace } from '../db/workspaces';
@@ -59,6 +62,7 @@ import { renderFeatureBadgeIcon, BADGE_COLOR_THEMES } from './FeatureBadgeManage
 import { getAllHomepageSections, DEFAULT_HOMEPAGE_SECTIONS } from '../db/homepageSections';
 import { HomepageSection, HomepageFaq } from '../types';
 import { getAllHomepageFaqs, DEFAULT_HOMEPAGE_FAQS } from '../db/homepageFaqs';
+import { getPlatformSettings, subscribeToPlatformSettings, PlatformSettings } from '../db/platformSettings';
 
 export const LoginView: React.FC = () => {
   const {
@@ -111,10 +115,19 @@ export const LoginView: React.FC = () => {
   // Active FAQ Accordion State
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
-  // Platform White-Label Branding
-  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Apex TallyGST');
-  const [platformAppTagline, setPlatformAppTagline] = useState(() => localStorage.getItem('platform_app_tagline') || 'Multi-Tenant Accounting & GST Compliance');
+  // Platform White-Label Branding & Master Business Details
+  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Apex TallyGST Cloud');
+  const [platformAppTagline, setPlatformAppTagline] = useState(() => localStorage.getItem('platform_app_tagline') || 'Enterprise GST Billing, Banking Reconciliation & Cloud Accounting Platform');
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
+  const [platformBusinessName, setPlatformBusinessName] = useState(() => localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+  const [platformGstin, setPlatformGstin] = useState(() => localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
+  const [platformStateName, setPlatformStateName] = useState(() => localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
+  const [platformStateCode, setPlatformStateCode] = useState(() => localStorage.getItem('platform_invoice_state_code') || '27');
+  const [platformSupportPhone, setPlatformSupportPhone] = useState(() => localStorage.getItem('platform_support_phone') || '+91 98201 23456');
+  const [platformSupportEmail, setPlatformSupportEmail] = useState(() => localStorage.getItem('platform_support_email') || 'nawarkuldeep@gmail.com');
+  const [platformHeaderBadge, setPlatformHeaderBadge] = useState(() => localStorage.getItem('platform_header_badge') || 'Enterprise Cloud');
+  const [headerShowContact, setHeaderShowContact] = useState(() => localStorage.getItem('platform_header_show_contact') !== 'false');
+  const [headerShowGstin, setHeaderShowGstin] = useState(() => localStorage.getItem('platform_header_show_gstin') !== 'false');
   const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
 
   // Load live subscription plans from Super Admin Firestore Catalog
@@ -262,14 +275,86 @@ export const LoginView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const handleBrandingUpdate = () => {
-      setPlatformAppName(localStorage.getItem('platform_app_name') || 'Apex TallyGST');
-      setPlatformAppTagline(localStorage.getItem('platform_app_tagline') || 'Multi-Tenant Accounting & GST Compliance');
+    // Initial fetch directly from Cloud Firestore
+    getPlatformSettings()
+      .then((settings) => {
+        if (settings) {
+          if (settings.appName) setPlatformAppName(settings.appName);
+          if (settings.tagline) setPlatformAppTagline(settings.tagline);
+          if (settings.appLogoUrl !== undefined) setPlatformAppLogo(settings.appLogoUrl);
+          if (settings.invoiceBusinessName) setPlatformBusinessName(settings.invoiceBusinessName);
+          if (settings.invoiceGstin) setPlatformGstin(settings.invoiceGstin);
+          if (settings.invoiceStateName) setPlatformStateName(settings.invoiceStateName);
+          if (settings.invoiceStateCode) setPlatformStateCode(settings.invoiceStateCode);
+          if (settings.supportPhone) setPlatformSupportPhone(settings.supportPhone);
+          if (settings.supportEmail) setPlatformSupportEmail(settings.supportEmail);
+          if (settings.headerBadgeText) setPlatformHeaderBadge(settings.headerBadgeText);
+          if (settings.footerCopyright) setPlatformFooterCopyright(settings.footerCopyright);
+          if (settings.headerShowContact !== undefined) setHeaderShowContact(settings.headerShowContact);
+          if (settings.headerShowGstin !== undefined) setHeaderShowGstin(settings.headerShowGstin);
+        }
+      })
+      .catch((err) => console.warn('Platform settings fetch error:', err));
+
+    // Real-time Firestore snapshot subscription
+    const unsubscribe = subscribeToPlatformSettings((settings) => {
+      if (settings) {
+        if (settings.appName) setPlatformAppName(settings.appName);
+        if (settings.tagline) setPlatformAppTagline(settings.tagline);
+        if (settings.appLogoUrl !== undefined) setPlatformAppLogo(settings.appLogoUrl);
+        if (settings.invoiceBusinessName) setPlatformBusinessName(settings.invoiceBusinessName);
+        if (settings.invoiceGstin) setPlatformGstin(settings.invoiceGstin);
+        if (settings.invoiceStateName) setPlatformStateName(settings.invoiceStateName);
+        if (settings.invoiceStateCode) setPlatformStateCode(settings.invoiceStateCode);
+        if (settings.supportPhone) setPlatformSupportPhone(settings.supportPhone);
+        if (settings.supportEmail) setPlatformSupportEmail(settings.supportEmail);
+        if (settings.headerBadgeText) setPlatformHeaderBadge(settings.headerBadgeText);
+        if (settings.footerCopyright) setPlatformFooterCopyright(settings.footerCopyright);
+        if (settings.headerShowContact !== undefined) setHeaderShowContact(settings.headerShowContact);
+        if (settings.headerShowGstin !== undefined) setHeaderShowGstin(settings.headerShowGstin);
+      }
+    });
+
+    const handleBrandingUpdate = (e?: Event) => {
+      const customDetail = (e as CustomEvent)?.detail as PlatformSettings | undefined;
+      if (customDetail) {
+        if (customDetail.appName) setPlatformAppName(customDetail.appName);
+        if (customDetail.tagline) setPlatformAppTagline(customDetail.tagline);
+        if (customDetail.appLogoUrl !== undefined) setPlatformAppLogo(customDetail.appLogoUrl);
+        if (customDetail.invoiceBusinessName) setPlatformBusinessName(customDetail.invoiceBusinessName);
+        if (customDetail.invoiceGstin) setPlatformGstin(customDetail.invoiceGstin);
+        if (customDetail.invoiceStateName) setPlatformStateName(customDetail.invoiceStateName);
+        if (customDetail.invoiceStateCode) setPlatformStateCode(customDetail.invoiceStateCode);
+        if (customDetail.supportPhone) setPlatformSupportPhone(customDetail.supportPhone);
+        if (customDetail.supportEmail) setPlatformSupportEmail(customDetail.supportEmail);
+        if (customDetail.headerBadgeText) setPlatformHeaderBadge(customDetail.headerBadgeText);
+        if (customDetail.footerCopyright) setPlatformFooterCopyright(customDetail.footerCopyright);
+        if (customDetail.headerShowContact !== undefined) setHeaderShowContact(customDetail.headerShowContact);
+        if (customDetail.headerShowGstin !== undefined) setHeaderShowGstin(customDetail.headerShowGstin);
+        return;
+      }
+      setPlatformAppName(localStorage.getItem('platform_app_name') || 'Apex TallyGST Cloud');
+      setPlatformAppTagline(localStorage.getItem('platform_app_tagline') || 'Enterprise GST Billing, Banking Reconciliation & Cloud Accounting Platform');
       setPlatformAppLogo(localStorage.getItem('platform_app_logo') || '');
+      setPlatformBusinessName(localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+      setPlatformGstin(localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
+      setPlatformStateName(localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
+      setPlatformStateCode(localStorage.getItem('platform_invoice_state_code') || '27');
+      setPlatformSupportPhone(localStorage.getItem('platform_support_phone') || '+91 98201 23456');
+      setPlatformSupportEmail(localStorage.getItem('platform_support_email') || 'nawarkuldeep@gmail.com');
+      setPlatformHeaderBadge(localStorage.getItem('platform_header_badge') || 'Enterprise Cloud');
+      setHeaderShowContact(localStorage.getItem('platform_header_show_contact') !== 'false');
+      setHeaderShowGstin(localStorage.getItem('platform_header_show_gstin') !== 'false');
       setPlatformFooterCopyright(localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
     };
+
     window.addEventListener('platform_branding_updated', handleBrandingUpdate);
-    return () => window.removeEventListener('platform_branding_updated', handleBrandingUpdate);
+    window.addEventListener('platform_settings_updated', handleBrandingUpdate as EventListener);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('platform_branding_updated', handleBrandingUpdate);
+      window.removeEventListener('platform_settings_updated', handleBrandingUpdate as EventListener);
+    };
   }, []);
 
   // Handle Sign In Submit
@@ -393,35 +478,76 @@ export const LoginView: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white relative">
       {/* Top Navigation Bar */}
       <header className="px-4 sm:px-6 py-3.5 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md max-w-7xl mx-auto w-full flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           {platformAppLogo ? (
             <img
               src={platformAppLogo}
               alt="Logo"
               referrerPolicy="no-referrer"
-              className="w-9 h-9 rounded-xl object-contain bg-slate-900 border border-slate-800 p-1 shadow-sm"
+              className="w-9 h-9 rounded-xl object-contain bg-slate-900 border border-slate-800 p-1 shadow-sm shrink-0"
             />
           ) : (
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 shadow-sm font-bold">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 shadow-sm font-bold shrink-0">
               <Building2 className="w-5 h-5 text-slate-950" />
             </div>
           )}
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-base tracking-tight text-white">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-base tracking-tight text-white truncate max-w-[200px] sm:max-w-xs">
                 {platformAppName}
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider font-semibold">
-                Enterprise Cloud
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider font-semibold whitespace-nowrap">
+                {platformHeaderBadge || 'Enterprise Cloud'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-none mt-0.5">{platformAppTagline}</p>
+            <div className="flex items-center gap-2 text-[11px] text-slate-400 leading-none mt-0.5">
+              <p className="truncate max-w-[200px] sm:max-w-md">{platformAppTagline}</p>
+              {platformBusinessName && (
+                <span className="hidden xl:inline-flex items-center gap-1 text-[10px] text-slate-500 border-l border-slate-800 pl-2 whitespace-nowrap">
+                  <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                  <span className="truncate max-w-[150px]">{platformBusinessName}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Navigation jump links & Actions */}
-        <div className="flex items-center gap-2 sm:gap-4">
-          <nav className="hidden md:flex items-center gap-4 text-xs text-slate-400">
+        {/* Business Contact Details & Navigation links & Actions */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Desktop Business Quick Contact & GSTIN Badge */}
+          {headerShowContact && (platformGstin || platformSupportPhone || platformSupportEmail) && (
+            <div className="hidden lg:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shadow-sm">
+              {headerShowGstin && platformGstin && (
+                <div className="flex items-center gap-1 font-mono text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20" title={`Registered GSTIN: ${platformGstin} (${platformStateName})`}>
+                  <span className="text-slate-400 font-sans font-bold text-[9px] uppercase">GSTIN</span>
+                  <span className="font-bold">{platformGstin}</span>
+                </div>
+              )}
+              {platformSupportPhone && (
+                <a
+                  href={`tel:${platformSupportPhone.replace(/[^0-9+]/g, '')}`}
+                  className="flex items-center gap-1 text-slate-300 hover:text-white transition"
+                  title="Official Support Phone"
+                >
+                  <PhoneCall className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">{platformSupportPhone}</span>
+                </a>
+              )}
+              {platformSupportEmail && (
+                <a
+                  href={`mailto:${platformSupportEmail}`}
+                  className="hidden xl:flex items-center gap-1 text-slate-400 hover:text-emerald-300 transition"
+                  title="Official Support Email"
+                >
+                  <Mail className="w-3 h-3 text-slate-500 shrink-0" />
+                  <span className="truncate max-w-[160px]">{platformSupportEmail}</span>
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Navigation jump links */}
+          <nav className="hidden md:flex items-center gap-3.5 text-xs text-slate-400">
             {homepageSections.some((s) => ['pillars', 'features_pillars', 'features'].includes(s.key) && s.isVisible) && (
               <a href="#features-section" className="hover:text-white transition">Features</a>
             )}
@@ -451,10 +577,10 @@ export const LoginView: React.FC = () => {
             type="button"
             id="btn-header-super-admin-login"
             onClick={() => setShowSuperAdminModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-semibold transition cursor-pointer shadow-sm active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 text-xs font-semibold transition cursor-pointer shadow-sm active:scale-95 whitespace-nowrap"
             title="Access Super Administrator Console"
           >
-            <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span>Super Admin</span>
           </button>
         </div>
