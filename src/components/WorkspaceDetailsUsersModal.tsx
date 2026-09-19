@@ -588,161 +588,294 @@ export const WorkspaceDetailsUsersModal: React.FC<WorkspaceDetailsUsersModalProp
                     </p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-950 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                          <th className="py-3 px-4">User & Contact</th>
-                          <th className="py-3 px-3">Role & Permissions</th>
-                          <th className="py-3 px-3">Status</th>
-                          <th className="py-3 px-3">Enrolled / Added</th>
-                          <th className="py-3 px-3 text-center">Credentials</th>
-                          <th className="py-3 px-4 text-right">Super Admin Governance</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60">
-                        {filteredUsers.map((u) => {
-                          const isOwner =
-                            (u.email || '').toLowerCase().trim() ===
-                            (workspace.ownerEmail || '').toLowerCase().trim();
-                          
-                          const roleMeta = ROLE_CONFIG[u.role] || {
-                            title: u.role,
-                            badge: u.role,
-                            bgBadge: 'bg-slate-800',
-                            textBadge: 'text-slate-300',
-                            borderBadge: 'border-slate-700',
-                          };
+                  <>
+                    {/* Desktop Responsive Table */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-950 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                            <th className="py-3 px-4">User & Contact</th>
+                            <th className="py-3 px-3">Role & Permissions</th>
+                            <th className="py-3 px-3">Status</th>
+                            <th className="py-3 px-3">Enrolled / Added</th>
+                            <th className="py-3 px-3 text-center">Credentials</th>
+                            <th className="py-3 px-4 text-right">Super Admin Governance</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {filteredUsers.map((u) => {
+                            const isOwner =
+                              (u.email || '').toLowerCase().trim() ===
+                              (workspace.ownerEmail || '').toLowerCase().trim();
+                            
+                            const roleMeta = ROLE_CONFIG[u.role] || {
+                              title: u.role,
+                              badge: u.role,
+                              bgBadge: 'bg-slate-800',
+                              textBadge: 'text-slate-300',
+                              borderBadge: 'border-slate-700',
+                            };
 
-                          return (
-                            <tr key={u.id} className="hover:bg-slate-800/30 transition">
-                              {/* Avatar + Name + Email */}
-                              <td className="py-3.5 px-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="relative">
-                                    {u.avatarUrl ? (
-                                      <img
-                                        src={u.avatarUrl}
-                                        alt={u.displayName}
-                                        className="w-9 h-9 rounded-xl object-cover border border-slate-700"
-                                      />
-                                    ) : (
-                                      <div className="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-bold flex items-center justify-center text-xs">
-                                        {(u.displayName || u.email || 'U').substring(0, 2).toUpperCase()}
-                                      </div>
-                                    )}
-                                    {isOwner && (
-                                      <span
-                                        title="Workspace Primary Owner"
-                                        className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[9px] font-black flex items-center justify-center border-2 border-slate-900"
-                                      >
-                                        ★
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div className="min-w-0">
-                                    <div className="font-bold text-white flex items-center gap-1.5">
-                                      <span className="truncate">{u.displayName || 'Unnamed User'}</span>
+                            return (
+                              <tr key={u.id} className="hover:bg-slate-800/30 transition">
+                                {/* Avatar + Name + Email */}
+                                <td className="py-3.5 px-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="relative">
+                                      {u.avatarUrl ? (
+                                        <img
+                                          src={u.avatarUrl}
+                                          alt={u.displayName}
+                                          className="w-9 h-9 rounded-xl object-cover border border-slate-700"
+                                        />
+                                      ) : (
+                                        <div className="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-bold flex items-center justify-center text-xs">
+                                          {(u.displayName || u.email || 'U').substring(0, 2).toUpperCase()}
+                                        </div>
+                                      )}
                                       {isOwner && (
-                                        <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold uppercase">
-                                          Owner
+                                        <span
+                                          title="Workspace Primary Owner"
+                                          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[9px] font-black flex items-center justify-center border-2 border-slate-900"
+                                        >
+                                          ★
                                         </span>
                                       )}
                                     </div>
-                                    <div className="text-slate-400 text-xs font-mono truncate">{u.email}</div>
-                                    <div className="text-[10px] text-slate-500 font-mono">UID: {u.uid?.slice(0, 10) || `user-${u.id}`}</div>
+
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-white flex items-center gap-1.5">
+                                        <span className="truncate">{u.displayName || 'Unnamed User'}</span>
+                                        {isOwner && (
+                                          <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold uppercase">
+                                            Owner
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-slate-400 text-xs font-mono truncate">{u.email}</div>
+                                      <div className="text-[10px] text-slate-500 font-mono">UID: {u.uid?.slice(0, 10) || `user-${u.id}`}</div>
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
+                                </td>
 
-                              {/* Role */}
-                              <td className="py-3.5 px-3">
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border ${roleMeta.bgBadge} ${roleMeta.textBadge} ${roleMeta.borderBadge}`}
-                                >
-                                  <Shield className="w-3 h-3" />
-                                  <span>{roleMeta.title || u.role}</span>
-                                </span>
-                              </td>
-
-                              {/* Status */}
-                              <td className="py-3.5 px-3">
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                                    u.status === 'suspended'
-                                      ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
-                                      : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                                  }`}
-                                >
+                                {/* Role */}
+                                <td className="py-3.5 px-3">
                                   <span
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                      u.status === 'suspended' ? 'bg-rose-400' : 'bg-emerald-400'
-                                    }`}
-                                  />
-                                  <span className="capitalize">{u.status || 'Active'}</span>
-                                </span>
-                              </td>
+                                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border ${roleMeta.bgBadge} ${roleMeta.textBadge} ${roleMeta.borderBadge}`}
+                                  >
+                                    <Shield className="w-3 h-3" />
+                                    <span>{roleMeta.title || u.role}</span>
+                                  </span>
+                                </td>
 
-                              {/* Joined Date */}
-                              <td className="py-3.5 px-3 text-slate-400 text-[11px] whitespace-nowrap">
+                                {/* Status */}
+                                <td className="py-3.5 px-3">
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                      u.status === 'suspended'
+                                        ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                                        : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full ${
+                                        u.status === 'suspended' ? 'bg-rose-400' : 'bg-emerald-400'
+                                      }`}
+                                    />
+                                    <span className="capitalize">{u.status || 'Active'}</span>
+                                  </span>
+                                </td>
+
+                                {/* Joined Date */}
+                                <td className="py-3.5 px-3 text-slate-400 text-[11px] whitespace-nowrap">
+                                  {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  }) : 'Platform Launch'}
+                                </td>
+
+                                {/* Credentials Status */}
+                                <td className="py-3.5 px-3 text-center">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-medium text-slate-300 font-mono">
+                                    <Lock className="w-2.5 h-2.5 text-indigo-400" />
+                                    <span>Password Set</span>
+                                  </span>
+                                </td>
+
+                                {/* Super Admin Action Buttons */}
+                                <td className="py-3.5 px-4 text-right">
+                                  <div className="inline-flex items-center gap-1.5 justify-end">
+                                    {/* Right to Change Password */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenPasswordModal(u)}
+                                      title="Right to Reset / Change User Password"
+                                      className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shadow-sm hover:scale-102"
+                                    >
+                                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                                      <span>Change Password</span>
+                                    </button>
+
+                                    {/* Edit Profile & Role */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditUser(u)}
+                                      title="Edit User Profile & Role"
+                                      className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Remove / Unlink from Workspace */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setUserToRemove(u)}
+                                      title="Remove User from this Workspace"
+                                      className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 transition cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Responsive Cards View */}
+                    <div className="block md:hidden divide-y divide-slate-800/60">
+                      {filteredUsers.map((u) => {
+                        const isOwner =
+                          (u.email || '').toLowerCase().trim() ===
+                          (workspace.ownerEmail || '').toLowerCase().trim();
+                        
+                        const roleMeta = ROLE_CONFIG[u.role] || {
+                          title: u.role,
+                          badge: u.role,
+                          bgBadge: 'bg-slate-800',
+                          textBadge: 'text-slate-300',
+                          borderBadge: 'border-slate-700',
+                        };
+
+                        return (
+                          <div key={u.id} className="p-4 space-y-3.5 hover:bg-slate-800/20 transition">
+                            {/* User Header: Avatar, Name, Owner Badge, Status */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="relative shrink-0">
+                                  {u.avatarUrl ? (
+                                    <img
+                                      src={u.avatarUrl}
+                                      alt={u.displayName}
+                                      className="w-10 h-10 rounded-xl object-cover border border-slate-700"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-bold flex items-center justify-center text-xs">
+                                      {(u.displayName || u.email || 'U').substring(0, 2).toUpperCase()}
+                                    </div>
+                                  )}
+                                  {isOwner && (
+                                    <span
+                                      title="Workspace Primary Owner"
+                                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[9px] font-black flex items-center justify-center border-2 border-slate-900"
+                                    >
+                                      ★
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="min-w-0">
+                                  <div className="font-bold text-white text-sm flex items-center gap-1.5 flex-wrap">
+                                    <span className="truncate">{u.displayName || 'Unnamed User'}</span>
+                                    {isOwner && (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold uppercase">
+                                        Owner
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-slate-400 text-xs font-mono truncate">{u.email}</div>
+                                </div>
+                              </div>
+
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
+                                  u.status === 'suspended'
+                                    ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                                    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                }`}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    u.status === 'suspended' ? 'bg-rose-400' : 'bg-emerald-400'
+                                  }`}
+                                />
+                                <span className="capitalize">{u.status || 'Active'}</span>
+                              </span>
+                            </div>
+
+                            {/* User Badges & Metadata */}
+                            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${roleMeta.bgBadge} ${roleMeta.textBadge} ${roleMeta.borderBadge}`}
+                              >
+                                <Shield className="w-3 h-3" />
+                                <span>{roleMeta.title || u.role}</span>
+                              </span>
+
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-medium text-slate-300 font-mono">
+                                <Lock className="w-2.5 h-2.5 text-indigo-400" />
+                                <span>Password Set</span>
+                              </span>
+
+                              <span className="text-[10px] text-slate-500 ml-auto font-mono">
                                 {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN', {
                                   day: '2-digit',
                                   month: 'short',
                                   year: 'numeric',
-                                }) : 'Platform Launch'}
-                              </td>
+                                }) : 'Enrolled'}
+                              </span>
+                            </div>
 
-                              {/* Credentials Status */}
-                              <td className="py-3.5 px-3 text-center">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-medium text-slate-300 font-mono">
-                                  <Lock className="w-2.5 h-2.5 text-indigo-400" />
-                                  <span>Password Set</span>
-                                </span>
-                              </td>
+                            {/* Mobile Action Buttons: Large touch-friendly controls */}
+                            <div className="pt-2 border-t border-slate-800/60 flex items-center gap-2">
+                              {/* Change Password Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPasswordModal(u)}
+                                className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500/15 to-amber-600/15 hover:from-amber-500/25 hover:to-amber-600/25 text-amber-300 border border-amber-500/30 text-xs font-bold inline-flex items-center justify-center gap-2 transition cursor-pointer shadow-sm active:scale-95"
+                              >
+                                <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
+                                <span>Change Password</span>
+                              </button>
 
-                              {/* Super Admin Action Buttons */}
-                              <td className="py-3.5 px-4 text-right">
-                                <div className="inline-flex items-center gap-1.5 justify-end">
-                                  
-                                  {/* Right to Change Password */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenPasswordModal(u)}
-                                    title="Right to Reset / Change User Password"
-                                    className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer shadow-sm hover:scale-102"
-                                  >
-                                    <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                                    <span>Change Password</span>
-                                  </button>
+                              {/* Edit User */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditUser(u)}
+                                title="Edit User Profile & Role"
+                                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
 
-                                  {/* Edit Profile & Role */}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditUser(u)}
-                                    title="Edit User Profile & Role"
-                                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer"
-                                  >
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </button>
-
-                                  {/* Remove / Unlink from Workspace */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setUserToRemove(u)}
-                                    title="Remove User from this Workspace"
-                                    className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 transition cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                              {/* Remove User */}
+                              <button
+                                type="button"
+                                onClick={() => setUserToRemove(u)}
+                                title="Remove User from this Workspace"
+                                className="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             </div>

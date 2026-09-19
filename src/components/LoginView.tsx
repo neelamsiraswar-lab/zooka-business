@@ -43,9 +43,18 @@ import { INDIAN_STATES } from '../data/indianStates';
 import { SuperAdminSecurityGateModal } from './SuperAdminSecurityGateModal';
 import { RoleMatrixModal } from './RoleMatrixModal';
 import { GstQuickCalculatorWidget } from './GstQuickCalculatorWidget';
-import { getRememberedCredentials, getStoredSession, getDeviceSessionCountdown, SessionCountdownInfo } from '../lib/sessionSecurity';
+import { getRememberedCredentials } from '../lib/sessionSecurity';
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, formatINR } from '../data/subscriptionPlans';
+import { ArchitecturalPillar, CustomerReview } from '../types';
+import { getAllArchitecturalPillars } from '../db/architecturalPillars';
+import {
+  ArchitecturalPillarManager,
+  COLOR_THEMES,
+  renderPillarIcon,
+} from './ArchitecturalPillarManager';
+import { getAllCustomerReviews } from '../db/customerReviews';
+import { CustomerReviewsSection } from './CustomerReviewsSection';
 
 export const LoginView: React.FC = () => {
   const {
@@ -63,24 +72,7 @@ export const LoginView: React.FC = () => {
   const [email, setEmail] = useState(() => remembered.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(() => (remembered.isEnabled !== undefined ? remembered.isEnabled : true));
-
-  // Device Countdown Telemetry State
-  const [deviceCountdown, setDeviceCountdown] = useState<SessionCountdownInfo | null>(null);
-
-  useEffect(() => {
-    const updateCountdown = () => {
-      const stored = getStoredSession();
-      if (stored && stored.rememberMe) {
-        setDeviceCountdown(getDeviceSessionCountdown(stored));
-      } else {
-        setDeviceCountdown(null);
-      }
-    };
-    updateCountdown();
-    const timer = setInterval(updateCountdown, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const [rememberMe, setRememberMe] = useState(() => remembered.isEnabled);
 
   // Modal States
   const [showSuperAdminModal, setShowSuperAdminModal] = useState(false);
@@ -116,10 +108,10 @@ export const LoginView: React.FC = () => {
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Platform White-Label Branding
-  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Zooka Business');
+  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Apex TallyGST');
   const [platformAppTagline, setPlatformAppTagline] = useState(() => localStorage.getItem('platform_app_tagline') || 'Multi-Tenant Accounting & GST Compliance');
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
-  const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Zooka Business Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
+  const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
 
   // Load live subscription plans from Super Admin Firestore Catalog
   const loadPlans = async () => {
@@ -149,6 +141,51 @@ export const LoginView: React.FC = () => {
     const handlePlansUpdate = () => loadPlans();
     window.addEventListener('subscription_plans_updated', handlePlansUpdate);
     return () => window.removeEventListener('subscription_plans_updated', handlePlansUpdate);
+  }, []);
+
+  const [pillars, setPillars] = useState<ArchitecturalPillar[]>([]);
+  const [pillarsLoading, setPillarsLoading] = useState(false);
+  const [showPillarsManagerModal, setShowPillarsManagerModal] = useState(false);
+
+  const [reviews, setReviews] = useState<CustomerReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  const loadPillars = async () => {
+    setPillarsLoading(true);
+    try {
+      const list = await getAllArchitecturalPillars();
+      setPillars(list || []);
+    } catch (err) {
+      console.error('Failed to load architectural pillars in LoginView:', err);
+    } finally {
+      setPillarsLoading(false);
+    }
+  };
+
+  const loadReviews = async () => {
+    setReviewsLoading(true);
+    try {
+      const list = await getAllCustomerReviews();
+      setReviews(list || []);
+    } catch (err) {
+      console.error('Failed to load customer reviews in LoginView:', err);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPillars();
+    const handlePillarsUpdate = () => loadPillars();
+    window.addEventListener('architectural_pillars_updated', handlePillarsUpdate);
+    return () => window.removeEventListener('architectural_pillars_updated', handlePillarsUpdate);
+  }, []);
+
+  useEffect(() => {
+    loadReviews();
+    const handleReviewsUpdate = () => loadReviews();
+    window.addEventListener('customer_reviews_updated', handleReviewsUpdate);
+    return () => window.removeEventListener('customer_reviews_updated', handleReviewsUpdate);
   }, []);
 
   useEffect(() => {
@@ -281,7 +318,7 @@ export const LoginView: React.FC = () => {
       a: 'Each organization operates in its own isolated Firestore workspace context with distinct company settings, chart of accounts, vouchers, and audit logs. Data is encrypted in transit via TLS 1.3 and partitioned with strict role-based authorization rules.',
     },
     {
-      q: 'Does Zooka Business support automated HSN codes and GST splits?',
+      q: 'Does Apex TallyGST support automated HSN codes and GST splits?',
       a: 'Yes. The system automatically computes Intra-State (CGST + SGST) vs Inter-State (IGST) calculations based on Place of Supply rules, generates compliant e-invoice formats, day books, and prepares real-time GSTR-1, GSTR-3B, and GSTR-2B reconciliations.',
     },
     {
@@ -337,6 +374,7 @@ export const LoginView: React.FC = () => {
               Role Matrix
             </button>
             <a href="#pricing-section" className="hover:text-white transition">Pricing</a>
+            <a href="#reviews-section" className="hover:text-amber-400 transition">Reviews</a>
             <a href="#faq-section" className="hover:text-white transition">FAQs</a>
           </nav>
 
@@ -571,37 +609,22 @@ export const LoginView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Remember Me & Security Status with 24hr Window & Countdown */}
-                  <div className="space-y-2 pt-0.5">
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 text-xs">
-                        <input
-                          type="checkbox"
-                          id="checkbox-auth-remember-me"
-                          checked={rememberMe}
-                          onChange={(e) => setRememberMe(e.target.checked)}
-                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
-                        />
-                        <span className="font-medium">Remember this device (24 Hours)</span>
-                      </label>
-                      <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                        TLS 1.3
-                      </span>
-                    </div>
-
-                    {/* Live countdown of remembered device session if present */}
-                    {deviceCountdown && !deviceCountdown.isExpired && (
-                      <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] text-emerald-300">
-                        <span className="flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                          <span>Active 24h device remember session:</span>
-                        </span>
-                        <span className="font-mono font-bold text-emerald-200">
-                          {deviceCountdown.formattedText}
-                        </span>
-                      </div>
-                    )}
+                  {/* Remember Me & Security Status */}
+                  <div className="flex items-center justify-between pt-0.5">
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 text-xs">
+                      <input
+                        type="checkbox"
+                        id="checkbox-auth-remember-me"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500"
+                      />
+                      <span>Remember this device (30 Days)</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      TLS 1.3
+                    </span>
                   </div>
 
                   {/* Submit Button */}
@@ -695,7 +718,7 @@ export const LoginView: React.FC = () => {
                           required
                           value={signupWorkspaceName}
                           onChange={(e) => setSignupWorkspaceName(e.target.value)}
-                          placeholder="e.g. Zooka Industrial Tech"
+                          placeholder="e.g. Apex Industrial Tech"
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition text-xs"
                         />
                       </div>
@@ -706,7 +729,7 @@ export const LoginView: React.FC = () => {
                           type="text"
                           value={signupBusinessName}
                           onChange={(e) => setSignupBusinessName(e.target.value)}
-                          placeholder="e.g. Zooka Business Pvt Ltd"
+                          placeholder="e.g. Apex Industrial Pvt Ltd"
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition text-xs"
                         />
                       </div>
@@ -879,10 +902,21 @@ export const LoginView: React.FC = () => {
 
         {/* ================= KEY PLATFORM CAPABILITIES ================= */}
         <section id="features-section" className="space-y-6 pt-4 scroll-mt-20">
-          <div className="text-center max-w-2xl mx-auto space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
-              <Layers className="w-3.5 h-3.5" />
-              <span>Core Architectural Pillars</span>
+          <div className="flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-2">
+            <div className="inline-flex items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                <Layers className="w-3.5 h-3.5" />
+                <span>Core Architectural Pillars</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPillarsManagerModal(true)}
+                className="px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer"
+                title="Super Admin: Add, Edit, or Delete Core Architectural Pillars"
+              >
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                <span>Manage Pillars</span>
+              </button>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold text-white">
               Built specifically for India's Statutory Accounting Standards
@@ -892,52 +926,100 @@ export const LoginView: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Feature 1 */}
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                <Receipt className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white">Automated GST Invoicing</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Smart HSN/SAC lookups, dual CGST+SGST vs IGST calculation, reverse-charge management, and printable thermal/A4 formats.
-              </p>
+          {pillarsLoading && pillars.length === 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((n) => (
+                <div key={n} className="p-5 rounded-2xl bg-slate-900/40 border border-slate-800/60 animate-pulse space-y-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-800" />
+                  <div className="h-4 w-3/4 bg-slate-800 rounded" />
+                  <div className="h-3 w-full bg-slate-800/60 rounded" />
+                  <div className="h-3 w-5/6 bg-slate-800/60 rounded" />
+                </div>
+              ))}
             </div>
-
-            {/* Feature 2 */}
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white">Double-Entry Journals</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Real-time Day Book, Balance Sheet, Profit &amp; Loss, and auto-balancing Trial Balance synchronized instantly across books.
-              </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {pillars
+                .filter((p) => p.isActive)
+                .map((pillar) => {
+                  const theme = COLOR_THEMES[pillar.colorTheme] || COLOR_THEMES.emerald;
+                  return (
+                    <div
+                      key={pillar.id}
+                      className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5 flex flex-col justify-between"
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div
+                            className={`w-9 h-9 rounded-xl ${theme.bgIcon} ${theme.borderIcon} ${theme.textIcon} border flex items-center justify-center`}
+                          >
+                            {renderPillarIcon(pillar.icon, 'w-5 h-5')}
+                          </div>
+                          {pillar.badge && (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold border ${theme.badgeBg} ${theme.badgeBorder} ${theme.badgeText}`}
+                            >
+                              {pillar.badge}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-sm font-bold text-white">{pillar.title}</h3>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          {pillar.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
+          )}
+        </section>
 
-            {/* Feature 3 */}
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
-              <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
-                <Landmark className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white">Automated BRS &amp; Banking</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Direct PDF/Excel statement imports with heuristic auto-matching, cheque deposit clearing, and unpresented cheque tracking.
-              </p>
-            </div>
+        {/* ================= ARCHITECTURAL PILLARS GOVERNANCE MODAL ================= */}
+        {showPillarsManagerModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
+            <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 my-8 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                    <Layers className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">
+                      Core Architectural Pillars Management
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Add, edit, reorder, or delete technological pillars displayed on the public landing page.
+                    </p>
+                  </div>
+                </div>
 
-            {/* Feature 4 */}
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 hover:border-slate-700 transition space-y-2.5">
-              <div className="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
-                <ShieldCheck className="w-5 h-5" />
+                <button
+                  type="button"
+                  onClick={() => setShowPillarsManagerModal(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <h3 className="text-sm font-bold text-white">Immutable Audit Trail</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Every modification, deletion, voucher print, and user login is cryptographically timestamped for flawless statutory audits.
-              </p>
+
+              <ArchitecturalPillarManager
+                pillars={pillars}
+                onRefresh={loadPillars}
+              />
+
+              <div className="flex justify-end pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowPillarsManagerModal(false)}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
-        </section>
+        )}
 
         {/* ================= PRICING & SUBSCRIPTION PLANS SECTION ================= */}
         <section id="pricing-section" className="pt-8 border-t border-slate-800/80 space-y-8 scroll-mt-20">
@@ -1100,6 +1182,14 @@ export const LoginView: React.FC = () => {
               );
             })}
           </div>
+        </section>
+
+        {/* ================= VERIFIED CUSTOMER REVIEWS & SOCIAL PROOF SECTION ================= */}
+        <section id="reviews-section" className="pt-8 border-t border-slate-800/80 scroll-mt-20">
+          <CustomerReviewsSection
+            reviews={reviews}
+            loading={reviewsLoading}
+          />
         </section>
 
         {/* ================= FAQS ACCORDION SECTION ================= */}

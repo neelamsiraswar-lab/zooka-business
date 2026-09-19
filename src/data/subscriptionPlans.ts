@@ -33,6 +33,7 @@ export interface PlanTierConfig {
     text: string;
     accent: string;
   };
+  order?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -111,6 +112,7 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     badge: 'Free Tier',
     isBuiltIn: true,
     status: 'active',
+    order: 1,
     monthlyPrice: 0,
     annualPrice: 0,
     monthlyEquivalentAnnual: 0,
@@ -135,6 +137,7 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     badge: 'Essential',
     isBuiltIn: true,
     status: 'active',
+    order: 2,
     monthlyPrice: 999,
     annualPrice: 11988,
     monthlyEquivalentAnnual: 999,
@@ -161,6 +164,7 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     popular: true,
     isBuiltIn: true,
     status: 'active',
+    order: 3,
     monthlyPrice: 2499,
     annualPrice: 29988,
     monthlyEquivalentAnnual: 2499,
@@ -187,6 +191,7 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     badge: 'Maximum Power',
     isBuiltIn: true,
     status: 'active',
+    order: 4,
     monthlyPrice: 5999,
     annualPrice: 71988,
     monthlyEquivalentAnnual: 5999,

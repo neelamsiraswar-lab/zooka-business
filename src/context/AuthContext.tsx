@@ -34,7 +34,6 @@ import {
   terminateActiveSession,
   getRememberedCredentials,
   setRememberedCredentials,
-  extendRememberedDeviceSession,
   getSuperAdminBruteForceStatus,
   recordFailedSuperAdminAttempt,
   resetSuperAdminAttempts,
@@ -104,7 +103,6 @@ interface AuthContextType {
   getToken: () => Promise<string | null>;
   refreshProfile: () => Promise<void>;
   refreshSession: () => void;
-  extendRememberedDevice: () => void;
   clearError: () => void;
 }
 
@@ -918,15 +916,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     syncActiveSessionState();
   };
 
-  const extendRememberedDevice = () => {
-    const updated = extendRememberedDeviceSession();
-    if (updated) {
-      setSession(updated);
-      syncActiveSessionState();
-      recordSecurityAuditLog('DEVICE_SESSION_EXTENDED', 'User renewed 24-hour remembered device expiration');
-    }
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -953,7 +942,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getToken,
         refreshProfile,
         refreshSession,
-        extendRememberedDevice,
         clearError: () => setError(null),
       }}
     >

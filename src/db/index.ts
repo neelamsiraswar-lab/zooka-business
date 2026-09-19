@@ -68,6 +68,8 @@ export const COLLECTIONS = {
   SUBSCRIPTION_INVOICES: 'subscription_invoices',
   PLATFORM_SETTINGS: 'platform_settings',
   SYSTEM_PERSONAS: 'system_personas',
+  ARCHITECTURAL_PILLARS: 'architectural_pillars',
+  REVIEWS: 'reviews',
 } as const;
 
 // Compatible wrapper around Firebase Web SDK

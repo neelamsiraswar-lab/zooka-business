@@ -38,6 +38,10 @@ import {
   Copy,
   Activity,
   BarChart3,
+  Mail,
+  MessageSquareQuote,
+  ArrowUpDown,
+  ChevronLeft,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -48,7 +52,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { Workspace } from '../types';
+import { Workspace, ArchitecturalPillar, CustomerReview } from '../types';
 import {
   getAllWorkspaces,
   createWorkspace,
@@ -78,17 +82,23 @@ import {
   createSubscriptionPlan,
   updateSubscriptionPlan,
   deleteSubscriptionPlan,
+  moveSubscriptionPlanOrder,
 } from '../db/subscriptionPlans';
+import { PlanOrderArrangeModal } from './PlanOrderArrangeModal';
 import { FirestoreConnectionModal } from './FirestoreConnectionModal';
 import { SessionSecurityModal } from './SessionSecurityModal';
 import { WorkspaceDetailsUsersModal } from './WorkspaceDetailsUsersModal';
+import { getAllArchitecturalPillars } from '../db/architecturalPillars';
+import { ArchitecturalPillarManager } from './ArchitecturalPillarManager';
+import { getAllCustomerReviews } from '../db/customerReviews';
+import { CustomerReviewManager } from './CustomerReviewManager';
 
 interface SuperAdminDashboardViewProps {
   onSwitchWorkspace?: (workspace: Workspace) => void;
   onNavigateToTab?: (tab: string) => void;
   hasEnteredWorkspace?: boolean;
-  activeViewTab?: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'audit' | 'analytics' | 'profile';
-  onViewTabChange?: (tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'audit' | 'analytics' | 'profile') => void;
+  activeViewTab?: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile';
+  onViewTabChange?: (tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile') => void;
 }
 
 export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = ({
@@ -108,13 +118,16 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
   const [planFilter, setPlanFilter] = useState<string>('all');
   const [activeWorkspaceId, setActiveWsId] = useState<string>(getActiveWorkspaceId());
 
+  const [pillars, setPillars] = useState<ArchitecturalPillar[]>([]);
+  const [reviews, setReviews] = useState<CustomerReview[]>([]);
+
   const [internalDashboardViewTab, setInternalDashboardViewTab] = useState<
-    'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'audit' | 'analytics' | 'profile'
+    'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile'
   >('home');
 
   const dashboardViewTab = activeViewTab ?? internalDashboardViewTab;
   const setDashboardViewTab = (
-    tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'audit' | 'analytics' | 'profile'
+    tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile'
   ) => {
     setInternalDashboardViewTab(tab);
     onViewTabChange?.(tab);
@@ -122,11 +135,21 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
 
   const [subManagingWorkspace, setSubManagingWorkspace] = useState<Workspace | null>(null);
   const [viewingDetailsWorkspace, setViewingDetailsWorkspace] = useState<Workspace | null>(null);
+  const [copiedGstinId, setCopiedGstinId] = useState<number | null>(null);
+
+  const handleCopyGstin = (e: React.MouseEvent, gstin: string, wsId: number) => {
+    e.stopPropagation();
+    if (!gstin) return;
+    navigator.clipboard.writeText(gstin);
+    setCopiedGstinId(wsId);
+    setTimeout(() => setCopiedGstinId(null), 2000);
+  };
 
   // Subscription Plan Governance State
   const [plans, setPlans] = useState<PlanTierConfig[]>(DEFAULT_BUILTIN_PLANS);
   const [plansLoading, setPlansLoading] = useState(false);
   const [planEditorModalOpen, setPlanEditorModalOpen] = useState(false);
+  const [planOrderModalOpen, setPlanOrderModalOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PlanTierConfig | null>(null);
 
   // Protected Plan Deletion Facility State
@@ -219,19 +242,71 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     }
   };
 
+  const loadPillars = async () => {
+    try {
+      const fetched = await getAllArchitecturalPillars();
+      setPillars(fetched || []);
+    } catch (err: any) {
+      console.error('Failed to load architectural pillars:', err);
+    }
+  };
+
+  const loadReviews = async () => {
+    try {
+      const fetched = await getAllCustomerReviews();
+      setReviews(fetched || []);
+    } catch (err: any) {
+      console.error('Failed to load customer reviews:', err);
+    }
+  };
+
   useEffect(() => {
     loadWorkspaces();
     loadPlans();
+    loadPillars();
+    loadReviews();
 
     const handleSuperAdminRefresh = () => {
       loadWorkspaces();
       loadPlans();
+      loadPillars();
+      loadReviews();
     };
+    const handlePillarsUpdate = () => {
+      loadPillars();
+    };
+    const handleReviewsUpdate = () => {
+      loadReviews();
+    };
+    const handlePlansUpdate = () => {
+      loadPlans();
+    };
+
     window.addEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
+    window.addEventListener('architectural_pillars_updated', handlePillarsUpdate);
+    window.addEventListener('customer_reviews_updated', handleReviewsUpdate);
+    window.addEventListener('subscription_plans_updated', handlePlansUpdate);
     return () => {
       window.removeEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
+      window.removeEventListener('architectural_pillars_updated', handlePillarsUpdate);
+      window.removeEventListener('customer_reviews_updated', handleReviewsUpdate);
+      window.removeEventListener('subscription_plans_updated', handlePlansUpdate);
     };
   }, []);
+
+  const handleQuickMovePlan = async (planId: string, direction: 'up' | 'down') => {
+    try {
+      const adminId = profile?.id || user?.id || 1;
+      const adminEmail = profile?.email || user?.email || 'admin@platform.com';
+      const updated = await moveSubscriptionPlanOrder(planId, direction, adminId, adminEmail);
+      setPlans(updated);
+      window.dispatchEvent(new CustomEvent('subscription_plans_updated'));
+      dialog.toast.success('Subscription plan presentation position updated successfully');
+    } catch (err: any) {
+      console.error('Failed to move plan:', err);
+      dialog.toast.error(err.message || 'Failed to move plan order');
+    }
+  };
 
   const handleOpenCreatePlan = () => {
     setEditingPlan(null);
@@ -614,6 +689,52 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
 
   return (
     <div className="space-y-6">
+      {/* ---------------- RESPONSIVE SUPER ADMIN TOP NAVIGATION BAR ---------------- */}
+      <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-1.5 shadow-xl sticky top-0 z-20">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
+          {[
+            { id: 'home', label: 'Master Overview', icon: Building2 },
+            { id: 'workspaces', label: 'Workspaces', icon: Layers, count: workspaces.length },
+            { id: 'subscriptions', label: 'Subscriptions & Quotas', icon: CreditCard },
+            { id: 'catalog', label: 'Plan Catalog', icon: Sparkles, count: plans.length },
+            { id: 'pillars', label: 'Architectural Pillars', icon: Layers, count: pillars.length },
+            { id: 'reviews', label: 'Customer Reviews', icon: MessageSquareQuote, count: reviews.length },
+            { id: 'audit', label: 'Audit Trail', icon: Activity },
+            { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+            { id: 'profile', label: 'Admin Profile', icon: ShieldCheck },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isSelected = dashboardViewTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setDashboardViewTab(tab.id as any)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all whitespace-nowrap cursor-pointer shrink-0 ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-bold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-slate-400'}`} />
+                <span>{tab.label}</span>
+                {tab.count !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      isSelected
+                        ? 'bg-indigo-950/80 text-indigo-200 border border-indigo-400/30'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* ---------------- SUPER ADMIN HOME (STATUS KPI DASHBOARD) ---------------- */}
       {dashboardViewTab === 'home' && (
         <div className="space-y-6 animate-in fade-in duration-200">
@@ -790,7 +911,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
           </div>
 
           {/* Quick Overview & Navigation Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-indigo-400" />
@@ -838,6 +959,41 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                   <span className="text-slate-400">Total ARR Run-rate:</span>
                   <span className="text-indigo-400 font-bold">{formatINR(totalARR)}</span>
                 </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <MessageSquareQuote className="w-4 h-4 text-amber-400" />
+                <span>Public Customer Reviews</span>
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Manage verified client testimonials, star ratings, and CA feedback displayed on the landing page.
+              </p>
+              <div className="space-y-2 pt-2 text-xs">
+                <div className="flex justify-between py-1.5 border-b border-slate-800">
+                  <span className="text-slate-400">Total Reviews:</span>
+                  <span className="text-white font-bold">{reviews.length}</span>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-slate-800">
+                  <span className="text-slate-400">Live on Landing:</span>
+                  <span className="text-emerald-400 font-bold">{reviews.filter((r) => r.isActive).length}</span>
+                </div>
+                <div className="flex justify-between py-1.5">
+                  <span className="text-slate-400">Average Rating:</span>
+                  <span className="text-amber-400 font-bold flex items-center gap-1">
+                    {reviews.length > 0 ? (reviews.reduce((a, c) => a + c.rating, 0) / reviews.length).toFixed(1) : '5.0'} ★
+                  </span>
+                </div>
+              </div>
+              <div className="pt-2">
+                <button
+                  onClick={() => setDashboardViewTab('reviews')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-between cursor-pointer border border-slate-700"
+                >
+                  <span>Manage Reviews &amp; Social Proof</span>
+                  <span className="text-amber-400">→</span>
+                </button>
               </div>
             </div>
 
@@ -1056,20 +1212,42 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
 
                     {/* Detail Rows */}
                     <div className="mt-4 space-y-2 text-xs border-t border-slate-800/80 pt-3">
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span className="text-slate-500">GSTIN:</span>
-                        <span className="font-mono text-slate-200 font-medium">{ws.gstin || 'Unregistered'}</span>
+                      <div className="flex items-center justify-between text-slate-400 gap-2">
+                        <span className="text-slate-500 shrink-0">GSTIN:</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono text-slate-200 font-medium truncate">
+                            {ws.gstin || 'Unregistered'}
+                          </span>
+                          {ws.gstin && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyGstin(e, ws.gstin, ws.id)}
+                              title="Copy GSTIN to clipboard"
+                              className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                            >
+                              {copiedGstinId === ws.id ? (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span className="text-slate-500">Owner:</span>
-                        <span className="text-slate-200 truncate max-w-[180px]">{ws.ownerEmail}</span>
+                      <div className="flex items-center justify-between text-slate-400 gap-2">
+                        <span className="text-slate-500 shrink-0">Owner:</span>
+                        <span className="text-slate-200 truncate max-w-[190px]" title={ws.ownerEmail}>
+                          {ws.ownerEmail}
+                        </span>
                       </div>
 
                       {ws.bankName && (
-                        <div className="flex items-center justify-between text-slate-400">
-                          <span className="text-slate-500">Bank:</span>
-                          <span className="text-slate-300 truncate max-w-[180px]">{ws.bankName}</span>
+                        <div className="flex items-center justify-between text-slate-400 gap-2">
+                          <span className="text-slate-500 shrink-0">Bank:</span>
+                          <span className="text-slate-300 truncate max-w-[190px]" title={ws.bankName}>
+                            {ws.bankName}
+                          </span>
                         </div>
                       )}
 
@@ -1086,88 +1264,101 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                     </div>
                   </div>
 
-                  {/* Card Bottom Action Bar */}
-                  <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-                    {/* Switch / Enter Books Button */}
-                    <button
-                      onClick={() => {
-                        setActiveWorkspaceId(ws.id);
-                        if (onSwitchWorkspace) {
-                          onSwitchWorkspace(ws);
-                        } else {
-                          window.location.reload();
-                        }
-                      }}
-                      className={`flex-1 py-2 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                        isActive && hasEnteredWorkspace
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
-                          : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20'
-                      }`}
-                    >
-                      {isActive && hasEnteredWorkspace ? (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Open Books</span>
-                        </>
-                      ) : (
-                        <>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                          <span>Enter Books</span>
-                        </>
-                      )}
-                    </button>
+                  {/* Card Bottom Action Bar: Responsive 2-Tier Layout */}
+                  <div className="mt-5 pt-3.5 border-t border-slate-800/80 space-y-2">
+                    {/* Tier 1: Primary Actions */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveWorkspaceId(ws.id);
+                          if (onSwitchWorkspace) {
+                            onSwitchWorkspace(ws);
+                          } else {
+                            window.location.reload();
+                          }
+                        }}
+                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm ${
+                          isActive && hasEnteredWorkspace
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'
+                            : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20'
+                        }`}
+                      >
+                        {isActive && hasEnteredWorkspace ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>Open Books</span>
+                          </>
+                        ) : (
+                          <>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                            <span>Enter Books</span>
+                          </>
+                        )}
+                      </button>
 
-                    {/* View Workspace Users & Details */}
-                    <button
-                      type="button"
-                      onClick={() => setViewingDetailsWorkspace(ws)}
-                      title="Inspect Workspace Users, Credentials & Permissions"
-                      className="px-2.5 py-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Users className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Users & Details</span>
-                    </button>
+                      {/* View Workspace Users & Credentials */}
+                      <button
+                        type="button"
+                        onClick={() => setViewingDetailsWorkspace(ws)}
+                        title="View workspace users, reset passwords & manage permissions"
+                        className="py-2.5 px-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <Users className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Users & Details</span>
+                      </button>
+                    </div>
 
-                    {/* Manage Subscription */}
-                    <button
-                      onClick={() => setSubManagingWorkspace(ws)}
-                      title="Manage Workspace Subscription & Billing"
-                      className="px-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition cursor-pointer flex items-center gap-1"
-                    >
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span className="text-[11px] font-semibold hidden lg:inline">Billing</span>
-                    </button>
+                    {/* Tier 2: Governance & Administrative Controls Grid */}
+                    <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                      {/* Manage Subscription & Billing */}
+                      <button
+                        type="button"
+                        onClick={() => setSubManagingWorkspace(ws)}
+                        title="Manage Workspace Subscription & Quotas"
+                        className="py-1.5 px-2 rounded-lg bg-slate-950/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800/80 text-[11px] font-medium transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="truncate">Plan</span>
+                      </button>
 
-                    {/* Toggle Suspend / Active Status */}
-                    <button
-                      onClick={() => handleToggleWorkspaceStatus(ws)}
-                      title={ws.status === 'suspended' ? 'Reactivate Workspace Access' : 'Suspend Workspace for Compliance/Default'}
-                      className={`p-2 rounded-xl text-xs font-semibold transition cursor-pointer border flex items-center gap-1 ${
-                        ws.status === 'suspended'
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                          : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
-                      }`}
-                    >
-                      <ShieldAlert className="w-3.5 h-3.5" />
-                    </button>
+                      {/* Toggle Suspend / Active Status */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleWorkspaceStatus(ws)}
+                        title={ws.status === 'suspended' ? 'Reactivate Workspace Access' : 'Suspend Workspace'}
+                        className={`py-1.5 px-2 rounded-lg text-[11px] font-medium transition cursor-pointer border flex items-center justify-center gap-1 ${
+                          ws.status === 'suspended'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                        }`}
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                        <span className="truncate">{ws.status === 'suspended' ? 'Resume' : 'Suspend'}</span>
+                      </button>
 
-                    {/* Edit Metadata */}
-                    <button
-                      onClick={() => handleOpenEditModal(ws)}
-                      title="Edit Workspace Configuration"
-                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition cursor-pointer"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
+                      {/* Edit Workspace Metadata */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(ws)}
+                        title="Edit Workspace Configuration"
+                        className="py-1.5 px-2 rounded-lg bg-slate-950/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800/80 text-[11px] font-medium transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Edit className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="truncate">Edit</span>
+                      </button>
 
-                    {/* Delete Workspace */}
-                    <button
-                      onClick={() => handleDeleteWorkspace(ws)}
-                      title="Delete Workspace"
-                      className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                      {/* Delete Workspace */}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteWorkspace(ws)}
+                        title="Permanently Delete Workspace"
+                        className="py-1.5 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-[11px] font-medium transition cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="truncate">Delete</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -1195,13 +1386,35 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
               </div>
             </div>
 
-            <button
-              onClick={handleOpenCreatePlan}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create New Plan Tier</span>
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                id="btn-arrange-plans-order"
+                onClick={() => setPlanOrderModalOpen(true)}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-2 transition cursor-pointer"
+                title="Arrange presentation sequence of subscription tiers on public landing page and checkout"
+              >
+                <ArrowUpDown className="w-4 h-4 text-indigo-400" />
+                <span>Arrange Display Order</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDashboardViewTab('pillars')}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-2 transition cursor-pointer"
+              >
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span>Architectural Pillars ({pillars.length})</span>
+              </button>
+
+              <button
+                onClick={handleOpenCreatePlan}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create New Plan Tier</span>
+              </button>
+            </div>
           </div>
 
           {/* Plan Catalog Grid & Metrics */}
@@ -1238,7 +1451,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
 
               {/* Plans Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {plans.map((p) => {
+                {plans.map((p, index) => {
                   const assignedCount = workspaces.filter((w) => w.plan === p.id).length;
                   const isArchived = p.status === 'archived';
 
@@ -1275,9 +1488,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span
+                              className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-indigo-500/15 text-indigo-300 border border-indigo-500/30"
+                              title="Display order sequence position on public landing page"
+                            >
+                              Position #{p.order ?? (index + 1)}
+                            </span>
+                            <span
                               className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                                 p.isBuiltIn
-                                  ? 'bg-slate-800 text-slate-300 border border-slate-700'
+                                    ? 'bg-slate-800 text-slate-300 border border-slate-700'
                                   : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                               }`}
                             >
@@ -1426,6 +1645,28 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                           >
                             <Copy className="w-3.5 h-3.5 text-slate-400" />
                           </button>
+
+                          {/* Quick presentation order adjustment */}
+                          <div className="flex items-center gap-0.5 pl-1.5 border-l border-slate-800">
+                            <button
+                              type="button"
+                              disabled={index === 0}
+                              onClick={() => handleQuickMovePlan(p.id, 'up')}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed transition cursor-pointer"
+                              title={`Move "${p.name}" earlier in landing page sequence`}
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5 text-indigo-400" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={index === plans.length - 1}
+                              onClick={() => handleQuickMovePlan(p.id, 'down')}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-25 disabled:cursor-not-allowed transition cursor-pointer"
+                              title={`Move "${p.name}" later in landing page sequence`}
+                            >
+                              <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />
+                            </button>
+                          </div>
                         </div>
 
                         <div>
@@ -1656,6 +1897,16 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
             </div>
           </div>
         )}
+
+      {/* ---------------- CORE ARCHITECTURAL PILLARS (TAB) ---------------- */}
+      {dashboardViewTab === 'pillars' && (
+        <ArchitecturalPillarManager pillars={pillars} onRefresh={loadPillars} />
+      )}
+
+      {/* ---------------- CUSTOMER REVIEWS & TESTIMONIALS (TAB) ---------------- */}
+      {dashboardViewTab === 'reviews' && (
+        <CustomerReviewManager reviews={reviews} onRefresh={loadReviews} />
+      )}
 
       {/* ---------------- PLATFORM AUDIT TRAIL (TAB 4) ---------------- */}
       {dashboardViewTab === 'audit' && (
@@ -2457,6 +2708,20 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
           initialPlan={editingPlan}
           existingPlans={plans}
           assignedWorkspacesCount={editingPlan ? workspaces.filter((w) => w.plan === editingPlan.id).length : 0}
+        />
+      )}
+
+      {/* ---------------- SUBSCRIPTION PLANS PRESENTATION ORDER ARRANGER ---------------- */}
+      {planOrderModalOpen && (
+        <PlanOrderArrangeModal
+          isOpen={planOrderModalOpen}
+          onClose={() => setPlanOrderModalOpen(false)}
+          plans={plans}
+          onOrderSaved={(updatedPlans) => {
+            setPlans(updatedPlans);
+          }}
+          currentUserId={profile?.id || user?.id || 1}
+          currentUserEmail={profile?.email || user?.email || 'admin@platform.com'}
         />
       )}
 

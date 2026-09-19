@@ -2,6 +2,39 @@ export type SubscriptionPlanTier = 'starter' | 'professional' | 'enterprise' | s
 export type SubscriptionBillingCycle = 'monthly' | 'annual';
 export type SubscriptionStatus = 'active' | 'trial' | 'past_due' | 'suspended' | 'cancelled' | 'expired';
 
+export interface ArchitecturalPillar {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  colorTheme: 'emerald' | 'indigo' | 'purple' | 'teal' | 'amber' | 'blue' | 'rose' | 'cyan';
+  badge?: string;
+  order: number;
+  isActive: boolean;
+  isBuiltIn?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CustomerReview {
+  id: string;
+  authorName: string;
+  roleOrTitle: string;
+  companyName: string;
+  location?: string;
+  rating: number; // 1 to 5
+  reviewText: string;
+  badge?: string; // e.g. "Verified CA", "SME Owner", "Tax Consultant", "Enterprise Client"
+  avatarUrl?: string;
+  avatarBgColor?: 'emerald' | 'indigo' | 'purple' | 'teal' | 'amber' | 'blue' | 'rose' | 'cyan';
+  order: number;
+  isFeatured: boolean;
+  isActive: boolean;
+  isBuiltIn?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface SubscriptionPlan {
   id: string;
   name: string;

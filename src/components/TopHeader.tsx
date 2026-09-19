@@ -19,14 +19,11 @@ import {
   Dices,
   Sparkles,
   Crown,
-  Clock,
-  Laptop,
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_CONFIG, UserRole, isSuperAdmin } from '../lib/permissions';
 import { updateUserProfile } from '../db/users';
-import { getDeviceSessionCountdown, SessionCountdownInfo } from '../lib/sessionSecurity';
 import { SessionSecurityModal } from './SessionSecurityModal';
 
 interface TopHeaderProps {
@@ -54,23 +51,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   activeTab,
   onNavigateToSuperAdmin,
 }) => {
-  const { logout, refreshProfile, lockSession, session, isSuperAdminElevated } = useAuth();
+  const { logout, refreshProfile, lockSession, isSuperAdminElevated } = useAuth();
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
   const [showSessionSecurityModal, setShowSessionSecurityModal] = useState<boolean>(false);
   const [isChangingAvatar, setIsChangingAvatar] = useState<boolean>(false);
-  const [countdown, setCountdown] = useState<SessionCountdownInfo>(() => getDeviceSessionCountdown(session));
   const userMenuRef = useRef<HTMLDivElement>(null);
-
-  // Live session countdown timer updating every 1 second
-  useEffect(() => {
-    const update = () => {
-      setCountdown(getDeviceSessionCountdown(session));
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [session]);
 
   const handleQuickAutoChangeAvatar = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -154,7 +140,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         >
           <Menu className="w-4 h-4 text-emerald-400" />
           <span className="font-semibold text-xs text-slate-100 truncate max-w-[160px] sm:max-w-xs">
-            {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'Zooka Business')}
+            {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'TallyGST ERP')}
           </span>
         </button>
 
@@ -171,7 +157,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               <PanelLeftOpen className="w-4 h-4" />
             </button>
             <span className="font-semibold text-[13px] tracking-tight text-slate-100 truncate">
-              {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'Zooka Business')}
+              {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'TallyGST ERP')}
             </span>
             {activeTab === 'super_admin' ? (
               <span className="text-[10px] font-mono font-medium text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
@@ -190,29 +176,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Right side: Place of supply / Master control, Cloud sync status, Manual Refresh, User info */}
       <div className="flex items-center gap-2 sm:gap-2.5">
-        {/* Live Remember This Device (24hr) Countdown Badge */}
-        {session && (
-          <button
-            type="button"
-            id="header-device-countdown-badge"
-            onClick={() => setShowSessionSecurityModal(true)}
-            title={`Remember this device (${session.rememberMe ? '24 Hours' : 'Transient'}): ${countdown.formattedText} remaining. Click to manage security.`}
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition cursor-pointer ${
-              session.rememberMe
-                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
-                : 'bg-slate-900/80 hover:bg-slate-800 border-slate-800 text-slate-300'
-            }`}
-          >
-            <Clock className={`w-3.5 h-3.5 ${session.rememberMe ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
-            <span>
-              <span className="font-sans font-medium text-[10px] text-slate-400 mr-1">
-                {session.rememberMe ? '24h Device:' : 'Session:'}
-              </span>
-              {countdown.formattedText}
-            </span>
-          </button>
-        )}
-
         {/* If Super Admin is viewing a workspace, offer an instant Return to Super Admin button */}
         {onNavigateToSuperAdmin && activeTab !== 'super_admin' && (isSuperAdmin(user, profile) || profile?.role === 'super_admin') && (
           <button
@@ -230,7 +193,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {/* Place of supply / Master Mode badge */}
         {activeTab === 'super_admin' ? (
           <div
-            title={`Master Business: ${localStorage.getItem('platform_invoice_name') || 'Zooka Business Technologies'} | Place of Supply: ${localStorage.getItem('platform_invoice_state_name') || 'Maharashtra'} (${localStorage.getItem('platform_invoice_state_code') || '27'})`}
+            title={`Master Business: ${localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies'} | Place of Supply: ${localStorage.getItem('platform_invoice_state_name') || 'Maharashtra'} (${localStorage.getItem('platform_invoice_state_code') || '27'})`}
             className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/60 border border-slate-800/60 text-[11px] text-slate-300"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -367,31 +330,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 </p>
               </div>
 
-              {/* 24-Hour Remembered Device Live Countdown Status */}
-              <div className="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800/80 space-y-1.5">
-                <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-slate-400 flex items-center gap-1 font-medium">
-                    <Laptop className="w-3 h-3 text-emerald-400" />
-                    {session?.rememberMe ? '24h Device Session' : 'Standard Session'}
-                  </span>
-                  <span className={`font-mono font-semibold ${countdown.isExpired ? 'text-rose-400' : 'text-emerald-400'}`}>
-                    {countdown.formattedText}
-                  </span>
-                </div>
-                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 ${
-                      countdown.percentageRemaining < 20
-                        ? 'bg-rose-500'
-                        : countdown.percentageRemaining < 50
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
-                    }`}
-                    style={{ width: `${countdown.percentageRemaining}%` }}
-                  />
-                </div>
-              </div>
-
               {/* Security & Session Actions */}
               <div className="pt-1 space-y-1 border-t border-slate-800/80">
                 <button
@@ -408,7 +346,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     <span>Session Security</span>
                   </div>
                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-mono">
-                    24hr Trust
+                    256-bit
                   </span>
                 </button>
 

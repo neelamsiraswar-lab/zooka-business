@@ -37,6 +37,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
   onSave,
   plan,
   initialPlan,
+  existingPlans = [],
   assignedWorkspacesCount = 0,
 }) => {
   const dialog = useDialog();
@@ -53,6 +54,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
   const [badge, setBadge] = useState('');
   const [popular, setPopular] = useState(false);
   const [status, setStatus] = useState<'active' | 'archived' | 'draft'>('active');
+  const [order, setOrder] = useState<number>(1);
   const [monthlyPrice, setMonthlyPrice] = useState(1999);
   const [annualPrice, setAnnualPrice] = useState(19990);
   const [maxUsers, setMaxUsers] = useState<number | string>(5);
@@ -75,6 +77,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
       setBadge(activePlan.badge || defaultDef?.badge || '');
       setPopular(!!activePlan.popular);
       setStatus(activePlan.status || 'active');
+      setOrder(activePlan.order !== undefined && activePlan.order !== null ? Number(activePlan.order) : (defaultDef?.order ?? 1));
       setMonthlyPrice(activePlan.monthlyPrice !== undefined ? activePlan.monthlyPrice : (defaultDef?.monthlyPrice ?? 1999));
       setAnnualPrice(activePlan.annualPrice !== undefined ? activePlan.annualPrice : (defaultDef?.annualPrice ?? 19990));
       setMaxUsers(activePlan.maxUsers !== undefined ? activePlan.maxUsers : (defaultDef?.maxUsers ?? 5));
@@ -97,6 +100,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
       setBadge('New Tier');
       setPopular(false);
       setStatus('active');
+      setOrder((existingPlans?.length || 0) + 1);
       setMonthlyPrice(2999);
       setAnnualPrice(29990);
       setMaxUsers(5);
@@ -181,6 +185,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
         badge: badge.trim(),
         popular,
         status,
+        order: Math.max(1, Number(order) || 1),
         monthlyPrice: parsedMonthly < 0 ? 0 : parsedMonthly,
         annualPrice: parsedAnnual < 0 ? 0 : parsedAnnual,
         monthlyEquivalentAnnual: Math.round(parsedAnnual / 12),
@@ -356,7 +361,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-1">
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
                       Badge Text
@@ -383,6 +388,20 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
                       <option value="draft">Draft (Hidden)</option>
                       <option value="archived">Archived (Grandfathered)</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1" title="Determines display order sequence on public landing page and registration form">
+                      Display Order #
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={order}
+                      onChange={(e) => setOrder(Math.max(1, parseInt(e.target.value) || 1))}
+                      placeholder="1"
+                      className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    />
                   </div>
 
                   <div className="flex flex-col justify-end">
@@ -661,13 +680,16 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({
                 <div
                   className={`rounded-2xl border bg-gradient-to-b ${activeColorTheme.gradient} ${activeColorTheme.border} p-5 relative overflow-hidden shadow-2xl transition`}
                 >
-                  {badge && (
-                    <div className="mb-3">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    {badge ? (
                       <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${activeColorTheme.badge}`}>
                         {badge}
                       </span>
-                    </div>
-                  )}
+                    ) : <div />}
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-slate-900/90 text-indigo-300 border border-slate-700/80">
+                      Position #{order}
+                    </span>
+                  </div>
 
                   <div className="font-bold text-white text-lg">{name || 'Plan Title'}</div>
                   <div className="text-xs text-slate-400 mt-1 min-h-[32px] line-clamp-2">

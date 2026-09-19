@@ -66,6 +66,7 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
         ...(defaultDef || {}),
         ...data,
         id: d.id,
+        order: data.order !== undefined && data.order !== null ? Number(data.order) : (defaultDef?.order ?? 999),
         features: data.features && data.features.length > 0 ? data.features : (defaultDef?.features || []),
         color: data.color || defaultDef?.color || PLAN_COLOR_PRESETS.indigo,
       });
@@ -79,6 +80,7 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
           ...def,
           isBuiltIn: true,
           status: 'active',
+          order: def.order || 1,
           createdAt: def.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -86,6 +88,14 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
         plans.push(planWithMeta);
       }
     }
+
+    // Sort deterministically by explicit display order, fallback to monthly price
+    plans.sort((a, b) => {
+      const orderA = a.order !== undefined && a.order !== null ? a.order : 999;
+      const orderB = b.order !== undefined && b.order !== null ? b.order : 999;
+      if (orderA !== orderB) return orderA - orderB;
+      return (a.monthlyPrice || 0) - (b.monthlyPrice || 0);
+    });
 
     return plans;
   } catch (err) {
@@ -115,6 +125,22 @@ export async function createSubscriptionPlan(
 
     const colorConfig = planInput.color || PLAN_COLOR_PRESETS.indigo;
 
+    let targetOrder = planInput.order !== undefined ? Number(planInput.order) : undefined;
+    if (targetOrder === undefined || isNaN(targetOrder)) {
+      // Find highest existing order to append to the end of the catalog
+      try {
+        const existingPlansSnap = await db.collection(path).get();
+        let maxOrder = 0;
+        existingPlansSnap.docs.forEach((doc: any) => {
+          const o = Number(doc.data()?.order);
+          if (!isNaN(o) && o > maxOrder) maxOrder = o;
+        });
+        targetOrder = maxOrder + 1;
+      } catch {
+        targetOrder = 1;
+      }
+    }
+
     const newPlan: PlanTierConfig = {
       id: planId,
       name: planInput.name.trim(),
@@ -123,6 +149,7 @@ export async function createSubscriptionPlan(
       popular: !!planInput.popular,
       isBuiltIn: false,
       status: planInput.status || 'active',
+      order: targetOrder,
       monthlyPrice,
       annualPrice,
       monthlyEquivalentAnnual,
@@ -219,11 +246,15 @@ export async function updateSubscriptionPlan(
     const maxLedgers = updates.maxLedgers !== undefined ? Number(updates.maxLedgers) : (existing?.maxLedgers ?? 1000);
     const maxBranches = updates.maxBranches !== undefined ? Number(updates.maxBranches) : (existing?.maxBranches ?? 1);
 
+    const rawOrder = updates.order !== undefined ? Number(updates.order) : (existing?.order ?? (defaultBuiltIn?.order || 999));
+    const order = isNaN(rawOrder) ? 1 : rawOrder;
+
     const cleanUpdates: PlanTierConfig = {
       ...(existing || {}),
       ...updates,
       id: trimmedPlanId, // ID is permanently immutable to protect relational integrity
       isBuiltIn: isBuiltIn, // Built-in lock cannot be stripped
+      order,
       monthlyPrice,
       annualPrice,
       monthlyEquivalentAnnual,
@@ -316,3 +347,97 @@ export async function deleteSubscriptionPlan(
     throw err;
   }
 }
+
+/**
+ * Persists an explicit display order sequence across all subscription plans
+ */
+export async function reorderSubscriptionPlans(
+  orderedPlanIds: string[],
+  adminUserId: number = 1,
+  adminUserEmail: string = 'admin@platform.com'
+): Promise<PlanTierConfig[]> {
+  const path = COLLECTIONS.SUBSCRIPTION_PLANS;
+  try {
+    const batch = db.batch();
+    orderedPlanIds.forEach((id, index) => {
+      const docRef = db.collection(path).doc(id);
+      batch.set(
+        docRef,
+        {
+          order: index + 1,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    });
+
+    await batch.commit();
+
+    try {
+      await logActivity(
+        adminUserId,
+        adminUserEmail,
+        'UPDATE',
+        'SUBSCRIPTION_PLAN',
+        'reorder',
+        `Reordered ${orderedPlanIds.length} subscription plan tiers (${orderedPlanIds.join(' → ')})`
+      );
+    } catch (e) {
+      console.warn('Failed to log activity:', e);
+    }
+
+    return await getAllSubscriptionPlans();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+    throw err;
+  }
+}
+
+/**
+ * Moves a plan tier up or down by 1 position in display order
+ */
+export async function moveSubscriptionPlanOrder(
+  planId: string,
+  direction: 'up' | 'down',
+  adminUserId: number = 1,
+  adminUserEmail: string = 'admin@platform.com'
+): Promise<PlanTierConfig[]> {
+  const allPlans = await getAllSubscriptionPlans();
+  const currentIndex = allPlans.findIndex((p) => p.id === planId);
+  if (currentIndex === -1) return allPlans;
+
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= allPlans.length) {
+    return allPlans; // Already at boundary
+  }
+
+  // Swap positions in list
+  const updatedList = [...allPlans];
+  const temp = updatedList[currentIndex];
+  updatedList[currentIndex] = updatedList[targetIndex];
+  updatedList[targetIndex] = temp;
+
+  const orderedIds = updatedList.map((p) => p.id);
+  return await reorderSubscriptionPlans(orderedIds, adminUserId, adminUserEmail);
+}
+
+/**
+ * Resets plan sequence to canonical default order:
+ * Free (1) -> Starter (2) -> Professional (3) -> Enterprise (4) -> Custom Plans
+ */
+export async function resetSubscriptionPlansOrder(
+  adminUserId: number = 1,
+  adminUserEmail: string = 'admin@platform.com'
+): Promise<PlanTierConfig[]> {
+  const allPlans = await getAllSubscriptionPlans();
+  const builtInIds = ['free', 'starter', 'professional', 'enterprise'];
+  const customPlans = allPlans.filter((p) => !builtInIds.includes(p.id));
+
+  const orderedIds = [
+    ...builtInIds.filter((id) => allPlans.some((p) => p.id === id)),
+    ...customPlans.map((p) => p.id),
+  ];
+
+  return await reorderSubscriptionPlans(orderedIds, adminUserId, adminUserEmail);
+}
+

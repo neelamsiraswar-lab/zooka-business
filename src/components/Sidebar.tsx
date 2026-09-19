@@ -31,12 +31,14 @@ import {
   Sparkles,
   ExternalLink,
   Plus,
+  MessageSquareQuote,
 } from 'lucide-react';
 import { CompanyProfile, Workspace } from '../types';
 import { canAccessTab, ROLE_CONFIG, UserRole, isSuperAdmin } from '../lib/permissions';
 import { getAllWorkspaces, getActiveWorkspaceId } from '../db/workspaces';
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { getPlatformSettings } from '../db/platformSettings';
+import { getAllCustomerReviews } from '../db/customerReviews';
 
 export type NavTab =
   | 'dashboard'
@@ -54,7 +56,7 @@ export type NavTab =
   | 'reports'
   | 'settings';
 
-export type SuperAdminSubTab = 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'audit' | 'analytics' | 'profile';
+export type SuperAdminSubTab = 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -126,14 +128,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [superAdminMenuExpanded, setSuperAdminMenuExpanded] = useState<boolean>(true);
   const [workspacesList, setWorkspacesList] = useState<Workspace[]>([]);
   const [plansCount, setPlansCount] = useState<number>(3);
+  const [reviewsCount, setReviewsCount] = useState<number>(6);
   const [activeWsId, setActiveWsId] = useState<string>(getActiveWorkspaceId());
 
-  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Zooka Business');
+  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'TallyGST ERP');
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
 
   useEffect(() => {
     const handleBrandingUpdate = () => {
-      setPlatformAppName(localStorage.getItem('platform_app_name') || 'Zooka Business');
+      setPlatformAppName(localStorage.getItem('platform_app_name') || 'TallyGST ERP');
       setPlatformAppLogo(localStorage.getItem('platform_app_logo') || '');
     };
     window.addEventListener('platform_branding_updated', handleBrandingUpdate);
@@ -146,14 +149,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     let mounted = true;
     const fetchMeta = async () => {
       try {
-        const [wsList, plans, cloudSettings] = await Promise.all([
+        const [wsList, plans, cloudSettings, reviewsList] = await Promise.all([
           getAllWorkspaces(),
           getAllSubscriptionPlans(),
           getPlatformSettings(),
+          getAllCustomerReviews(),
         ]);
         if (mounted) {
           if (Array.isArray(wsList)) setWorkspacesList(wsList);
           if (Array.isArray(plans)) setPlansCount(plans.length);
+          if (Array.isArray(reviewsList)) setReviewsCount(reviewsList.length);
           if (cloudSettings) {
             if (cloudSettings.appName) setPlatformAppName(cloudSettings.appName);
             if (cloudSettings.appLogoUrl) setPlatformAppLogo(cloudSettings.appLogoUrl);
@@ -166,8 +171,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     fetchMeta();
+
+    const handleReviewsUpdate = () => {
+      getAllCustomerReviews().then((list) => {
+        if (mounted && Array.isArray(list)) setReviewsCount(list.length);
+      });
+    };
+    window.addEventListener('customer_reviews_updated', handleReviewsUpdate);
+
     return () => {
       mounted = false;
+      window.removeEventListener('customer_reviews_updated', handleReviewsUpdate);
     };
   }, [activeTab, activeWorkspace]);
 
@@ -304,6 +318,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       subtitle: 'Pricing tiers & resource quotas',
       icon: Layers,
       badge: plansCount > 0 ? `${plansCount}` : undefined,
+    },
+    {
+      id: 'pillars' as SuperAdminSubTab,
+      label: 'Architectural Pillars',
+      shortLabel: 'Pillars',
+      subtitle: 'Core statutory platform pillars',
+      icon: Sparkles,
+    },
+    {
+      id: 'reviews' as SuperAdminSubTab,
+      label: 'Customer Reviews',
+      shortLabel: 'Reviews',
+      subtitle: 'Landing page testimonials & ratings',
+      icon: MessageSquareQuote,
+      badge: reviewsCount > 0 ? `${reviewsCount}` : undefined,
     },
     {
       id: 'audit' as SuperAdminSubTab,

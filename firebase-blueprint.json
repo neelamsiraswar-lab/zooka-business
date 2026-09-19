@@ -352,6 +352,7 @@
         "maxInvoicesPerMonth": { "type": "number" },
         "maxLedgers": { "type": "number" },
         "maxBranches": { "type": "number" },
+        "order": { "type": "number", "description": "Display sequence ordering index on public landing page and checkout" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -379,9 +380,60 @@
         "subInvoiceNextNum": { "type": "string" },
         "subInvoicePadding": { "type": "string" }
       }
+    },
+    "ArchitecturalPillar": {
+      "title": "ArchitecturalPillar",
+      "description": "Core platform architectural capability pillars displayed on landing and governance console",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique pillar identifier" },
+        "title": { "type": "string", "description": "Pillar title" },
+        "description": { "type": "string", "description": "Detailed explanation of technical accounting capability" },
+        "icon": { "type": "string", "description": "Lucide icon name" },
+        "colorTheme": { "type": "string", "description": "Color scheme accent", "enum": ["emerald", "indigo", "purple", "teal", "amber", "blue", "rose", "cyan"] },
+        "badge": { "type": "string", "description": "Optional categorization tag or pill" },
+        "order": { "type": "number", "description": "Display order sequence" },
+        "isActive": { "type": "boolean", "description": "Published visibility toggle" },
+        "isBuiltIn": { "type": "boolean", "description": "Whether system default" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "description", "icon", "order", "isActive"]
+    },
+    "CustomerReview": {
+      "title": "CustomerReview",
+      "description": "Customer and client reviews and testimonials displayed on landing page and managed by super admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique review identifier" },
+        "authorName": { "type": "string", "description": "Name of the reviewer or business leader", "maxLength": 128 },
+        "roleOrTitle": { "type": "string", "description": "Designation or title of author", "maxLength": 128 },
+        "companyName": { "type": "string", "description": "Business, firm, or client entity name", "maxLength": 128 },
+        "location": { "type": "string", "description": "City or state location in India", "maxLength": 128 },
+        "rating": { "type": "number", "description": "Star rating out of 5" },
+        "reviewText": { "type": "string", "description": "Full testimonial or review statement", "maxLength": 2048 },
+        "badge": { "type": "string", "description": "Verification tag, e.g., Verified CA", "maxLength": 64 },
+        "avatarUrl": { "type": "string", "description": "Optional profile avatar image URL", "maxLength": 512 },
+        "avatarBgColor": { "type": "string", "description": "Color scheme accent for initials avatar", "enum": ["emerald", "indigo", "purple", "teal", "amber", "blue", "rose", "cyan"] },
+        "order": { "type": "number", "description": "Display sequence ordering index" },
+        "isFeatured": { "type": "boolean", "description": "Whether highlighted in prominent hero spot" },
+        "isActive": { "type": "boolean", "description": "Published live visibility status" },
+        "isBuiltIn": { "type": "boolean", "description": "Whether default system review" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["authorName", "roleOrTitle", "companyName", "rating", "reviewText", "order", "isActive"]
     }
   },
   "firestore": {
+    "/reviews/{reviewId}": {
+      "schema": "CustomerReview",
+      "description": "Customer testimonials and verified reviews governed by super admin"
+    },
+    "/architectural_pillars/{pillarId}": {
+      "schema": "ArchitecturalPillar",
+      "description": "Core architectural pillars and platform capabilities governed by super admin"
+    },
     "/platform_settings/{settingId}": {
       "schema": "PlatformSettings",
       "description": "Global platform branding, footer, and master business billing configuration"
