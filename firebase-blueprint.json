@@ -463,9 +463,30 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["key", "title", "order", "isVisible"]
+    },
+    "HomepageFaq": {
+      "title": "HomepageFaq",
+      "description": "Frequently asked questions and answers displayed on the public landing page",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "question": { "type": "string", "maxLength": 512 },
+        "answer": { "type": "string", "maxLength": 2048 },
+        "category": { "type": "string", "maxLength": 128 },
+        "order": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "isBuiltIn": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["question", "answer", "order", "isActive"]
     }
   },
   "firestore": {
+    "/homepage_faqs/{faqId}": {
+      "schema": "HomepageFaq",
+      "description": "Landing page FAQ items governed by super admin"
+    },
     "/homepage_sections/{sectionId}": {
       "schema": "HomepageSection",
       "description": "Landing page component ordering and visibility governed by super admin"

@@ -114,6 +114,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /homepage_faqs/{faqId} {
+      allow read, write: if true;
+    }
+
     // Default Deny Catch-All for unknown paths
     match /{document=**} {
       allow read, write: if false;

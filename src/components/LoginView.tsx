@@ -57,7 +57,8 @@ import { CustomerReviewsSection } from './CustomerReviewsSection';
 import { getAllFeatureBadges, DEFAULT_FEATURE_BADGES } from '../db/featureBadges';
 import { renderFeatureBadgeIcon, BADGE_COLOR_THEMES } from './FeatureBadgeManager';
 import { getAllHomepageSections, DEFAULT_HOMEPAGE_SECTIONS } from '../db/homepageSections';
-import { HomepageSection } from '../types';
+import { HomepageSection, HomepageFaq } from '../types';
+import { getAllHomepageFaqs, DEFAULT_HOMEPAGE_FAQS } from '../db/homepageFaqs';
 
 export const LoginView: React.FC = () => {
   const {
@@ -155,6 +156,23 @@ export const LoginView: React.FC = () => {
   const [featureBadges, setFeatureBadges] = useState<FeatureBadge[]>([]);
   const [badgesLoading, setBadgesLoading] = useState(false);
 
+  const [faqs, setFaqs] = useState<HomepageFaq[]>(DEFAULT_HOMEPAGE_FAQS);
+  const [faqsLoading, setFaqsLoading] = useState(false);
+
+  const loadFaqs = async () => {
+    setFaqsLoading(true);
+    try {
+      const list = await getAllHomepageFaqs();
+      if (list && list.length > 0) {
+        setFaqs(list);
+      }
+    } catch (err) {
+      console.error('Failed to load FAQs in LoginView:', err);
+    } finally {
+      setFaqsLoading(false);
+    }
+  };
+
   const loadBadges = async () => {
     setBadgesLoading(true);
     try {
@@ -210,6 +228,13 @@ export const LoginView: React.FC = () => {
     const handleBadgesUpdate = () => loadBadges();
     window.addEventListener('feature_badges_updated', handleBadgesUpdate);
     return () => window.removeEventListener('feature_badges_updated', handleBadgesUpdate);
+  }, []);
+
+  useEffect(() => {
+    loadFaqs();
+    const handleFaqsUpdate = () => loadFaqs();
+    window.addEventListener('homepage_faqs_updated', handleFaqsUpdate);
+    return () => window.removeEventListener('homepage_faqs_updated', handleFaqsUpdate);
   }, []);
 
   const [homepageSections, setHomepageSections] = useState<HomepageSection[]>(DEFAULT_HOMEPAGE_SECTIONS);
@@ -360,25 +385,6 @@ export const LoginView: React.FC = () => {
 
   const activeError = localError || error;
 
-  const faqs = [
-    {
-      q: 'How does multi-tenant isolation work for our financial records?',
-      a: 'Each organization operates in its own isolated Firestore workspace context with distinct company settings, chart of accounts, vouchers, and audit logs. Data is encrypted in transit via TLS 1.3 and partitioned with strict role-based authorization rules.',
-    },
-    {
-      q: 'Does Apex TallyGST support automated HSN codes and GST splits?',
-      a: 'Yes. The system automatically computes Intra-State (CGST + SGST) vs Inter-State (IGST) calculations based on Place of Supply rules, generates compliant e-invoice formats, day books, and prepares real-time GSTR-1, GSTR-3B, and GSTR-2B reconciliations.',
-    },
-    {
-      q: 'Can we import existing party ledgers and bank statements?',
-      a: 'Absolutely. The platform includes smart PDF/Excel/CSV parsers for ICICI, HDFC, SBI, and Axis Bank statements with automated BRS voucher matching, as well as bulk party ledger and inventory imports.',
-    },
-    {
-      q: 'What roles are supported for internal control and statutory audits?',
-      a: 'Five distinct privilege tiers: Super Administrator (platform governance), Workspace Admin (full company control), Senior Accountant (vouchers, journals & taxes), Billing Operator (sales & inventory), and Statutory Auditor (read-only compliance inspection).',
-    },
-  ];
-
   const sortedVisibleSections = [...homepageSections]
     .filter((s) => s.isVisible)
     .sort((a, b) => a.order - b.order);
@@ -416,10 +422,10 @@ export const LoginView: React.FC = () => {
         {/* Navigation jump links & Actions */}
         <div className="flex items-center gap-2 sm:gap-4">
           <nav className="hidden md:flex items-center gap-4 text-xs text-slate-400">
-            {homepageSections.some((s) => s.key === 'features_pillars' && s.isVisible) && (
+            {homepageSections.some((s) => ['pillars', 'features_pillars', 'features'].includes(s.key) && s.isVisible) && (
               <a href="#features-section" className="hover:text-white transition">Features</a>
             )}
-            {homepageSections.some((s) => s.key === 'gst_calculator' && s.isVisible) && (
+            {homepageSections.some((s) => ['gst-calculator', 'gst_calculator'].includes(s.key) && s.isVisible) && (
               <a href="#gst-calculator-section" className="hover:text-emerald-400 transition">GST Simulator</a>
             )}
             <button
@@ -435,7 +441,7 @@ export const LoginView: React.FC = () => {
             {homepageSections.some((s) => s.key === 'reviews' && s.isVisible) && (
               <a href="#reviews-section" className="hover:text-amber-400 transition">Reviews</a>
             )}
-            {homepageSections.some((s) => s.key === 'faq' && s.isVisible) && (
+            {homepageSections.some((s) => ['faqs', 'faq'].includes(s.key) && s.isVisible) && (
               <a href="#faq-section" className="hover:text-white transition">FAQs</a>
             )}
           </nav>
@@ -952,7 +958,7 @@ export const LoginView: React.FC = () => {
               );
             }
 
-            if (section.key === 'gst_calculator') {
+            if (['gst-calculator', 'gst_calculator'].includes(section.key)) {
               return (
                 <section key={section.id} id="gst-calculator-section" className="pt-4 scroll-mt-20">
                   <GstQuickCalculatorWidget />
@@ -960,13 +966,13 @@ export const LoginView: React.FC = () => {
               );
             }
 
-            if (section.key === 'features_pillars') {
+            if (['pillars', 'features_pillars', 'features'].includes(section.key)) {
               return (
                 <section key={section.id} id="features-section" className="space-y-6 pt-4 scroll-mt-20">
                   <div className="flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-2">
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
                       <Layers className="w-3.5 h-3.5" />
-                      <span>{section.badgeText || 'Core Architectural Pillars'}</span>
+                      <span>{section.badgeText || section.customBadge || 'Core Architectural Pillars'}</span>
                     </div>
                     <h2 className="text-2xl sm:text-3xl font-bold text-white">
                       {section.title || "Built specifically for India's Statutory Accounting Standards"}
@@ -1204,13 +1210,106 @@ export const LoginView: React.FC = () => {
               );
             }
 
-            if (section.key === 'faq') {
+            if (['trust-metrics', 'trust_metrics'].includes(section.key)) {
+              return (
+                <section key={section.id} id="trust-metrics-section" className="pt-8 border-t border-slate-800/80 space-y-6 scroll-mt-20">
+                  <div className="text-center max-w-2xl mx-auto space-y-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-bold uppercase tracking-wider">
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      <span>{section.badgeText || section.customBadge || 'Enterprise Scale & Trust Metrics'}</span>
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-white">
+                      {section.title || 'Engineered for Scale, Speed, and Compliance'}
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                      {section.subtitle || 'Proven performance supporting fast-growing businesses, Chartered Accountants, and multi-state enterprises across India.'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 text-center space-y-1 hover:border-blue-500/40 transition">
+                      <div className="text-2xl sm:text-3xl font-black text-blue-400 font-mono">₹1,400+ Cr</div>
+                      <div className="text-xs font-semibold text-white">Invoices & E-way Bills</div>
+                      <div className="text-[11px] text-slate-500">Processed across Indian businesses</div>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 text-center space-y-1 hover:border-emerald-500/40 transition">
+                      <div className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono">99.98%</div>
+                      <div className="text-xs font-semibold text-white">Uptime Availability SLA</div>
+                      <div className="text-[11px] text-slate-500">Multi-region redundant cloud</div>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 text-center space-y-1 hover:border-amber-500/40 transition">
+                      <div className="text-2xl sm:text-3xl font-black text-amber-400 font-mono">100%</div>
+                      <div className="text-xs font-semibold text-white">GSTN Rule 46 Compliant</div>
+                      <div className="text-[11px] text-slate-500">Validated with GST council norms</div>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 text-center space-y-1 hover:border-teal-500/40 transition">
+                      <div className="text-2xl sm:text-3xl font-black text-teal-400 font-mono">&lt; 0.5s</div>
+                      <div className="text-xs font-semibold text-white">Double-Entry Ledger Sync</div>
+                      <div className="text-[11px] text-slate-500">Instant journal & trial balance updates</div>
+                    </div>
+                  </div>
+                </section>
+              );
+            }
+
+            if (['security-compliance', 'security_compliance'].includes(section.key)) {
+              return (
+                <section key={section.id} id="security-section" className="pt-8 border-t border-slate-800/80 space-y-6 scroll-mt-20">
+                  <div className="text-center max-w-2xl mx-auto space-y-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>{section.badgeText || section.customBadge || 'Statutory Security & Encryption'}</span>
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-white">
+                      {section.title || 'Bank-Grade Security for Your Financial Records'}
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                      {section.subtitle || 'Every journal entry, invoice, and reconciliation is protected by multi-layer cryptographic safeguards.'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <h3 className="text-sm font-bold text-white">256-Bit TLS & At-Rest Encryption</h3>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        All transaction data in transit and at rest is safeguarded using AES-256 cryptographic standards.
+                      </p>
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+                      <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                        <Layers className="w-5 h-5" />
+                      </div>
+                      <h3 className="text-sm font-bold text-white">Tamper-Evident SHA-256 Audit Trail</h3>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Every transaction modification, deletion, and voucher creation logs an immutable cryptographic hash.
+                      </p>
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+                      <div className="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
+                        <Zap className="w-5 h-5" />
+                      </div>
+                      <h3 className="text-sm font-bold text-white">Strict Multi-Tenant Isolation</h3>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Granular role-based access controls ensure zero data leakage between different workspaces and branches.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              );
+            }
+
+            if (['faqs', 'faq'].includes(section.key)) {
               return (
                 <section key={section.id} id="faq-section" className="pt-8 border-t border-slate-800/80 space-y-6 max-w-3xl mx-auto scroll-mt-20">
                   <div className="text-center space-y-2">
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold uppercase tracking-wider">
                       <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{section.badgeText || 'Frequently Asked Questions'}</span>
+                      <span>{section.badgeText || section.customBadge || 'Frequently Asked Questions'}</span>
                     </div>
                     <h2 className="text-2xl font-bold text-white">{section.title || 'Got Questions? We Have Answers.'}</h2>
                     {section.subtitle && (
@@ -1219,35 +1318,79 @@ export const LoginView: React.FC = () => {
                   </div>
 
           <div className="space-y-3">
-            {faqs.map((faq, idx) => {
-              const isOpen = openFaqIndex === idx;
-              return (
-                <div
-                  key={idx}
-                  className="rounded-xl bg-slate-900/80 border border-slate-800 overflow-hidden transition"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
-                    className="w-full px-5 py-3.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold text-white hover:text-emerald-400 transition cursor-pointer"
+            {faqs
+              .filter((f) => f.isActive !== false)
+              .map((faq, idx) => {
+                const isOpen = openFaqIndex === idx;
+                return (
+                  <div
+                    key={faq.id || idx}
+                    className="rounded-xl bg-slate-900/80 border border-slate-800 overflow-hidden transition"
                   >
-                    <span>{faq.q}</span>
-                    {isOpen ? (
-                      <ChevronUp className="w-4 h-4 text-emerald-400 shrink-0" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+                    <button
+                      type="button"
+                      onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
+                      className="w-full px-5 py-3.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold text-white hover:text-emerald-400 transition cursor-pointer"
+                    >
+                      <span className="pr-4">{faq.question}</span>
+                      {isOpen ? (
+                        <ChevronUp className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+                      )}
+                    </button>
+                    {isOpen && (
+                      <div className="px-5 pb-4 text-xs text-slate-400 leading-relaxed border-t border-slate-800/50 pt-3">
+                        {faq.answer}
+                      </div>
                     )}
-                  </button>
-                  {isOpen && (
-                    <div className="px-5 pb-4 text-xs text-slate-400 leading-relaxed border-t border-slate-800/50 pt-3">
-                      {faq.a}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })}
           </div>
         </section>
+              );
+            }
+
+            if (['cta-banner', 'cta_banner', 'cta'].includes(section.key)) {
+              return (
+                <section key={section.id} id="cta-banner-section" className="pt-8 border-t border-slate-800/80 scroll-mt-20">
+                  <div className="p-8 sm:p-12 rounded-3xl bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 border border-emerald-500/30 text-center space-y-6 max-w-4xl mx-auto shadow-2xl relative overflow-hidden">
+                    <div className="space-y-2 relative z-10">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{section.badgeText || section.customBadge || 'Instant 14-Day Free Trial'}</span>
+                      </div>
+                      <h2 className="text-2xl sm:text-4xl font-extrabold text-white">
+                        {section.title || 'Ready to Modernize Your GST Invoicing & Accounts?'}
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed">
+                        {section.subtitle || 'Join hundreds of forward-thinking businesses and Chartered Accountants saving 15+ hours each week on GST reconciliation.'}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center gap-4 relative z-10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode('signup');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center gap-2"
+                      >
+                        <span>Start Free 14-Day Trial</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowRoleMatrixModal(true)}
+                        className="px-6 py-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-white font-semibold text-sm border border-slate-700 transition cursor-pointer"
+                      >
+                        Explore Role Sandboxes
+                      </button>
+                    </div>
+                  </div>
+                </section>
               );
             }
 

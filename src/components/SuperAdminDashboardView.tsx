@@ -43,6 +43,7 @@ import {
   ArrowUpDown,
   ChevronLeft,
   LayoutTemplate,
+  HelpCircle,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -53,7 +54,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { Workspace, ArchitecturalPillar, CustomerReview, FeatureBadge, HomepageSection } from '../types';
+import { Workspace, ArchitecturalPillar, CustomerReview, FeatureBadge, HomepageSection, HomepageFaq } from '../types';
 import {
   getAllWorkspaces,
   createWorkspace,
@@ -97,6 +98,8 @@ import { getAllFeatureBadges } from '../db/featureBadges';
 import { FeatureBadgeManager } from './FeatureBadgeManager';
 import { getAllHomepageSections } from '../db/homepageSections';
 import { HomepageCustomizationManager } from './HomepageCustomizationManager';
+import { getAllHomepageFaqs } from '../db/homepageFaqs';
+import { HomepageFaqManager } from './HomepageFaqManager';
 
 interface SuperAdminDashboardViewProps {
   onSwitchWorkspace?: (workspace: Workspace) => void;
@@ -127,14 +130,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
   const [reviews, setReviews] = useState<CustomerReview[]>([]);
   const [featureBadges, setFeatureBadges] = useState<FeatureBadge[]>([]);
   const [homepageSections, setHomepageSections] = useState<HomepageSection[]>([]);
+  const [faqs, setFaqs] = useState<HomepageFaq[]>([]);
 
   const [internalDashboardViewTab, setInternalDashboardViewTab] = useState<
-    'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'homepage' | 'audit' | 'analytics' | 'profile'
+    'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'faqs' | 'homepage' | 'audit' | 'analytics' | 'profile'
   >('home');
 
   const dashboardViewTab = activeViewTab ?? internalDashboardViewTab;
   const setDashboardViewTab = (
-    tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'homepage' | 'audit' | 'analytics' | 'profile'
+    tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'faqs' | 'homepage' | 'audit' | 'analytics' | 'profile'
   ) => {
     setInternalDashboardViewTab(tab);
     onViewTabChange?.(tab);
@@ -285,6 +289,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     }
   };
 
+  const loadFaqs = async () => {
+    try {
+      const fetched = await getAllHomepageFaqs();
+      setFaqs(fetched || []);
+    } catch (err: any) {
+      console.error('Failed to load FAQs:', err);
+    }
+  };
+
   useEffect(() => {
     loadWorkspaces();
     loadPlans();
@@ -292,6 +305,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     loadReviews();
     loadFeatureBadges();
     loadHomepageSections();
+    loadFaqs();
 
     const handleSuperAdminRefresh = () => {
       loadWorkspaces();
@@ -300,6 +314,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
       loadReviews();
       loadFeatureBadges();
       loadHomepageSections();
+      loadFaqs();
     };
     const handlePillarsUpdate = () => {
       loadPillars();
@@ -316,6 +331,9 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     const handleHomepageSectionsUpdate = () => {
       loadHomepageSections();
     };
+    const handleFaqsUpdate = () => {
+      loadFaqs();
+    };
 
     window.addEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
     window.addEventListener('architectural_pillars_updated', handlePillarsUpdate);
@@ -323,6 +341,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     window.addEventListener('subscription_plans_updated', handlePlansUpdate);
     window.addEventListener('feature_badges_updated', handleBadgesUpdate);
     window.addEventListener('homepage_sections_updated', handleHomepageSectionsUpdate);
+    window.addEventListener('homepage_faqs_updated', handleFaqsUpdate);
     return () => {
       window.removeEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
       window.removeEventListener('architectural_pillars_updated', handlePillarsUpdate);
@@ -330,6 +349,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
       window.removeEventListener('subscription_plans_updated', handlePlansUpdate);
       window.removeEventListener('feature_badges_updated', handleBadgesUpdate);
       window.removeEventListener('homepage_sections_updated', handleHomepageSectionsUpdate);
+      window.removeEventListener('homepage_faqs_updated', handleFaqsUpdate);
     };
   }, []);
 
@@ -739,6 +759,7 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
             { id: 'pillars', label: 'Architectural Pillars', icon: Layers, count: pillars.length },
             { id: 'badges', label: 'Feature Badges', icon: ShieldCheck, count: featureBadges.length },
             { id: 'reviews', label: 'Customer Reviews', icon: MessageSquareQuote, count: reviews.length },
+            { id: 'faqs', label: 'Homepage FAQs', icon: HelpCircle, count: faqs.length },
             { id: 'homepage', label: 'Homepage Customisation', icon: LayoutTemplate, count: homepageSections.length },
             { id: 'audit', label: 'Audit Trail', icon: Activity },
             { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -2028,11 +2049,24 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
         <CustomerReviewManager reviews={reviews} onRefresh={loadReviews} />
       )}
 
+      {/* ---------------- FREQUENTLY ASKED QUESTIONS (TAB) ---------------- */}
+      {dashboardViewTab === 'faqs' && (
+        <HomepageFaqManager faqs={faqs} onRefresh={loadFaqs} />
+      )}
+
       {/* ---------------- HOMEPAGE CUSTOMISATION & COMPONENT ORDER (TAB) ---------------- */}
       {dashboardViewTab === 'homepage' && (
         <HomepageCustomizationManager
           sections={homepageSections}
           onRefresh={loadHomepageSections}
+          pillars={pillars}
+          onRefreshPillars={loadPillars}
+          featureBadges={featureBadges}
+          onRefreshBadges={loadFeatureBadges}
+          reviews={reviews}
+          onRefreshReviews={loadReviews}
+          faqs={faqs}
+          onRefreshFaqs={loadFaqs}
           onNavigateToLandingPage={() => {
             if (onNavigateToTab) {
               onNavigateToTab('login');

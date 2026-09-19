@@ -72,6 +72,7 @@ export const COLLECTIONS = {
   REVIEWS: 'reviews',
   FEATURE_BADGES: 'feature_badges',
   HOMEPAGE_SECTIONS: 'homepage_sections',
+  HOMEPAGE_FAQS: 'homepage_faqs',
 } as const;
 
 // Compatible wrapper around Firebase Web SDK

@@ -538,7 +538,8 @@ export type HomepageSectionKey =
   | 'reviews'
   | 'security-compliance'
   | 'faqs'
-  | 'cta-banner';
+  | 'cta-banner'
+  | string;
 
 export interface HomepageSection {
   id: string;
@@ -551,7 +552,21 @@ export interface HomepageSection {
   isVisible: boolean;
   isBuiltIn?: boolean;
   customBadge?: string;
+  badgeText?: string;
+  customHtml?: string;
   description: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HomepageFaq {
+  id: string;
+  question: string;
+  answer: string;
+  category?: string;
+  order: number;
+  isActive: boolean;
+  isBuiltIn?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
