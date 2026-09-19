@@ -106,6 +106,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /feature_badges/{badgeId} {
+      allow read, write: if true;
+    }
+
+    match /homepage_sections/{sectionId} {
+      allow read, write: if true;
+    }
+
     // Default Deny Catch-All for unknown paths
     match /{document=**} {
       allow read, write: if false;

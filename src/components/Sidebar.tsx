@@ -32,6 +32,7 @@ import {
   ExternalLink,
   Plus,
   MessageSquareQuote,
+  LayoutTemplate,
 } from 'lucide-react';
 import { CompanyProfile, Workspace } from '../types';
 import { canAccessTab, ROLE_CONFIG, UserRole, isSuperAdmin } from '../lib/permissions';
@@ -56,7 +57,7 @@ export type NavTab =
   | 'reports'
   | 'settings';
 
-export type SuperAdminSubTab = 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile';
+export type SuperAdminSubTab = 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'homepage' | 'audit' | 'analytics' | 'profile';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -327,12 +328,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Sparkles,
     },
     {
+      id: 'badges' as SuperAdminSubTab,
+      label: 'Feature Badges',
+      shortLabel: 'Feature Badges',
+      subtitle: 'Hero feature badges governance',
+      icon: ShieldCheck,
+    },
+    {
       id: 'reviews' as SuperAdminSubTab,
       label: 'Customer Reviews',
       shortLabel: 'Reviews',
       subtitle: 'Landing page testimonials & ratings',
       icon: MessageSquareQuote,
       badge: reviewsCount > 0 ? `${reviewsCount}` : undefined,
+    },
+    {
+      id: 'homepage' as SuperAdminSubTab,
+      label: 'Homepage Customisation',
+      shortLabel: 'Homepage',
+      subtitle: 'Landing page arrangement & visibility',
+      icon: LayoutTemplate,
     },
     {
       id: 'audit' as SuperAdminSubTab,

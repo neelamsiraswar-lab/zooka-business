@@ -42,6 +42,7 @@ import {
   MessageSquareQuote,
   ArrowUpDown,
   ChevronLeft,
+  LayoutTemplate,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -52,7 +53,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { Workspace, ArchitecturalPillar, CustomerReview } from '../types';
+import { Workspace, ArchitecturalPillar, CustomerReview, FeatureBadge, HomepageSection } from '../types';
 import {
   getAllWorkspaces,
   createWorkspace,
@@ -92,13 +93,17 @@ import { getAllArchitecturalPillars } from '../db/architecturalPillars';
 import { ArchitecturalPillarManager } from './ArchitecturalPillarManager';
 import { getAllCustomerReviews } from '../db/customerReviews';
 import { CustomerReviewManager } from './CustomerReviewManager';
+import { getAllFeatureBadges } from '../db/featureBadges';
+import { FeatureBadgeManager } from './FeatureBadgeManager';
+import { getAllHomepageSections } from '../db/homepageSections';
+import { HomepageCustomizationManager } from './HomepageCustomizationManager';
 
 interface SuperAdminDashboardViewProps {
   onSwitchWorkspace?: (workspace: Workspace) => void;
   onNavigateToTab?: (tab: string) => void;
   hasEnteredWorkspace?: boolean;
-  activeViewTab?: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile';
-  onViewTabChange?: (tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile') => void;
+  activeViewTab?: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'homepage' | 'audit' | 'analytics' | 'profile';
+  onViewTabChange?: (tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'homepage' | 'audit' | 'analytics' | 'profile') => void;
 }
 
 export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = ({
@@ -120,14 +125,16 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
 
   const [pillars, setPillars] = useState<ArchitecturalPillar[]>([]);
   const [reviews, setReviews] = useState<CustomerReview[]>([]);
+  const [featureBadges, setFeatureBadges] = useState<FeatureBadge[]>([]);
+  const [homepageSections, setHomepageSections] = useState<HomepageSection[]>([]);
 
   const [internalDashboardViewTab, setInternalDashboardViewTab] = useState<
-    'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile'
+    'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'homepage' | 'audit' | 'analytics' | 'profile'
   >('home');
 
   const dashboardViewTab = activeViewTab ?? internalDashboardViewTab;
   const setDashboardViewTab = (
-    tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'reviews' | 'audit' | 'analytics' | 'profile'
+    tab: 'home' | 'workspaces' | 'subscriptions' | 'catalog' | 'pillars' | 'badges' | 'reviews' | 'homepage' | 'audit' | 'analytics' | 'profile'
   ) => {
     setInternalDashboardViewTab(tab);
     onViewTabChange?.(tab);
@@ -260,17 +267,39 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     }
   };
 
+  const loadFeatureBadges = async () => {
+    try {
+      const fetched = await getAllFeatureBadges();
+      setFeatureBadges(fetched || []);
+    } catch (err: any) {
+      console.error('Failed to load feature badges:', err);
+    }
+  };
+
+  const loadHomepageSections = async () => {
+    try {
+      const fetched = await getAllHomepageSections();
+      setHomepageSections(fetched || []);
+    } catch (err: any) {
+      console.error('Failed to load homepage sections:', err);
+    }
+  };
+
   useEffect(() => {
     loadWorkspaces();
     loadPlans();
     loadPillars();
     loadReviews();
+    loadFeatureBadges();
+    loadHomepageSections();
 
     const handleSuperAdminRefresh = () => {
       loadWorkspaces();
       loadPlans();
       loadPillars();
       loadReviews();
+      loadFeatureBadges();
+      loadHomepageSections();
     };
     const handlePillarsUpdate = () => {
       loadPillars();
@@ -281,16 +310,26 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
     const handlePlansUpdate = () => {
       loadPlans();
     };
+    const handleBadgesUpdate = () => {
+      loadFeatureBadges();
+    };
+    const handleHomepageSectionsUpdate = () => {
+      loadHomepageSections();
+    };
 
     window.addEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
     window.addEventListener('architectural_pillars_updated', handlePillarsUpdate);
     window.addEventListener('customer_reviews_updated', handleReviewsUpdate);
     window.addEventListener('subscription_plans_updated', handlePlansUpdate);
+    window.addEventListener('feature_badges_updated', handleBadgesUpdate);
+    window.addEventListener('homepage_sections_updated', handleHomepageSectionsUpdate);
     return () => {
       window.removeEventListener('refresh-super-admin', handleSuperAdminRefresh as EventListener);
       window.removeEventListener('architectural_pillars_updated', handlePillarsUpdate);
       window.removeEventListener('customer_reviews_updated', handleReviewsUpdate);
       window.removeEventListener('subscription_plans_updated', handlePlansUpdate);
+      window.removeEventListener('feature_badges_updated', handleBadgesUpdate);
+      window.removeEventListener('homepage_sections_updated', handleHomepageSectionsUpdate);
     };
   }, []);
 
@@ -698,7 +737,9 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
             { id: 'subscriptions', label: 'Subscriptions & Quotas', icon: CreditCard },
             { id: 'catalog', label: 'Plan Catalog', icon: Sparkles, count: plans.length },
             { id: 'pillars', label: 'Architectural Pillars', icon: Layers, count: pillars.length },
+            { id: 'badges', label: 'Feature Badges', icon: ShieldCheck, count: featureBadges.length },
             { id: 'reviews', label: 'Customer Reviews', icon: MessageSquareQuote, count: reviews.length },
+            { id: 'homepage', label: 'Homepage Customisation', icon: LayoutTemplate, count: homepageSections.length },
             { id: 'audit', label: 'Audit Trail', icon: Activity },
             { id: 'analytics', label: 'Analytics', icon: BarChart3 },
             { id: 'profile', label: 'Admin Profile', icon: ShieldCheck },
@@ -993,6 +1034,80 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                 >
                   <span>Manage Reviews &amp; Social Proof</span>
                   <span className="text-amber-400">→</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Landing Feature Badges</span>
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  {featureBadges.length} Badges
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Add, edit, re-order, or delete the enterprise hero feature badges showcased on the landing page hero section.
+              </p>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between py-1.5 border-b border-slate-800/60">
+                  <span className="text-slate-400">Active Badges:</span>
+                  <span className="text-emerald-400 font-bold">{featureBadges.filter((b) => b.isActive).length}</span>
+                </div>
+                <div className="flex justify-between py-1.5">
+                  <span className="text-slate-400">Default Badges:</span>
+                  <span className="text-indigo-400 font-bold">
+                    {featureBadges.filter((b) => b.isBuiltIn).length}
+                  </span>
+                </div>
+              </div>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDashboardViewTab('badges')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-between cursor-pointer border border-slate-700"
+                >
+                  <span>Manage Hero Feature Badges</span>
+                  <span className="text-emerald-400">→</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 shadow-xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <LayoutTemplate className="w-4 h-4 text-emerald-400" />
+                  <span>Homepage Customisation</span>
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  {homepageSections.filter((s) => s.isVisible).length} / {homepageSections.length} Visible
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Arrange the landing page component sequence, toggle section visibility (show/hide), and configure dynamic elements.
+              </p>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between py-1.5 border-b border-slate-800/60">
+                  <span className="text-slate-400">Total Registered Sections:</span>
+                  <span className="text-white font-bold">{homepageSections.length}</span>
+                </div>
+                <div className="flex justify-between py-1.5">
+                  <span className="text-slate-400">Hidden from Public:</span>
+                  <span className="text-amber-400 font-bold">
+                    {homepageSections.filter((s) => !s.isVisible).length}
+                  </span>
+                </div>
+              </div>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDashboardViewTab('homepage')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition flex items-center justify-between cursor-pointer border border-slate-700"
+                >
+                  <span>Customize Homepage Layout</span>
+                  <span className="text-emerald-400">→</span>
                 </button>
               </div>
             </div>
@@ -1903,9 +2018,30 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
         <ArchitecturalPillarManager pillars={pillars} onRefresh={loadPillars} />
       )}
 
+      {/* ---------------- HERO FEATURE BADGES (TAB) ---------------- */}
+      {dashboardViewTab === 'badges' && (
+        <FeatureBadgeManager badges={featureBadges} onRefresh={loadFeatureBadges} />
+      )}
+
       {/* ---------------- CUSTOMER REVIEWS & TESTIMONIALS (TAB) ---------------- */}
       {dashboardViewTab === 'reviews' && (
         <CustomerReviewManager reviews={reviews} onRefresh={loadReviews} />
+      )}
+
+      {/* ---------------- HOMEPAGE CUSTOMISATION & COMPONENT ORDER (TAB) ---------------- */}
+      {dashboardViewTab === 'homepage' && (
+        <HomepageCustomizationManager
+          sections={homepageSections}
+          onRefresh={loadHomepageSections}
+          onNavigateToLandingPage={() => {
+            if (onNavigateToTab) {
+              onNavigateToTab('login');
+            } else {
+              window.location.hash = '#landing';
+              window.location.reload();
+            }
+          }}
+        />
       )}
 
       {/* ---------------- PLATFORM AUDIT TRAIL (TAB 4) ---------------- */}

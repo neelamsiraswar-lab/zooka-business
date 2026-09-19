@@ -70,6 +70,8 @@ export const COLLECTIONS = {
   SYSTEM_PERSONAS: 'system_personas',
   ARCHITECTURAL_PILLARS: 'architectural_pillars',
   REVIEWS: 'reviews',
+  FEATURE_BADGES: 'feature_badges',
+  HOMEPAGE_SECTIONS: 'homepage_sections',
 } as const;
 
 // Compatible wrapper around Firebase Web SDK

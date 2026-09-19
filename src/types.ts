@@ -35,6 +35,20 @@ export interface CustomerReview {
   updatedAt?: string;
 }
 
+export interface FeatureBadge {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  colorTheme: 'emerald' | 'indigo' | 'purple' | 'teal' | 'amber' | 'blue' | 'rose' | 'cyan';
+  badgeText?: string;
+  order: number;
+  isActive: boolean;
+  isBuiltIn?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface SubscriptionPlan {
   id: string;
   name: string;
@@ -514,3 +528,30 @@ export type SettingsTab =
   | 'subscription'
   | 'whitelabel'
   | 'migration';
+
+export type HomepageSectionKey =
+  | 'hero'
+  | 'gst-calculator'
+  | 'pillars'
+  | 'trust-metrics'
+  | 'pricing'
+  | 'reviews'
+  | 'security-compliance'
+  | 'faqs'
+  | 'cta-banner';
+
+export interface HomepageSection {
+  id: string;
+  key: HomepageSectionKey;
+  title: string;
+  subtitle?: string;
+  category: 'core' | 'tools' | 'social_proof' | 'commercial' | 'compliance';
+  icon: string;
+  order: number;
+  isVisible: boolean;
+  isBuiltIn?: boolean;
+  customBadge?: string;
+  description: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

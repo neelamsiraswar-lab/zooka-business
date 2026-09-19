@@ -423,9 +423,57 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["authorName", "roleOrTitle", "companyName", "rating", "reviewText", "order", "isActive"]
+    },
+    "FeatureBadge": {
+      "title": "FeatureBadge",
+      "description": "Enterprise feature badges showcased in the hero section of the landing page",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique badge identifier" },
+        "title": { "type": "string", "description": "Feature title (e.g. Statutory GST Compliance)", "maxLength": 128 },
+        "description": { "type": "string", "description": "Short explanatory subtitle or description", "maxLength": 512 },
+        "icon": { "type": "string", "description": "Lucide icon component name", "maxLength": 64 },
+        "colorTheme": { "type": "string", "description": "Color theme accent for badge card", "enum": ["emerald", "indigo", "purple", "teal", "amber", "blue", "rose", "cyan"] },
+        "badgeText": { "type": "string", "description": "Optional category or pill label", "maxLength": 64 },
+        "order": { "type": "number", "description": "Display order index" },
+        "isActive": { "type": "boolean", "description": "Visibility on landing page hero" },
+        "isBuiltIn": { "type": "boolean", "description": "System default badge" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "description", "icon", "colorTheme", "order", "isActive"]
+    },
+    "HomepageSection": {
+      "title": "HomepageSection",
+      "description": "Customizable homepage landing page component configuration including arrangement order and visibility",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string", "enum": ["hero", "gst-calculator", "pillars", "trust-metrics", "pricing", "reviews", "security-compliance", "faqs", "cta-banner"] },
+        "title": { "type": "string", "maxLength": 256 },
+        "subtitle": { "type": "string", "maxLength": 512 },
+        "category": { "type": "string", "enum": ["core", "tools", "social_proof", "commercial", "compliance"] },
+        "icon": { "type": "string", "maxLength": 64 },
+        "order": { "type": "number" },
+        "isVisible": { "type": "boolean" },
+        "isBuiltIn": { "type": "boolean" },
+        "customBadge": { "type": "string", "maxLength": 64 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["key", "title", "order", "isVisible"]
     }
   },
   "firestore": {
+    "/homepage_sections/{sectionId}": {
+      "schema": "HomepageSection",
+      "description": "Landing page component ordering and visibility governed by super admin"
+    },
+    "/feature_badges/{badgeId}": {
+      "schema": "FeatureBadge",
+      "description": "Hero enterprise feature badges governed by super admin"
+    },
     "/reviews/{reviewId}": {
       "schema": "CustomerReview",
       "description": "Customer testimonials and verified reviews governed by super admin"

@@ -46,15 +46,18 @@ import { GstQuickCalculatorWidget } from './GstQuickCalculatorWidget';
 import { getRememberedCredentials } from '../lib/sessionSecurity';
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, formatINR } from '../data/subscriptionPlans';
-import { ArchitecturalPillar, CustomerReview } from '../types';
+import { ArchitecturalPillar, CustomerReview, FeatureBadge } from '../types';
 import { getAllArchitecturalPillars } from '../db/architecturalPillars';
 import {
-  ArchitecturalPillarManager,
   COLOR_THEMES,
   renderPillarIcon,
 } from './ArchitecturalPillarManager';
 import { getAllCustomerReviews } from '../db/customerReviews';
 import { CustomerReviewsSection } from './CustomerReviewsSection';
+import { getAllFeatureBadges, DEFAULT_FEATURE_BADGES } from '../db/featureBadges';
+import { renderFeatureBadgeIcon, BADGE_COLOR_THEMES } from './FeatureBadgeManager';
+import { getAllHomepageSections, DEFAULT_HOMEPAGE_SECTIONS } from '../db/homepageSections';
+import { HomepageSection } from '../types';
 
 export const LoginView: React.FC = () => {
   const {
@@ -145,10 +148,24 @@ export const LoginView: React.FC = () => {
 
   const [pillars, setPillars] = useState<ArchitecturalPillar[]>([]);
   const [pillarsLoading, setPillarsLoading] = useState(false);
-  const [showPillarsManagerModal, setShowPillarsManagerModal] = useState(false);
 
   const [reviews, setReviews] = useState<CustomerReview[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  const [featureBadges, setFeatureBadges] = useState<FeatureBadge[]>([]);
+  const [badgesLoading, setBadgesLoading] = useState(false);
+
+  const loadBadges = async () => {
+    setBadgesLoading(true);
+    try {
+      const list = await getAllFeatureBadges();
+      setFeatureBadges(list || []);
+    } catch (err) {
+      console.error('Failed to load feature badges in LoginView:', err);
+    } finally {
+      setBadgesLoading(false);
+    }
+  };
 
   const loadPillars = async () => {
     setPillarsLoading(true);
@@ -186,6 +203,37 @@ export const LoginView: React.FC = () => {
     const handleReviewsUpdate = () => loadReviews();
     window.addEventListener('customer_reviews_updated', handleReviewsUpdate);
     return () => window.removeEventListener('customer_reviews_updated', handleReviewsUpdate);
+  }, []);
+
+  useEffect(() => {
+    loadBadges();
+    const handleBadgesUpdate = () => loadBadges();
+    window.addEventListener('feature_badges_updated', handleBadgesUpdate);
+    return () => window.removeEventListener('feature_badges_updated', handleBadgesUpdate);
+  }, []);
+
+  const [homepageSections, setHomepageSections] = useState<HomepageSection[]>(DEFAULT_HOMEPAGE_SECTIONS);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+
+  const loadSections = async () => {
+    setSectionsLoading(true);
+    try {
+      const list = await getAllHomepageSections();
+      if (list && list.length > 0) {
+        setHomepageSections(list);
+      }
+    } catch (err) {
+      console.error('Failed to load homepage sections in LoginView:', err);
+    } finally {
+      setSectionsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSections();
+    const handleSectionsUpdate = () => loadSections();
+    window.addEventListener('homepage_sections_updated', handleSectionsUpdate);
+    return () => window.removeEventListener('homepage_sections_updated', handleSectionsUpdate);
   }, []);
 
   useEffect(() => {
@@ -331,6 +379,10 @@ export const LoginView: React.FC = () => {
     },
   ];
 
+  const sortedVisibleSections = [...homepageSections]
+    .filter((s) => s.isVisible)
+    .sort((a, b) => a.order - b.order);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white relative">
       {/* Top Navigation Bar */}
@@ -364,8 +416,12 @@ export const LoginView: React.FC = () => {
         {/* Navigation jump links & Actions */}
         <div className="flex items-center gap-2 sm:gap-4">
           <nav className="hidden md:flex items-center gap-4 text-xs text-slate-400">
-            <a href="#features-section" className="hover:text-white transition">Features</a>
-            <a href="#gst-calculator-section" className="hover:text-emerald-400 transition">GST Simulator</a>
+            {homepageSections.some((s) => s.key === 'features_pillars' && s.isVisible) && (
+              <a href="#features-section" className="hover:text-white transition">Features</a>
+            )}
+            {homepageSections.some((s) => s.key === 'gst_calculator' && s.isVisible) && (
+              <a href="#gst-calculator-section" className="hover:text-emerald-400 transition">GST Simulator</a>
+            )}
             <button
               type="button"
               onClick={() => setShowRoleMatrixModal(true)}
@@ -373,9 +429,15 @@ export const LoginView: React.FC = () => {
             >
               Role Matrix
             </button>
-            <a href="#pricing-section" className="hover:text-white transition">Pricing</a>
-            <a href="#reviews-section" className="hover:text-amber-400 transition">Reviews</a>
-            <a href="#faq-section" className="hover:text-white transition">FAQs</a>
+            {homepageSections.some((s) => s.key === 'pricing' && s.isVisible) && (
+              <a href="#pricing-section" className="hover:text-white transition">Pricing</a>
+            )}
+            {homepageSections.some((s) => s.key === 'reviews' && s.isVisible) && (
+              <a href="#reviews-section" className="hover:text-amber-400 transition">Reviews</a>
+            )}
+            {homepageSections.some((s) => s.key === 'faq' && s.isVisible) && (
+              <a href="#faq-section" className="hover:text-white transition">FAQs</a>
+            )}
           </nav>
 
           {/* Super Admin Login Action */}
@@ -406,67 +468,60 @@ export const LoginView: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 px-4 py-8 sm:py-12 max-w-7xl mx-auto w-full space-y-16">
-        
-        {/* ================= HERO & AUTH SECTION ================= */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+        {sortedVisibleSections
+          .filter((s) => s.key !== 'footer')
+          .map((section) => {
+            if (section.key === 'hero') {
+              return (
+                <div key={section.id} id="hero-section" className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start scroll-mt-20">
           
           {/* Left Column: Value Proposition & 1-Click Role Sandbox */}
           <div className="lg:col-span-6 space-y-6 pt-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-medium shadow-xs">
               <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>India GST Statutory Compliance • Real-Time Cloud Sync</span>
+              <span>{section.badgeText || 'India GST Statutory Compliance • Real-Time Cloud Sync'}</span>
             </div>
 
             <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
-              Enterprise GST Invoicing &amp; Double-Entry Accounting
+              {section.title || 'Enterprise GST Invoicing & Double-Entry Accounting'}
             </h1>
 
             <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-              Power your business with automated HSN calculations, real-time GSTR-1/3B summaries, bank statement auto-reconciliation, multi-branch bookkeeping, and immutable audit trails.
+              {section.subtitle || 'Power your business with automated HSN calculations, real-time GSTR-1/3B summaries, bank statement auto-reconciliation, multi-branch bookkeeping, and immutable audit trails.'}
             </p>
 
             {/* Enterprise Core Features Summary */}
             <div className="space-y-3 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
-                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    <span>Statutory GST Compliance</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Intra/Inter-State dual tax engine, HSN auto-lookup &amp; real-time GSTR-1/3B.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
-                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                    <Building2 className="w-4 h-4 text-indigo-400" />
-                    <span>Multi-Tenant Workspaces</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Isolated company databases, multiple branches &amp; secure session tokens.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
-                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                    <FileText className="w-4 h-4 text-purple-400" />
-                    <span>Double-Entry Bookkeeping</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Day books, general ledgers, trial balance, and automatic P&amp;L / balance sheet.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1">
-                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                    <Landmark className="w-4 h-4 text-teal-400" />
-                    <span>Automated Bank BRS</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Instant CSV/Excel bank statement parsing &amp; smart voucher auto-matching.
-                  </p>
-                </div>
+                {(featureBadges.length > 0 && featureBadges.some((b) => b.isActive)
+                  ? featureBadges.filter((b) => b.isActive)
+                  : DEFAULT_FEATURE_BADGES
+                ).map((badge) => {
+                  const theme = BADGE_COLOR_THEMES[badge.colorTheme] || BADGE_COLOR_THEMES.emerald;
+                  return (
+                    <div
+                      key={badge.id}
+                      className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800/90 space-y-1 transition hover:border-slate-700"
+                    >
+                      <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                        <div className={theme.textIcon}>
+                          {renderFeatureBadgeIcon(badge.icon, 'w-4 h-4')}
+                        </div>
+                        <span>{badge.title}</span>
+                        {badge.badgeText && (
+                          <span
+                            className={`ml-auto px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider ${theme.badgeBg} ${theme.badgeBorder} ${theme.badgeText} border`}
+                          >
+                            {badge.badgeText}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-snug">
+                        {badge.description}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex items-center justify-between pt-1">
@@ -894,37 +949,32 @@ export const LoginView: React.FC = () => {
             </div>
           </div>
         </div>
+              );
+            }
 
-        {/* ================= INTERACTIVE GST TAX SIMULATOR WIDGET ================= */}
-        <section id="gst-calculator-section" className="pt-4 scroll-mt-20">
-          <GstQuickCalculatorWidget />
-        </section>
+            if (section.key === 'gst_calculator') {
+              return (
+                <section key={section.id} id="gst-calculator-section" className="pt-4 scroll-mt-20">
+                  <GstQuickCalculatorWidget />
+                </section>
+              );
+            }
 
-        {/* ================= KEY PLATFORM CAPABILITIES ================= */}
-        <section id="features-section" className="space-y-6 pt-4 scroll-mt-20">
-          <div className="flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-2">
-            <div className="inline-flex items-center gap-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
-                <Layers className="w-3.5 h-3.5" />
-                <span>Core Architectural Pillars</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPillarsManagerModal(true)}
-                className="px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer"
-                title="Super Admin: Add, Edit, or Delete Core Architectural Pillars"
-              >
-                <Sparkles className="w-3 h-3 text-indigo-400" />
-                <span>Manage Pillars</span>
-              </button>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white">
-              Built specifically for India's Statutory Accounting Standards
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              Designed from the ground up to replace legacy desktop bookkeeping software with real-time multi-branch cloud infrastructure.
-            </p>
-          </div>
+            if (section.key === 'features_pillars') {
+              return (
+                <section key={section.id} id="features-section" className="space-y-6 pt-4 scroll-mt-20">
+                  <div className="flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>{section.badgeText || 'Core Architectural Pillars'}</span>
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-white">
+                      {section.title || "Built specifically for India's Statutory Accounting Standards"}
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                      {section.subtitle || "Designed from the ground up to replace legacy desktop bookkeeping software with real-time multi-branch cloud infrastructure."}
+                    </p>
+                  </div>
 
           {pillarsLoading && pillars.length === 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -974,66 +1024,23 @@ export const LoginView: React.FC = () => {
             </div>
           )}
         </section>
+              );
+            }
 
-        {/* ================= ARCHITECTURAL PILLARS GOVERNANCE MODAL ================= */}
-        {showPillarsManagerModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
-            <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 my-8 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
-                    <Layers className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-white">
-                      Core Architectural Pillars Management
+            if (section.key === 'pricing') {
+              return (
+                <section key={section.id} id="pricing-section" className="pt-8 border-t border-slate-800/80 space-y-8 scroll-mt-20">
+                  <div className="text-center max-w-2xl mx-auto space-y-3">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{section.badgeText || 'Transparent Pricing Plans'}</span>
+                    </div>
+                    <h2 className="text-2xl sm:text-3xl font-bold text-white">
+                      {section.title || 'Choose the Right Plan for Your Business Growth'}
                     </h2>
-                    <p className="text-xs text-slate-400">
-                      Add, edit, reorder, or delete technological pillars displayed on the public landing page.
+                    <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                      {section.subtitle || 'Scale your accounting operations from single proprietorships to multi-branch enterprises with transparent billing and full GST compliance.'}
                     </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowPillarsManagerModal(false)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <ArchitecturalPillarManager
-                pillars={pillars}
-                onRefresh={loadPillars}
-              />
-
-              <div className="flex justify-end pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowPillarsManagerModal(false)}
-                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= PRICING & SUBSCRIPTION PLANS SECTION ================= */}
-        <section id="pricing-section" className="pt-8 border-t border-slate-800/80 space-y-8 scroll-mt-20">
-          <div className="text-center max-w-2xl mx-auto space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Transparent Pricing Plans</span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white">
-              Choose the Right Plan for Your Business Growth
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              Scale your accounting operations from single proprietorships to multi-branch enterprises with transparent billing and full GST compliance.
-            </p>
 
             {/* Billing Cycle Toggle */}
             <div className="pt-2 flex items-center justify-center">
@@ -1183,24 +1190,33 @@ export const LoginView: React.FC = () => {
             })}
           </div>
         </section>
+              );
+            }
 
-        {/* ================= VERIFIED CUSTOMER REVIEWS & SOCIAL PROOF SECTION ================= */}
-        <section id="reviews-section" className="pt-8 border-t border-slate-800/80 scroll-mt-20">
-          <CustomerReviewsSection
-            reviews={reviews}
-            loading={reviewsLoading}
-          />
-        </section>
+            if (section.key === 'reviews') {
+              return (
+                <section key={section.id} id="reviews-section" className="pt-8 border-t border-slate-800/80 scroll-mt-20">
+                  <CustomerReviewsSection
+                    reviews={reviews}
+                    loading={reviewsLoading}
+                  />
+                </section>
+              );
+            }
 
-        {/* ================= FAQS ACCORDION SECTION ================= */}
-        <section id="faq-section" className="pt-8 border-t border-slate-800/80 space-y-6 max-w-3xl mx-auto scroll-mt-20">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold uppercase tracking-wider">
-              <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Frequently Asked Questions</span>
-            </div>
-            <h2 className="text-2xl font-bold text-white">Got Questions? We Have Answers.</h2>
-          </div>
+            if (section.key === 'faq') {
+              return (
+                <section key={section.id} id="faq-section" className="pt-8 border-t border-slate-800/80 space-y-6 max-w-3xl mx-auto scroll-mt-20">
+                  <div className="text-center space-y-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                      <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{section.badgeText || 'Frequently Asked Questions'}</span>
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">{section.title || 'Got Questions? We Have Answers.'}</h2>
+                    {section.subtitle && (
+                      <p className="text-xs text-slate-400 max-w-md mx-auto">{section.subtitle}</p>
+                    )}
+                  </div>
 
           <div className="space-y-3">
             {faqs.map((faq, idx) => {
@@ -1232,23 +1248,47 @@ export const LoginView: React.FC = () => {
             })}
           </div>
         </section>
+              );
+            }
+
+            // Fallback renderer for custom added components from Super Admin Homepage Customization
+            return (
+              <section key={section.id} id={`custom-section-${section.key}`} className="pt-8 border-t border-slate-800/80 space-y-4 max-w-4xl mx-auto text-center scroll-mt-20">
+                {section.badgeText && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{section.badgeText}</span>
+                  </div>
+                )}
+                <h2 className="text-2xl sm:text-3xl font-bold text-white">{section.title}</h2>
+                {section.subtitle && (
+                  <p className="text-xs sm:text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">{section.subtitle}</p>
+                )}
+                {section.customHtml && (
+                  <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 text-slate-300 text-xs text-left" dangerouslySetInnerHTML={{ __html: section.customHtml }} />
+                )}
+              </section>
+            );
+          })}
       </main>
 
       {/* Page Footer */}
-      <footer className="px-6 py-6 border-t border-slate-900 text-center text-xs text-slate-500 max-w-7xl mx-auto w-full space-y-2">
-        <div className="flex flex-wrap items-center justify-center gap-4 text-slate-400 text-[11px]">
-          <span>GSTN Rule 46 Compliant</span>
-          <span>•</span>
-          <span>Double-Entry General Ledger</span>
-          <span>•</span>
-          <span>SHA-256 Audit Trail</span>
-          <span>•</span>
-          <span>Automated BRS Reconciliation</span>
-        </div>
-        <div className="text-slate-600 text-[11px] pt-1">
-          {platformFooterCopyright}
-        </div>
-      </footer>
+      {homepageSections.find((s) => s.key === 'footer')?.isVisible !== false && (
+        <footer className="px-6 py-6 border-t border-slate-900 text-center text-xs text-slate-500 max-w-7xl mx-auto w-full space-y-2">
+          <div className="flex flex-wrap items-center justify-center gap-4 text-slate-400 text-[11px]">
+            <span>GSTN Rule 46 Compliant</span>
+            <span>•</span>
+            <span>Double-Entry General Ledger</span>
+            <span>•</span>
+            <span>SHA-256 Audit Trail</span>
+            <span>•</span>
+            <span>Automated BRS Reconciliation</span>
+          </div>
+          <div className="text-slate-600 text-[11px] pt-1">
+            {platformFooterCopyright}
+          </div>
+        </footer>
+      )}
     </div>
   );
 };
