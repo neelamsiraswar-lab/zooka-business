@@ -2,6 +2,7 @@
 import { db, COLLECTIONS } from './index';
 import { FeatureBadge } from '../types';
 import { logActivity } from './dataService';
+import { auth } from '../lib/firebase';
 
 export const DEFAULT_FEATURE_BADGES: FeatureBadge[] = [
   {
@@ -96,12 +97,18 @@ export async function getAllFeatureBadges(): Promise<FeatureBadge[]> {
       return items;
     }
 
-    // Collection is empty, seed standard default feature badges
-    const seededList: FeatureBadge[] = [];
-    for (const b of DEFAULT_FEATURE_BADGES) {
-      const docRef = colRef.doc(b.id);
-      await docRef.set(b);
-      seededList.push(b);
+    // Collection is empty, return defaults and seed if Super Admin
+    const seededList: FeatureBadge[] = [...DEFAULT_FEATURE_BADGES];
+    const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
+    if (isSuperAdminUser) {
+      for (const b of DEFAULT_FEATURE_BADGES) {
+        try {
+          const docRef = colRef.doc(b.id);
+          await docRef.set(b);
+        } catch (seedErr) {
+          console.warn(`Could not seed feature badge ${b.id} to Firestore:`, seedErr);
+        }
+      }
     }
 
     seededList.sort((a, b) => a.order - b.order);

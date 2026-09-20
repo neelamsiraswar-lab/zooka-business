@@ -1,6 +1,7 @@
 // src/db/systemPersonas.ts
 import { db, COLLECTIONS } from './index';
 import { UserRole } from '../lib/permissions';
+import { auth } from '../lib/firebase';
 
 export interface SystemPersona {
   id: string; // e.g. 'super_admin', 'admin', 'accountant', 'billing_operator', 'auditor'
@@ -11,8 +12,6 @@ export interface SystemPersona {
   role: UserRole;
   title: string;
   subtitle: string;
-  passwords: string[];
-  defaultPin: string;
   displayOrder: number;
   isBuiltIn: boolean;
   updatedAt?: string;
@@ -28,8 +27,6 @@ export const INITIAL_SYSTEM_PERSONAS: SystemPersona[] = [
     role: 'super_admin',
     title: 'Super Administrator',
     subtitle: 'Supreme Multi-Tenant & Workspace Governance',
-    passwords: ['Kuldeep@2785', '9999', 'admin', 'password', '123456'],
-    defaultPin: '9999',
     displayOrder: 1,
     isBuiltIn: true,
   },
@@ -42,8 +39,6 @@ export const INITIAL_SYSTEM_PERSONAS: SystemPersona[] = [
     role: 'admin',
     title: 'Administrator',
     subtitle: 'Full System & Security Management',
-    passwords: ['Admin@2026', '9999', 'admin', 'password', '123456'],
-    defaultPin: '9999',
     displayOrder: 2,
     isBuiltIn: true,
   },
@@ -56,8 +51,6 @@ export const INITIAL_SYSTEM_PERSONAS: SystemPersona[] = [
     role: 'accountant',
     title: 'Senior Accountant',
     subtitle: 'Ledgers, Vouchers & Tax Filings',
-    passwords: ['Accountant@2026', '2222', 'ca', 'password', '123456'],
-    defaultPin: '2222',
     displayOrder: 3,
     isBuiltIn: true,
   },
@@ -70,8 +63,6 @@ export const INITIAL_SYSTEM_PERSONAS: SystemPersona[] = [
     role: 'billing_operator',
     title: 'Billing Operator',
     subtitle: 'Point-of-Sale, Counter Invoices & Stock Check',
-    passwords: ['Billing@2026', '1111', 'billing', 'password', '123456'],
-    defaultPin: '1111',
     displayOrder: 4,
     isBuiltIn: true,
   },
@@ -84,8 +75,6 @@ export const INITIAL_SYSTEM_PERSONAS: SystemPersona[] = [
     role: 'auditor',
     title: 'Statutory Auditor',
     subtitle: 'Read-Only Ledger & GSTR-2B Inspection',
-    passwords: ['Auditor@2026', '3333', 'auditor', 'password', '123456'],
-    defaultPin: '3333',
     displayOrder: 5,
     isBuiltIn: true,
   },
@@ -108,12 +97,19 @@ export async function getSystemPersonas(): Promise<SystemPersona[]> {
     const snap = await colRef.get();
 
     if (snap.empty) {
-      // Seed to Firestore
-      for (const p of INITIAL_SYSTEM_PERSONAS) {
-        await colRef.doc(p.id).set({
-          ...p,
-          updatedAt: new Date().toISOString(),
-        });
+      // Seed to Firestore only if Super Admin
+      const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
+      if (isSuperAdminUser) {
+        for (const p of INITIAL_SYSTEM_PERSONAS) {
+          try {
+            await colRef.doc(p.id).set({
+              ...p,
+              updatedAt: new Date().toISOString(),
+            });
+          } catch (seedErr) {
+            console.warn(`Could not seed system persona ${p.id} to Firestore:`, seedErr);
+          }
+        }
       }
       personasMemoryCache = INITIAL_SYSTEM_PERSONAS;
       personasCacheExpiry = Date.now() + 60 * 1000;
@@ -131,8 +127,6 @@ export async function getSystemPersonas(): Promise<SystemPersona[]> {
         role: data.role || 'accountant',
         title: data.title || 'Team Member',
         subtitle: data.subtitle || '',
-        passwords: Array.isArray(data.passwords) ? data.passwords : ['123456'],
-        defaultPin: data.defaultPin || '1234',
         displayOrder: typeof data.displayOrder === 'number' ? data.displayOrder : 99,
         isBuiltIn: !!data.isBuiltIn,
         updatedAt: data.updatedAt,

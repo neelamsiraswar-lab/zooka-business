@@ -2,6 +2,7 @@
 import { db, COLLECTIONS } from './index';
 import { HomepageSection, HomepageSectionKey } from '../types';
 import { logActivity } from './dataService';
+import { auth } from '../lib/firebase';
 
 export const DEFAULT_HOMEPAGE_SECTIONS: HomepageSection[] = [
   {
@@ -181,11 +182,17 @@ export async function getAllHomepageSections(): Promise<HomepageSection[]> {
       return items;
     }
 
-    // Collection is empty, seed standard default homepage sections
-    const seededList: HomepageSection[] = [];
-    for (const item of DEFAULT_HOMEPAGE_SECTIONS) {
-      await colRef.doc(item.id).set(item);
-      seededList.push(item);
+    // Collection is empty, return defaults and seed if Super Admin
+    const seededList: HomepageSection[] = [...DEFAULT_HOMEPAGE_SECTIONS];
+    const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
+    if (isSuperAdminUser) {
+      for (const item of DEFAULT_HOMEPAGE_SECTIONS) {
+        try {
+          await colRef.doc(item.id).set(item);
+        } catch (seedErr) {
+          console.warn(`Could not seed homepage section ${item.id} to Firestore:`, seedErr);
+        }
+      }
     }
 
     if (typeof window !== 'undefined') {

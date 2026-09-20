@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
 import { getPlatformSettings, updatePlatformSettings } from '../db/platformSettings';
 import { INDIAN_STATES } from '../data/indianStates';
+import { updateSuperAdminMasterCredential } from '../lib/sessionSecurity';
 
 export const ProfileSettingsView: React.FC = () => {
   const { profile, user, updateProfile } = useAuth();
@@ -215,7 +216,7 @@ export const ProfileSettingsView: React.FC = () => {
         footerSupport,
       }, user?.email || undefined);
 
-      // Also keep local cache synchronized for instant transitions
+      // Keep non-sensitive platform branding synchronized for instant transitions
       localStorage.setItem('platform_app_name', appName);
       localStorage.setItem('platform_app_tagline', appTagline);
       localStorage.setItem('platform_app_logo', appLogoUrl);
@@ -223,10 +224,6 @@ export const ProfileSettingsView: React.FC = () => {
       localStorage.setItem('platform_invoice_gstin', invoiceGstin);
       localStorage.setItem('platform_invoice_state_code', invoiceStateCode);
       localStorage.setItem('platform_invoice_state_name', invoiceStateName);
-      localStorage.setItem('platform_invoice_pan', invoicePan);
-      localStorage.setItem('platform_invoice_sac', invoiceSac);
-      localStorage.setItem('platform_invoice_address', invoiceAddress);
-      localStorage.setItem('platform_invoice_bank', invoiceBank);
       localStorage.setItem('platform_sub_invoice_prefix', subInvoicePrefix);
       localStorage.setItem('platform_sub_invoice_suffix', subInvoiceSuffix);
       localStorage.setItem('platform_sub_invoice_next_num', subInvoiceNextNum);
@@ -257,8 +254,7 @@ export const ProfileSettingsView: React.FC = () => {
 
     setSavingPassword(true);
     try {
-      // Simulate secure auth update
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await updateSuperAdminMasterCredential(newPassword);
       dialog.toast.success('Super Admin password and security passkeys updated successfully');
       setCurrentPassword('');
       setNewPassword('');

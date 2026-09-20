@@ -1,4 +1,5 @@
 // src/lib/sessionSecurity.ts
+import CryptoJS from 'crypto-js';
 import { UserRole } from './permissions';
 import { db, COLLECTIONS, getNextSequenceId } from '../db/index';
 
@@ -38,14 +39,21 @@ export interface SuperAdminSecurityStatus {
 }
 
 const STORAGE_KEYS = {
-  SESSION: 'apex_active_session',
+  SECURE_VAULT: 'apex_sec_vault_v2',
+  DEVICE_SALT: '_apex_sec_dsk_v2',
   REMEMBERED_EMAIL: 'apex_remembered_email',
   REMEMBER_ME_ENABLED: 'apex_remember_me_enabled',
-  SUPER_ADMIN_ATTEMPTS: 'apex_sa_failed_attempts',
-  SUPER_ADMIN_LOCK_UNTIL: 'apex_sa_lock_until',
+  SUPER_ADMIN_RATE_RECORD: 'apex_sa_rate_v2',
+  // Legacy plaintext keys to proactively purge:
+  LEGACY_SESSION: 'apex_active_session',
   LEGACY_DEV_TOKEN: 'apex_gst_dev_token',
   LEGACY_DEV_USER: 'apex_gst_dev_user',
+  LEGACY_SUPER_ADMIN_ATTEMPTS: 'apex_sa_failed_attempts',
+  LEGACY_SUPER_ADMIN_LOCK_UNTIL: 'apex_sa_lock_until',
 };
+
+// In-memory active session cache (isolated from web storage inspections)
+let inMemoryActiveSession: UserSessionData | null = null;
 
 // Expiry configurations
 export const SESSION_CONFIG = {
@@ -55,8 +63,252 @@ export const SESSION_CONFIG = {
   SUPER_ADMIN_ELEVATION_MINUTES: 30, // 30 minutes elevated access window
   MAX_SUPER_ADMIN_ATTEMPTS: 3, // 3 failed attempts trigger security cooldown
   SUPER_ADMIN_LOCKOUT_SECONDS: 60, // 60 seconds rate-limit cooldown
-  SUPER_ADMIN_MASTER_PIN: '2785', // Default Master Security PIN for Super Admin
 };
+
+/**
+ * Proactively purge all legacy plaintext and unprotected session tokens from Web Storage
+ */
+export function purgeLegacyAndUnprotectedStorage() {
+  if (typeof window === 'undefined') return;
+  try {
+    // Proactively scrub any persistent session envelopes or plaintext credentials from localStorage
+    localStorage.removeItem(STORAGE_KEYS.SECURE_VAULT);
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_SESSION);
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_DEV_TOKEN);
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_DEV_USER);
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_SUPER_ADMIN_ATTEMPTS);
+    localStorage.removeItem(STORAGE_KEYS.LEGACY_SUPER_ADMIN_LOCK_UNTIL);
+    localStorage.removeItem('token');
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('session');
+    localStorage.removeItem('user');
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('platform_invoice_pan');
+    localStorage.removeItem('platform_invoice_sac');
+    localStorage.removeItem('platform_invoice_address');
+    localStorage.removeItem('platform_invoice_bank');
+    localStorage.removeItem('apex_sec_vault');
+
+    // Scrub transient session keys from sessionStorage
+    sessionStorage.removeItem(STORAGE_KEYS.LEGACY_SESSION);
+    sessionStorage.removeItem('apex_active_session');
+    sessionStorage.removeItem('apex_gst_dev_user');
+    sessionStorage.removeItem('apex_gst_dev_token');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('auth_token');
+    sessionStorage.removeItem('session');
+  } catch {}
+}
+
+/**
+ * Derives a device-and-origin-bound cryptographic key for authenticated storage encryption
+ */
+function getDeviceBoundStorageKey(): string {
+  if (typeof window === 'undefined') return 'server_isolated_secret_key_2026';
+
+  let salt = '';
+  try {
+    salt = localStorage.getItem(STORAGE_KEYS.DEVICE_SALT) || '';
+    if (!salt) {
+      const array = new Uint8Array(24);
+      if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        crypto.getRandomValues(array);
+        salt = Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
+      } else {
+        salt = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      }
+      localStorage.setItem(STORAGE_KEYS.DEVICE_SALT, salt);
+    }
+  } catch {
+    salt = 'fallback_secure_salt_node';
+  }
+
+  const origin = (typeof window !== 'undefined' && window.location?.origin) || 'apex_app';
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || 'apex_agent';
+  const screenSpec = typeof screen !== 'undefined' ? `${screen.width}x${screen.height}` : 'std';
+  const seed = `${origin}::${salt}::${ua}::${screenSpec}::apex_secure_vault_salt_2026`;
+
+  return CryptoJS.SHA256(seed).toString(CryptoJS.enc.Hex);
+}
+
+interface EncryptedSessionEnvelope {
+  v: 2;
+  alg: 'AES-256-CBC+HMAC-SHA256';
+  ct: string;
+  mac: string;
+  exp: string;
+  fp: string;
+}
+
+/**
+ * Seals session state into a tamper-evident, AES-encrypted, and HMAC-authenticated envelope
+ * Invariant: Privileged elevation is strictly ephemeral in memory and NEVER persisted into web storage
+ */
+function sealSessionData(session: UserSessionData): string {
+  const storageSanitizedSession: UserSessionData = {
+    ...session,
+    isElevated: false,
+    elevationExpiresAt: null,
+  };
+  const masterKey = getDeviceBoundStorageKey();
+  const sessionJson = JSON.stringify(storageSanitizedSession);
+  const ciphertext = CryptoJS.AES.encrypt(sessionJson, masterKey).toString();
+  const exp = session.expiresAt;
+  const fp = session.ipHash || generateIpFingerprint();
+  const macPayload = `v2:${ciphertext}:${exp}:${fp}`;
+  const mac = CryptoJS.HmacSHA256(macPayload, masterKey).toString(CryptoJS.enc.Hex);
+
+  const envelope: EncryptedSessionEnvelope = {
+    v: 2,
+    alg: 'AES-256-CBC+HMAC-SHA256',
+    ct: ciphertext,
+    mac,
+    exp,
+    fp,
+  };
+
+  return JSON.stringify(envelope);
+}
+
+/**
+ * Unseals, authenticates, and validates session state from an encrypted envelope
+ */
+function unsealSessionData(rawEnvelope: string): UserSessionData | null {
+  try {
+    const parsed = JSON.parse(rawEnvelope) as EncryptedSessionEnvelope;
+    if (!parsed || parsed.v !== 2 || !parsed.ct || !parsed.mac) {
+      return null;
+    }
+
+    const masterKey = getDeviceBoundStorageKey();
+    const macPayload = `v2:${parsed.ct}:${parsed.exp}:${parsed.fp}`;
+    const expectedMac = CryptoJS.HmacSHA256(macPayload, masterKey).toString(CryptoJS.enc.Hex);
+
+    // Cryptographic MAC integrity check - reject if tampered!
+    if (parsed.mac !== expectedMac) {
+      console.warn('SECURITY ALERT: Cryptographic MAC mismatch in web storage. Session tampering detected.');
+      purgeLegacyAndUnprotectedStorage();
+      return null;
+    }
+
+    // Check expiration before decryption
+    if (parsed.exp && Date.now() > new Date(parsed.exp).getTime()) {
+      return null;
+    }
+
+    // Decrypt ciphertext
+    const decryptedBytes = CryptoJS.AES.decrypt(parsed.ct, masterKey);
+    const decryptedJson = decryptedBytes.toString(CryptoJS.enc.Utf8);
+    if (!decryptedJson) {
+      console.warn('SECURITY ALERT: Decryption of protected session failed.');
+      return null;
+    }
+
+    const session = JSON.parse(decryptedJson) as UserSessionData;
+
+    // Hardened Invariant: Web storage sessions must NEVER restore an elevated state
+    session.isElevated = false;
+    session.elevationExpiresAt = null;
+
+    // RBAC & Identity Invariant Validation:
+    // Prevent client-side privilege escalation to super_admin
+    if (session.role === 'super_admin' && session.email.toLowerCase().trim() !== 'nawarkuldeep@gmail.com') {
+      console.warn('SECURITY ALERT: Unauthorized super_admin elevation detected in session state. Demoting.');
+      session.role = 'accountant';
+      session.isElevated = false;
+    }
+
+    if (isValidSession(session)) {
+      return session;
+    }
+  } catch (err) {
+    console.warn('Failed to unseal protected session:', err);
+  }
+  return null;
+}
+
+export async function computeSha256Hex(text: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return '';
+}
+
+/**
+ * Validates Master Credentials dynamically against cloud-persisted security store
+ * No hardcoded credentials or pre-shared hashes exist in client-side bundle.
+ */
+export async function verifySuperAdminMasterCredential(input?: string): Promise<boolean> {
+  if (!input) return false;
+  const trimmed = input.trim();
+  if (!trimmed) return false;
+
+  const inputHash = await computeSha256Hex(trimmed);
+  if (!inputHash) return false;
+
+  try {
+    // 1. Check dynamic security credential hash configured in Firestore platform settings
+    const settingsDoc = await db.collection(COLLECTIONS.PLATFORM_SETTINGS).doc('global_config').get();
+    if (settingsDoc.exists) {
+      const data = settingsDoc.data();
+      if (data?.superAdminCredentialHash) {
+        if (data.superAdminCredentialHash === inputHash) {
+          return true;
+        }
+      }
+    }
+
+    // 2. Check super admin user record in Firestore users collection
+    const usersSnap = await db
+      .collection(COLLECTIONS.USERS)
+      .where('email', '==', 'nawarkuldeep@gmail.com')
+      .limit(1)
+      .get();
+
+    if (!usersSnap.empty) {
+      const userData = usersSnap.docs[0].data();
+      if (userData?.credentialHash && userData.credentialHash === inputHash) {
+        return true;
+      }
+      if (userData?.password && (userData.password === trimmed || (await computeSha256Hex(userData.password)) === inputHash)) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('Dynamic master credential verification warning:', err);
+  }
+
+  return false;
+}
+
+/**
+ * Updates the Super Admin Master Credential hash in cloud Firestore storage
+ */
+export async function updateSuperAdminMasterCredential(newCredentialText: string): Promise<boolean> {
+  const trimmed = newCredentialText.trim();
+  if (!trimmed) return false;
+
+  const newHash = await computeSha256Hex(trimmed);
+  if (!newHash) return false;
+
+  try {
+    await db.collection(COLLECTIONS.PLATFORM_SETTINGS).doc('global_config').set(
+      {
+        superAdminCredentialHash: newHash,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (err) {
+    console.error('Failed to update Super Admin master credential in Firestore:', err);
+    return false;
+  }
+}
 
 /**
  * Detect client browser, OS, and platform metadata for audit trail
@@ -119,37 +371,33 @@ export function generateIpFingerprint(): string {
 }
 
 /**
- * Read active session from either localStorage or sessionStorage
+ * Read active session from protected, encrypted Web Storage or in-memory cache
  */
 export function getStoredSession(): UserSessionData | null {
+  purgeLegacyAndUnprotectedStorage();
+
+  // 1. Check fast, non-accessible in-memory active session cache first
+  if (inMemoryActiveSession && isValidSession(inMemoryActiveSession)) {
+    return inMemoryActiveSession;
+  }
+
   try {
-    // 1. Check localStorage first
-    const localRaw = localStorage.getItem(STORAGE_KEYS.SESSION);
-    if (localRaw) {
-      const parsed = JSON.parse(localRaw) as UserSessionData;
-      if (isValidSession(parsed)) return parsed;
-    }
-
-    // 2. Check sessionStorage
-    const sessionRaw = sessionStorage.getItem(STORAGE_KEYS.SESSION);
-    if (sessionRaw) {
-      const parsed = JSON.parse(sessionRaw) as UserSessionData;
-      if (isValidSession(parsed)) return parsed;
-    }
-
-    // 3. Backward compatibility check for legacy dev user
-    const legacyUser = localStorage.getItem(STORAGE_KEYS.LEGACY_DEV_USER);
-    if (legacyUser) {
-      try {
-        const parsed = JSON.parse(legacyUser);
-        const autoSession = createSessionData(parsed, true);
-        saveSessionToStorage(autoSession, true);
-        return autoSession;
-      } catch {}
+    // 2. Read from transient sessionStorage vault only (least privilege, wiped on window close)
+    if (typeof sessionStorage !== 'undefined') {
+      const sessionVault = sessionStorage.getItem(STORAGE_KEYS.SECURE_VAULT);
+      if (sessionVault) {
+        const session = unsealSessionData(sessionVault);
+        if (session) {
+          inMemoryActiveSession = session;
+          return session;
+        }
+      }
     }
   } catch (err) {
-    console.warn('Failed to parse active session:', err);
+    console.warn('Failed to read protected session vault:', err);
   }
+
+  inMemoryActiveSession = null;
   return null;
 }
 
@@ -213,30 +461,32 @@ export function createSessionData(
 }
 
 /**
- * Save session to persistent storage according to rememberMe preference
+ * Save session to protected encrypted storage according to rememberMe preference
+ * Plaintext session tokens and credentials are NEVER written to Web Storage.
  */
 export function saveSessionToStorage(session: UserSessionData, rememberMe: boolean) {
-  const sessionStr = JSON.stringify(session);
-  const tokenStr = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(session))))}`;
+  purgeLegacyAndUnprotectedStorage();
 
-  if (rememberMe) {
-    localStorage.setItem(STORAGE_KEYS.SESSION, sessionStr);
-    localStorage.setItem(STORAGE_KEYS.REMEMBER_ME_ENABLED, 'true');
-    localStorage.setItem(STORAGE_KEYS.REMEMBERED_EMAIL, session.email);
-    localStorage.setItem(STORAGE_KEYS.LEGACY_DEV_USER, JSON.stringify(session));
-    localStorage.setItem(STORAGE_KEYS.LEGACY_DEV_TOKEN, tokenStr);
-    sessionStorage.removeItem(STORAGE_KEYS.SESSION);
-  } else {
-    sessionStorage.setItem(STORAGE_KEYS.SESSION, sessionStr);
-    localStorage.removeItem(STORAGE_KEYS.SESSION);
-    localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME_ENABLED);
-    localStorage.removeItem(STORAGE_KEYS.REMEMBERED_EMAIL);
-    localStorage.setItem(STORAGE_KEYS.LEGACY_DEV_USER, JSON.stringify(session));
-    localStorage.setItem(STORAGE_KEYS.LEGACY_DEV_TOKEN, tokenStr);
-  }
+  // Cache in memory for isolated access
+  inMemoryActiveSession = { ...session };
 
-  // Trigger cross-tab sync event
+  const sealed = sealSessionData(session);
+
   if (typeof window !== 'undefined') {
+    // Encrypted session envelope is strictly stored in transient sessionStorage
+    // Invariant: NEVER leave persistent authentication vaults, credentials, or session tokens in localStorage
+    sessionStorage.setItem(STORAGE_KEYS.SECURE_VAULT, sealed);
+    localStorage.removeItem(STORAGE_KEYS.SECURE_VAULT);
+
+    if (rememberMe) {
+      localStorage.setItem(STORAGE_KEYS.REMEMBER_ME_ENABLED, 'true');
+      localStorage.setItem(STORAGE_KEYS.REMEMBERED_EMAIL, session.email);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME_ENABLED);
+      localStorage.removeItem(STORAGE_KEYS.REMEMBERED_EMAIL);
+    }
+
+    // Trigger cross-tab sync event with sanitized payload
     window.dispatchEvent(new CustomEvent('session_updated', { detail: session }));
   }
 }
@@ -280,11 +530,7 @@ export async function elevateSuperAdminSession(securityPin: string): Promise<{ s
   }
 
   const trimmedPin = securityPin.trim();
-  const isMasterPinValid =
-    trimmedPin === SESSION_CONFIG.SUPER_ADMIN_MASTER_PIN ||
-    trimmedPin.toLowerCase() === 'kuldeep@2785' ||
-    trimmedPin === '2785' ||
-    trimmedPin === '9999';
+  const isMasterPinValid = await verifySuperAdminMasterCredential(trimmedPin);
 
   if (!isMasterPinValid) {
     const nextBf = recordFailedSuperAdminAttempt();
@@ -386,26 +632,28 @@ export function unlockActiveSession(passwordOrPin: string): boolean {
 }
 
 /**
- * Terminate active session and purge all stored credentials
+ * Terminate active session and purge all stored credentials and vaults
  */
 export function terminateActiveSession() {
-  const current = getStoredSession();
-  const rememberEmail = localStorage.getItem(STORAGE_KEYS.REMEMBERED_EMAIL);
-  const rememberEnabled = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME_ENABLED) === 'true';
+  inMemoryActiveSession = null;
+  const rememberEmail = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.REMEMBERED_EMAIL) : null;
+  const rememberEnabled = typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEYS.REMEMBER_ME_ENABLED) === 'true';
 
-  localStorage.removeItem(STORAGE_KEYS.SESSION);
-  localStorage.removeItem(STORAGE_KEYS.LEGACY_DEV_TOKEN);
-  localStorage.removeItem(STORAGE_KEYS.LEGACY_DEV_USER);
-  sessionStorage.removeItem(STORAGE_KEYS.SESSION);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(STORAGE_KEYS.SECURE_VAULT);
+    purgeLegacyAndUnprotectedStorage();
+    if (!rememberEnabled) {
+      localStorage.removeItem(STORAGE_KEYS.REMEMBERED_EMAIL);
+      localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME_ENABLED);
+    } else if (rememberEmail) {
+      localStorage.setItem(STORAGE_KEYS.REMEMBERED_EMAIL, rememberEmail);
+      localStorage.setItem(STORAGE_KEYS.REMEMBER_ME_ENABLED, 'true');
+    }
+  }
 
-  // If user disabled rememberMe, also clean up remembered email
-  if (!rememberEnabled) {
-    localStorage.removeItem(STORAGE_KEYS.REMEMBERED_EMAIL);
-    localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME_ENABLED);
-  } else if (rememberEmail) {
-    // Keep email for next workspace login
-    localStorage.setItem(STORAGE_KEYS.REMEMBERED_EMAIL, rememberEmail);
-    localStorage.setItem(STORAGE_KEYS.REMEMBER_ME_ENABLED, 'true');
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(STORAGE_KEYS.SECURE_VAULT);
+    sessionStorage.removeItem('apex_active_session');
   }
 
   if (typeof window !== 'undefined') {
@@ -444,14 +692,37 @@ export function setRememberedCredentials(email: string, isEnabled: boolean) {
 }
 
 /**
- * Brute force tracking for Super Admin security
+ * Brute force tracking for Super Admin security with HMAC integrity
  */
 export function getSuperAdminBruteForceStatus(): SuperAdminSecurityStatus {
   try {
-    const attempts = parseInt(localStorage.getItem(STORAGE_KEYS.SUPER_ADMIN_ATTEMPTS) || '0', 10);
-    const lockUntil = parseInt(localStorage.getItem(STORAGE_KEYS.SUPER_ADMIN_LOCK_UNTIL) || '0', 10);
-    const now = Date.now();
+    let attempts = 0;
+    let lockUntil = 0;
 
+    if (typeof localStorage !== 'undefined') {
+      const rawRate = localStorage.getItem(STORAGE_KEYS.SUPER_ADMIN_RATE_RECORD);
+      if (rawRate) {
+        try {
+          const parsed = JSON.parse(rawRate);
+          const masterKey = getDeviceBoundStorageKey();
+          const expectedMac = CryptoJS.HmacSHA256(
+            `rate:${parsed.attempts}:${parsed.lockUntil}`,
+            masterKey
+          ).toString(CryptoJS.enc.Hex);
+
+          if (parsed.mac === expectedMac) {
+            attempts = Number(parsed.attempts) || 0;
+            lockUntil = Number(parsed.lockUntil) || 0;
+          } else {
+            // Tampered rate limit record -> enforce strict security lockout
+            attempts = SESSION_CONFIG.MAX_SUPER_ADMIN_ATTEMPTS;
+            lockUntil = Date.now() + SESSION_CONFIG.SUPER_ADMIN_LOCKOUT_SECONDS * 1000;
+          }
+        } catch {}
+      }
+    }
+
+    const now = Date.now();
     const isBruteForceLocked = lockUntil > now;
     const lockoutRemainingSeconds = isBruteForceLocked ? Math.ceil((lockUntil - now) / 1000) : 0;
 
@@ -489,13 +760,20 @@ export function getSuperAdminBruteForceStatus(): SuperAdminSecurityStatus {
 
 export function recordFailedSuperAdminAttempt(): SuperAdminSecurityStatus {
   try {
-    let attempts = parseInt(localStorage.getItem(STORAGE_KEYS.SUPER_ADMIN_ATTEMPTS) || '0', 10) + 1;
-    localStorage.setItem(STORAGE_KEYS.SUPER_ADMIN_ATTEMPTS, String(attempts));
-
+    const current = getSuperAdminBruteForceStatus();
+    const attempts = current.failedAttempts + 1;
     let lockUntil = 0;
     if (attempts >= SESSION_CONFIG.MAX_SUPER_ADMIN_ATTEMPTS) {
       lockUntil = Date.now() + SESSION_CONFIG.SUPER_ADMIN_LOCKOUT_SECONDS * 1000;
-      localStorage.setItem(STORAGE_KEYS.SUPER_ADMIN_LOCK_UNTIL, String(lockUntil));
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      const masterKey = getDeviceBoundStorageKey();
+      const mac = CryptoJS.HmacSHA256(`rate:${attempts}:${lockUntil}`, masterKey).toString(CryptoJS.enc.Hex);
+      localStorage.setItem(
+        STORAGE_KEYS.SUPER_ADMIN_RATE_RECORD,
+        JSON.stringify({ attempts, lockUntil, mac })
+      );
     }
 
     return getSuperAdminBruteForceStatus();
@@ -506,8 +784,11 @@ export function recordFailedSuperAdminAttempt(): SuperAdminSecurityStatus {
 
 export function resetSuperAdminAttempts() {
   try {
-    localStorage.removeItem(STORAGE_KEYS.SUPER_ADMIN_ATTEMPTS);
-    localStorage.removeItem(STORAGE_KEYS.SUPER_ADMIN_LOCK_UNTIL);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEYS.SUPER_ADMIN_RATE_RECORD);
+      localStorage.removeItem(STORAGE_KEYS.LEGACY_SUPER_ADMIN_ATTEMPTS);
+      localStorage.removeItem(STORAGE_KEYS.LEGACY_SUPER_ADMIN_LOCK_UNTIL);
+    }
   } catch {}
 }
 

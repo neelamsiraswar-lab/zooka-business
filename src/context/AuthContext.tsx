@@ -38,23 +38,23 @@ import {
   recordFailedSuperAdminAttempt,
   resetSuperAdminAttempts,
   recordSecurityAuditLog,
+  verifySuperAdminMasterCredential,
+  purgeLegacyAndUnprotectedStorage,
 } from '../lib/sessionSecurity';
 
 // Kept for backward compatibility with components importing KNOWN_DEFAULT_ACCOUNTS or DEMO_RBAC_PERSONAS
 export const KNOWN_DEFAULT_ACCOUNTS: Record<string, {
   name: string;
   role: UserRole;
-  passwords: string[];
   photoURL?: string;
 }> = INITIAL_SYSTEM_PERSONAS.reduce((acc, p) => {
   acc[p.email] = {
     name: p.displayName,
     role: p.role,
-    passwords: p.passwords,
     photoURL: p.photoURL,
   };
   return acc;
-}, {} as Record<string, { name: string; role: UserRole; passwords: string[]; photoURL?: string }>);
+}, {} as Record<string, { name: string; role: UserRole; photoURL?: string }>);
 
 export const DEMO_RBAC_PERSONAS: Record<UserRole, {
   uid: string;
@@ -64,7 +64,6 @@ export const DEMO_RBAC_PERSONAS: Record<UserRole, {
   role: UserRole;
   title: string;
   subtitle: string;
-  defaultPin: string;
 }> = INITIAL_SYSTEM_PERSONAS.reduce((acc, p) => {
   acc[p.role] = {
     uid: p.uid,
@@ -74,7 +73,6 @@ export const DEMO_RBAC_PERSONAS: Record<UserRole, {
     role: p.role,
     title: p.title,
     subtitle: p.subtitle,
-    defaultPin: p.defaultPin,
   };
   return acc;
 }, {} as Record<UserRole, any>);
@@ -107,9 +105,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const DEV_TOKEN_KEY = 'apex_gst_dev_token';
-const DEV_USER_KEY = 'apex_gst_dev_user';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<any>(null);
@@ -185,7 +180,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Initial sync of stored session
+    // Proactively purge any plaintext or legacy unprotected session artifacts
+    purgeLegacyAndUnprotectedStorage();
+
+    // Initial sync of stored session from protected vault
     const currentSession = getStoredSession();
     if (currentSession && isValidSession(currentSession)) {
       setSession(currentSession);
@@ -195,25 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(devToken);
       fetchProfile(devToken).finally(() => setLoading(false));
     } else {
-      // Fallback check legacy dev user
-      const savedDevToken = localStorage.getItem(DEV_TOKEN_KEY);
-      const savedDevUser = localStorage.getItem(DEV_USER_KEY);
-      if (savedDevToken && savedDevUser) {
-        try {
-          const parsedUser = JSON.parse(savedDevUser);
-          const newSession = createSessionData(parsedUser, true);
-          saveSessionToStorage(newSession, true);
-          setSession(newSession);
-          setUser(parsedUser);
-          setToken(savedDevToken);
-          fetchProfile(savedDevToken).finally(() => setLoading(false));
-        } catch (e) {
-          console.error('Failed to parse dev user:', e);
-          setLoading(false);
-        }
-      } else {
-        setLoading(false);
-      }
+      setLoading(false);
     }
 
     // Unhandled promise interception for browser popup dismissal in sandboxed iframe
@@ -479,13 +459,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const providedPin = (masterPinOrPassword || '').trim();
-    const isPinValid =
-      providedPin === SESSION_CONFIG.SUPER_ADMIN_MASTER_PIN ||
-      providedPin.toLowerCase() === 'kuldeep@2785' ||
-      providedPin === '2785' ||
-      providedPin === '9999';
+    // Validate master credential or check if active session is verified super admin
+    const isCurrentUserSuperAdmin = session?.email === 'nawarkuldeep@gmail.com' || auth.currentUser?.email === 'nawarkuldeep@gmail.com';
+    const isPinValid = providedPin ? await verifySuperAdminMasterCredential(providedPin) : isCurrentUserSuperAdmin;
 
-    if (masterPinOrPassword && !isPinValid) {
+    if (!isPinValid) {
       const nextBf = recordFailedSuperAdminAttempt();
       await recordSecurityAuditLog(
         'SUPER_ADMIN_AUTH_FAILED',
@@ -606,43 +584,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const cloudPersona = await getPersonaByEmail(trimmedEmail);
       if (cloudPersona) {
-        const isPasswordValid =
-          !trimmedPass ||
-          cloudPersona.passwords.some((p) => p.toLowerCase() === trimmedPass.toLowerCase()) ||
-          trimmedPass.length >= 4;
+        const userRecord = await getOrCreateUser(
+          cloudPersona.uid || `user-${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
+          trimmedEmail,
+          cloudPersona.displayName,
+          cloudPersona.photoURL,
+          cloudPersona.role
+        );
 
-        if (isPasswordValid) {
-          const userRecord = await getOrCreateUser(
-            cloudPersona.uid || `user-${trimmedEmail.replace(/[^a-zA-Z0-9]/g, '-')}`,
-            trimmedEmail,
-            cloudPersona.displayName,
-            cloudPersona.photoURL,
-            cloudPersona.role
-          );
-
-          const newSession = createSessionData(
-            {
-              uid: userRecord.uid || cloudPersona.uid,
-              userId: userRecord.id,
-              email: userRecord.email,
-              displayName: userRecord.displayName || cloudPersona.displayName,
-              photoURL: userRecord.avatarUrl || cloudPersona.photoURL,
-              role: userRecord.role || cloudPersona.role,
-            },
-            rememberMe
-          );
-
-          saveSessionToStorage(newSession, rememberMe);
-          setRememberedCredentials(trimmedEmail, rememberMe);
-
-          setSession(newSession);
-          setUser(newSession);
-          const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
-          setToken(devTokenString);
-          await fetchProfile(devTokenString);
-          await recordSecurityAuditLog('USER_LOGIN_PERSONA', `Authenticated persona ${trimmedEmail}`);
-          return;
+        // If a password has been set on this cloud record, verify it matches
+        if (userRecord.password && userRecord.password.trim() !== trimmedPass && userRecord.password !== pass) {
+          const errMsg = 'Invalid password for this account. Please verify and try again.';
+          setError(errMsg);
+          throw new Error(errMsg);
         }
+
+        const newSession = createSessionData(
+          {
+            uid: userRecord.uid || cloudPersona.uid,
+            userId: userRecord.id,
+            email: userRecord.email,
+            displayName: userRecord.displayName || cloudPersona.displayName,
+            photoURL: userRecord.avatarUrl || cloudPersona.photoURL,
+            role: userRecord.role || cloudPersona.role,
+          },
+          rememberMe
+        );
+
+        saveSessionToStorage(newSession, rememberMe);
+        setRememberedCredentials(trimmedEmail, rememberMe);
+
+        setSession(newSession);
+        setUser(newSession);
+        const devTokenString = `dev-token-${btoa(unescape(encodeURIComponent(JSON.stringify(newSession))))}`;
+        setToken(devTokenString);
+        await fetchProfile(devTokenString);
+        await recordSecurityAuditLog('USER_LOGIN_PERSONA', `Authenticated persona ${trimmedEmail}`);
+        return;
       }
 
       // 3. Check Team Members in Firestore Database
@@ -667,7 +645,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (matchedUserData) {
         const userRole = matchedUserData.role || 'accountant';
         if (matchedUserData.password) {
-          if (matchedUserData.password.trim() === trimmedPass || matchedUserData.password === pass || trimmedPass.length >= 4) {
+          if (matchedUserData.password.trim() === trimmedPass || matchedUserData.password === pass) {
             const newSession = createSessionData(
               {
                 uid: matchedUserData.uid || `user-${matchedUserData.id}`,

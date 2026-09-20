@@ -9,7 +9,7 @@
         "uid": { "type": "string", "description": "Firebase Auth UID", "maxLength": 128 },
         "email": { "type": "string", "description": "User email address", "maxLength": 256 },
         "displayName": { "type": "string", "description": "Full name or display name", "maxLength": 128 },
-        "role": { "type": "string", "description": "User role: admin, accountant, auditor, billing_operator", "enum": ["admin", "accountant", "auditor", "billing_operator"] },
+        "role": { "type": "string", "description": "User role: super_admin, admin, accountant, auditor, billing_operator", "enum": ["super_admin", "admin", "accountant", "auditor", "billing_operator"] },
         "pin": { "type": "string", "description": "4-digit security PIN for role switching", "maxLength": 16 },
         "avatarUrl": { "type": "string", "description": "Avatar image URL", "maxLength": 512 },
         "createdAt": { "type": "string", "description": "Creation timestamp ISO string" }
@@ -73,9 +73,10 @@
         "address": { "type": "string", "maxLength": 512 },
         "openingBalance": { "type": "string", "maxLength": 32 },
         "balanceType": { "type": "string", "enum": ["dr", "cr"] },
+        "workspaceId": { "type": "string", "maxLength": 128, "description": "Tenant workspace ID" },
         "createdAt": { "type": "string" }
       },
-      "required": ["partyType", "name"]
+      "required": ["partyType", "name", "workspaceId"]
     },
     "InventoryItem": {
       "title": "InventoryItem",
@@ -526,6 +527,22 @@
     "/company_profiles/{profileId}": {
       "schema": "CompanyProfile",
       "description": "Company tax, GSTIN, and voucher series configurations"
+    },
+    "/workspaces/{workspaceId}/parties/{partyId}": {
+      "schema": "Party",
+      "description": "Sensitive customer and vendor ledger records scoped directly under their workspace collection"
+    },
+    "/workspaces/{workspaceId}/customer_ledgers/{ledgerId}": {
+      "schema": "Party",
+      "description": "Direct customer ledger subcollection for strict tenant isolation"
+    },
+    "/workspaces/{workspaceId}/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Workspace-scoped customer sales and purchase invoices"
+    },
+    "/workspaces/{workspaceId}/payments/{paymentId}": {
+      "schema": "PaymentVoucher",
+      "description": "Workspace-scoped customer receipt and payment vouchers"
     },
     "/parties/{partyId}": {
       "schema": "Party",

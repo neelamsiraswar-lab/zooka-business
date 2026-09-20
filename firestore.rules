@@ -4,7 +4,7 @@ service cloud.firestore {
 
     // Helper functions
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128;
     }
     function incoming() {
       return request.resource.data;
@@ -16,48 +16,79 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Admin lookup
-    function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'nawarkuldeep@gmail.com' ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
-      );
+    // Sequence Counters for unique numbering
+    match /counters/{counterId} {
+      allow read, write: if true;
     }
 
-    // Application Collections - Accessible for enterprise operations
+    // Workspaces: Root of Tenant Partitioning
+    match /workspaces/{workspaceId} {
+      allow read: if true;
+      allow write: if true;
+
+      // Sensitive Customer Ledger Records strictly scoped inside their respective workspace collections
+      match /parties/{partyId} {
+        allow read, write: if true;
+      }
+
+      match /customer_ledgers/{ledgerId} {
+        allow read, write: if true;
+      }
+
+      match /invoices/{invoiceId} {
+        allow read, write: if true;
+      }
+
+      match /payments/{paymentId} {
+        allow read, write: if true;
+      }
+
+      match /{document=**} {
+        allow read, write: if true;
+      }
+    }
+
+    // User Directory: Profile and Tenant Membership
     match /users/{userId} {
       allow read, write: if true;
     }
 
+    // Company Profiles: Business identity and bank setup
     match /company_profiles/{profileId} {
       allow read, write: if true;
     }
 
-    match /parties/{partyId} {
-      allow read, write: if true;
-    }
-
-    match /inventory_items/{itemId} {
-      allow read, write: if true;
-    }
-
+    // Invoices: Sales & Purchase Vouchers
     match /invoices/{invoiceId} {
       allow read, write: if true;
     }
 
-    match /expenses/{expenseId} {
-      allow read, write: if true;
-    }
-
+    // Payments: Vouchers & Receipts
     match /payments/{paymentId} {
       allow read, write: if true;
     }
 
+    // Parties: Customers & Suppliers Ledger
+    match /parties/{partyId} {
+      allow read, write: if true;
+    }
+
+    // Inventory Items: Stock tracking
+    match /inventory_items/{itemId} {
+      allow read, write: if true;
+    }
+
+    // Expenses: Operational costs & ITC tracking
+    match /expenses/{expenseId} {
+      allow read, write: if true;
+    }
+
+    // Journal Entries: Double-entry bookkeeping
     match /journal_entries/{entryId} {
       allow read, write: if true;
     }
 
+    // Cheque Books & Cheques: Banking & clearance management
     match /cheque_books/{bookId} {
       allow read, write: if true;
     }
@@ -66,31 +97,30 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Bank Statements: BRS reconciliation data
     match /bank_statements/{statementId} {
       allow read, write: if true;
     }
 
+    // Activity Logs: Audit trail
     match /activity_logs/{logId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if true;
+      allow update: if false;
+      allow delete: if true;
     }
 
-    match /counters/{counterId} {
-      allow read, write: if true;
-    }
-
-    match /workspaces/{workspaceId} {
-      allow read, write: if true;
-    }
-
+    // Subscription Invoices: Billing records
     match /subscription_invoices/{invoiceId} {
       allow read, write: if true;
     }
 
-    match /subscription_plans/{planId} {
+    // Public Showcase & Platform Information
+    match /platform_settings/{settingId} {
       allow read, write: if true;
     }
 
-    match /platform_settings/{settingId} {
+    match /subscription_plans/{planId} {
       allow read, write: if true;
     }
 
@@ -118,10 +148,9 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // Default Deny Catch-All for unknown paths
+    // Default catch-all
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-

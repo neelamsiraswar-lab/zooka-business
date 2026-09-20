@@ -2,6 +2,7 @@
 import { db, COLLECTIONS } from './index';
 import { CustomerReview } from '../types';
 import { logActivity } from './dataService';
+import { auth } from '../lib/firebase';
 
 export const DEFAULT_CUSTOMER_REVIEWS: CustomerReview[] = [
   {
@@ -151,12 +152,18 @@ export async function getAllCustomerReviews(): Promise<CustomerReview[]> {
       return items;
     }
 
-    // Collection is empty, seed standard default customer reviews
-    const seededList: CustomerReview[] = [];
-    for (const r of DEFAULT_CUSTOMER_REVIEWS) {
-      const docRef = colRef.doc(r.id);
-      await docRef.set(r);
-      seededList.push(r);
+    // Collection is empty, return defaults and seed if Super Admin
+    const seededList: CustomerReview[] = [...DEFAULT_CUSTOMER_REVIEWS];
+    const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
+    if (isSuperAdminUser) {
+      for (const r of DEFAULT_CUSTOMER_REVIEWS) {
+        try {
+          const docRef = colRef.doc(r.id);
+          await docRef.set(r);
+        } catch (seedErr) {
+          console.warn(`Could not seed review ${r.id} to Firestore:`, seedErr);
+        }
+      }
     }
 
     seededList.sort((a, b) => a.order - b.order);

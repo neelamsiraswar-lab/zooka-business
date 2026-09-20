@@ -2,6 +2,7 @@
 import { db, COLLECTIONS } from './index';
 import { HomepageFaq } from '../types';
 import { logActivity } from './dataService';
+import { auth } from '../lib/firebase';
 
 export const DEFAULT_HOMEPAGE_FAQS: HomepageFaq[] = [
   {
@@ -96,15 +97,16 @@ export async function getAllHomepageFaqs(): Promise<HomepageFaq[]> {
       return items;
     }
 
-    // Collection is empty, seed defaults
-    const seededList: HomepageFaq[] = [];
-    for (const faq of DEFAULT_HOMEPAGE_FAQS) {
-      try {
-        await colRef.doc(faq.id).set(faq);
-        seededList.push(faq);
-      } catch (seedErr) {
-        console.warn(`Could not seed FAQ ${faq.id} to Firestore:`, seedErr);
-        seededList.push(faq);
+    // Collection is empty, return defaults and seed if Super Admin
+    const seededList: HomepageFaq[] = [...DEFAULT_HOMEPAGE_FAQS];
+    const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
+    if (isSuperAdminUser) {
+      for (const faq of DEFAULT_HOMEPAGE_FAQS) {
+        try {
+          await colRef.doc(faq.id).set(faq);
+        } catch (seedErr) {
+          console.warn(`Could not seed FAQ ${faq.id} to Firestore:`, seedErr);
+        }
       }
     }
 

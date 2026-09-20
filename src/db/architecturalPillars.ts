@@ -2,6 +2,7 @@
 import { db, COLLECTIONS } from './index';
 import { ArchitecturalPillar } from '../types';
 import { logActivity } from './dataService';
+import { auth } from '../lib/firebase';
 
 export const DEFAULT_ARCHITECTURAL_PILLARS: ArchitecturalPillar[] = [
   {
@@ -96,12 +97,18 @@ export async function getAllArchitecturalPillars(): Promise<ArchitecturalPillar[
       return items;
     }
 
-    // Collection is empty, seed standard default architectural pillars
-    const seededList: ArchitecturalPillar[] = [];
-    for (const p of DEFAULT_ARCHITECTURAL_PILLARS) {
-      const docRef = colRef.doc(p.id);
-      await docRef.set(p);
-      seededList.push(p);
+    // Collection is empty, return default pillars and seed if super admin
+    const seededList: ArchitecturalPillar[] = [...DEFAULT_ARCHITECTURAL_PILLARS];
+    const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
+    if (isSuperAdminUser) {
+      for (const p of DEFAULT_ARCHITECTURAL_PILLARS) {
+        try {
+          const docRef = colRef.doc(p.id);
+          await docRef.set(p);
+        } catch (seedErr) {
+          console.warn(`Could not seed architectural pillar ${p.id} to Firestore:`, seedErr);
+        }
+      }
     }
 
     seededList.sort((a, b) => a.order - b.order);

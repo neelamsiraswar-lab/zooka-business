@@ -76,13 +76,17 @@ export const COLLECTIONS = {
 } as const;
 
 // Compatible wrapper around Firebase Web SDK
-class QueryBuilder {
+export class QueryBuilder {
   private colName: string;
   private constraints: QueryConstraint[] = [];
 
   constructor(colName: string, constraints: QueryConstraint[] = []) {
     this.colName = colName;
     this.constraints = [...constraints];
+  }
+
+  doc(id: string | number) {
+    return new DocRefWrapper(this.colName, String(id));
   }
 
   where(field: string, op: WhereFilterOp, value: any) {
@@ -245,23 +249,7 @@ class BatchWrapper {
 
 export const db = {
   collection(name: string) {
-    return {
-      doc(id: string | number) {
-        return new DocRefWrapper(name, String(id));
-      },
-      where(field: string, op: WhereFilterOp, value: any) {
-        return new QueryBuilder(name).where(field, op, value);
-      },
-      orderBy(field: string, direction?: OrderByDirection) {
-        return new QueryBuilder(name).orderBy(field, direction);
-      },
-      limit(count: number) {
-        return new QueryBuilder(name).limit(count);
-      },
-      async get() {
-        return new QueryBuilder(name).get();
-      },
-    };
+    return new QueryBuilder(name);
   },
 
   batch() {

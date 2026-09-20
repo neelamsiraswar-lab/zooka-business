@@ -1,6 +1,22 @@
 // src/db/dataService.ts
 import { db, COLLECTIONS, getNextSequenceId } from './index.ts';
 import { CompanyProfile } from '../types.ts';
+import { getActiveWorkspaceId } from './workspaces.ts';
+
+export function resolveWorkspaceId(providedWorkspaceId?: string): string {
+  if (providedWorkspaceId && typeof providedWorkspaceId === 'string' && providedWorkspaceId.trim()) {
+    return providedWorkspaceId.trim();
+  }
+  return getActiveWorkspaceId();
+}
+
+export function assertWorkspaceDocument(docData: any, expectedWorkspaceId: string, entityType: string) {
+  if (!docData) return;
+  const docWs = docData.workspaceId;
+  if (docWs && expectedWorkspaceId && docWs !== expectedWorkspaceId) {
+    throw new Error(`Access Denied: ${entityType} belongs to another workspace (IDOR prevented).`);
+  }
+}
 
 // Activity Logger
 export async function logActivity(
@@ -9,13 +25,16 @@ export async function logActivity(
   action: string,
   entityType: string,
   entityId?: string,
-  details?: string
+  details?: string,
+  optionalWorkspaceId?: string
 ) {
   try {
+    const wsId = resolveWorkspaceId(optionalWorkspaceId);
     const logId = await getNextSequenceId('activity_log_id');
     const logDoc = {
       id: logId,
       userId,
+      workspaceId: wsId || null,
       userEmail: email,
       action,
       entityType,
@@ -29,10 +48,16 @@ export async function logActivity(
   }
 }
 
-export async function getActivityLogs(userId?: number, limit = 50) {
+export async function getActivityLogs(userIdOrWsId?: any, limit = 50, optionalWorkspaceId?: string) {
   try {
+    const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
     const logsRef = db.collection(COLLECTIONS.ACTIVITY_LOGS);
-    const snap = await logsRef.orderBy('id', 'desc').limit(limit).get();
+    let snap;
+    if (wsId) {
+      snap = await logsRef.where('workspaceId', '==', wsId).orderBy('id', 'desc').limit(limit).get();
+    } else {
+      snap = await logsRef.orderBy('id', 'desc').limit(limit).get();
+    }
     return snap.docs.map((doc) => doc.data());
   } catch (err) {
     console.error('Failed to fetch activity logs from Firestore:', err);
@@ -41,37 +66,58 @@ export async function getActivityLogs(userId?: number, limit = 50) {
 }
 
 // Company Profile
-export async function getCompanyProfile(userId?: number): Promise<CompanyProfile | null> {
+export async function getCompanyProfile(userIdOrWsId?: any, optionalWorkspaceId?: string): Promise<CompanyProfile | null> {
   try {
+    const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
     const profilesRef = db.collection(COLLECTIONS.COMPANY_PROFILES);
-    const snap = await profilesRef.get();
-    const list = snap.docs.map((doc) => doc.data() as CompanyProfile);
+    let snap;
+    if (wsId) {
+      snap = await profilesRef.where('workspaceId', '==', wsId).limit(1).get();
+    } else {
+      snap = await profilesRef.limit(1).get();
+    }
 
-    // Return genuine configured company profile from Firestore if one exists
-    const configured = list.find(
-      (p: any) => p && (p.businessName || p.gstin)
-    ) || (list.length > 0 ? list[0] : null);
-
-    if (configured) return configured;
+    if (snap && !snap.empty) {
+      return snap.docs[0].data() as CompanyProfile;
+    }
   } catch (err) {
     console.error('Error getting company profile from Firestore:', err);
   }
 
-  // Return null if no company profile exists in Firestore (strictly Firestore data only)
   return null;
 }
 
-export async function upsertCompanyProfile(userId: number, data: any) {
+export async function upsertCompanyProfile(userIdOrData: any, dataOrWsId?: any, optionalWorkspaceId?: string) {
+  let userId = 1;
+  let data: any = {};
+  let wsId = '';
+
+  if (typeof userIdOrData === 'object' && userIdOrData !== null) {
+    data = userIdOrData;
+    userId = Number(data.userId) || 1;
+    wsId = resolveWorkspaceId(typeof dataOrWsId === 'string' ? dataOrWsId : (data.workspaceId || optionalWorkspaceId));
+  } else {
+    userId = Number(userIdOrData) || 1;
+    data = (typeof dataOrWsId === 'object' && dataOrWsId !== null) ? dataOrWsId : {};
+    wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
+  }
+
   const profilesRef = db.collection(COLLECTIONS.COMPANY_PROFILES);
-  const snap = await profilesRef.limit(1).get();
+  let snap;
+  if (wsId) {
+    snap = await profilesRef.where('workspaceId', '==', wsId).limit(1).get();
+  } else {
+    snap = await profilesRef.limit(1).get();
+  }
 
   const cleanData = {
     ...data,
     userId,
+    workspaceId: wsId || data.workspaceId || null,
     updatedAt: new Date().toISOString(),
   };
 
-  if (!snap.empty) {
+  if (snap && !snap.empty) {
     const existingDoc = snap.docs[0];
     const updated = { ...existingDoc.data(), ...cleanData };
     await existingDoc.ref.set(updated, { merge: true });
@@ -89,8 +135,9 @@ export function formatInvoiceNumber(prefix: string, counter: number, padding: nu
   return `${prefix || ''}${padded}${suffix || ''}`;
 }
 
-export async function getNextAvailableInvoiceNumber(userId: number, voucherType: 'sales' | 'purchase' = 'sales') {
-  const company = await getCompanyProfile(userId);
+export async function getNextAvailableInvoiceNumber(userId: number, voucherType: 'sales' | 'purchase' = 'sales', optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
+  const company = await getCompanyProfile(wsId);
   const isPurchase = voucherType === 'purchase';
   const mode = isPurchase
     ? (company?.purchaseNumberingMode || 'automatic')
@@ -102,11 +149,12 @@ export async function getNextAvailableInvoiceNumber(userId: number, voucherType:
   const padding = isPurchase ? 3 : (company?.invoicePadding || 3);
   let counter = isPurchase ? (company?.nextPurchaseNumber || 1) : (company?.nextInvoiceNumber || 1);
 
-  // Fetch all existing invoice numbers for this voucherType
-  const invoicesSnap = await db
-    .collection(COLLECTIONS.INVOICES)
-    .where('voucherType', '==', voucherType)
-    .get();
+  // Fetch existing invoice numbers for this voucherType within the active workspace
+  let invoicesQuery = db.collection(COLLECTIONS.INVOICES).where('voucherType', '==', voucherType);
+  if (wsId) {
+    invoicesQuery = invoicesQuery.where('workspaceId', '==', wsId);
+  }
+  const invoicesSnap = await invoicesQuery.get();
 
   const existingNumbers = new Set(
     invoicesSnap.docs.map((doc) => (doc.data().invoiceNumber || '').trim().toLowerCase())
@@ -133,14 +181,23 @@ export async function getNextAvailableInvoiceNumber(userId: number, voucherType:
 export async function checkInvoiceNumberDuplicate(
   userId: number,
   invoiceNumber: string,
-  excludeInvoiceId?: number
+  excludeInvoiceId?: number,
+  optionalWorkspaceId?: string
 ) {
   const trimmed = (invoiceNumber || '').trim().toLowerCase();
   if (!trimmed) {
     return { isDuplicate: false, existing: null };
   }
 
-  const snap = await db.collection(COLLECTIONS.INVOICES).get();
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
+  let query = db.collection(COLLECTIONS.INVOICES);
+  let snap;
+  if (wsId) {
+    snap = await query.where('workspaceId', '==', wsId).get();
+  } else {
+    snap = await query.get();
+  }
+
   const duplicateDoc = snap.docs.find((doc) => {
     const data = doc.data();
     if (excludeInvoiceId && data.id === excludeInvoiceId) return false;
@@ -154,10 +211,47 @@ export async function checkInvoiceNumberDuplicate(
 }
 
 // Parties (Customers & Vendors)
-export async function getParties(userId?: number) {
-  const partiesSnap = await db.collection(COLLECTIONS.PARTIES).get();
-  const invoicesSnap = await db.collection(COLLECTIONS.INVOICES).get();
-  const paymentsSnap = await db.collection(COLLECTIONS.PAYMENTS).get();
+export async function getParties(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  if (!wsId) {
+    return [];
+  }
+  const partiesRef = db.collection(COLLECTIONS.PARTIES);
+  const invoicesRef = db.collection(COLLECTIONS.INVOICES);
+  const paymentsRef = db.collection(COLLECTIONS.PAYMENTS);
+
+  let [partiesSnap, invoicesSnap, paymentsSnap] = await Promise.all([
+    partiesRef.where('workspaceId', '==', wsId).get().catch((err) => {
+      console.warn(`[getParties] Error querying root parties for workspace ${wsId}:`, err);
+      return { docs: [], empty: true, size: 0 };
+    }),
+    invoicesRef.where('workspaceId', '==', wsId).get().catch((err) => {
+      console.warn(`[getParties] Error querying invoices for workspace ${wsId}:`, err);
+      return { docs: [], empty: true, size: 0 };
+    }),
+    paymentsRef.where('workspaceId', '==', wsId).get().catch((err) => {
+      console.warn(`[getParties] Error querying payments for workspace ${wsId}:`, err);
+      return { docs: [], empty: true, size: 0 };
+    }),
+  ]);
+
+  // Also check workspace subcollection /workspaces/{wsId}/parties
+  try {
+    const wsSubSnap = await db.collection(`workspaces/${wsId}/parties`).get();
+    if (!wsSubSnap.empty) {
+      const existingIds = new Set(partiesSnap.docs.map((d: any) => String(d.id)));
+      const combinedDocs = [...partiesSnap.docs];
+      for (const d of wsSubSnap.docs) {
+        if (!existingIds.has(String(d.id))) {
+          combinedDocs.push(d);
+          existingIds.add(String(d.id));
+        }
+      }
+      partiesSnap = { docs: combinedDocs, empty: combinedDocs.length === 0, size: combinedDocs.length } as any;
+    }
+  } catch (subErr) {
+    // Non-fatal subcollection fallback
+  }
 
   const allInvoices = invoicesSnap.docs.map((d) => d.data());
   const allPayments = paymentsSnap.docs.map((d) => d.data());
@@ -207,7 +301,7 @@ export async function getParties(userId?: number) {
   });
 }
 
-export async function createParty(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function createParty(dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -218,10 +312,15 @@ export async function createParty(dataOrUserId: any, userIdOrData?: any, userNam
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
+  if (!wsId) {
+    throw new Error('Active workspace ID is required to scope customer ledger records.');
+  }
   const partyId = await getNextSequenceId('party_id');
   const party = {
     id: partyId,
     userId,
+    workspaceId: wsId,
     partyType: data.partyType || 'customer',
     name: data.name,
     gstin: data.gstin || null,
@@ -235,37 +334,108 @@ export async function createParty(dataOrUserId: any, userIdOrData?: any, userNam
     createdAt: new Date().toISOString(),
   };
 
+  // 1. Root collection partitioned by workspaceId
   await db.collection(COLLECTIONS.PARTIES).doc(String(partyId)).set(party);
+
+  // 2. Direct workspace subcollection /workspaces/{wsId}/parties/{partyId}
+  try {
+    await db.collection(`workspaces/${wsId}/parties`).doc(String(partyId)).set(party);
+  } catch (subErr) {
+    console.warn(`[createParty] Could not sync party to workspace subcollection:`, subErr);
+  }
+
+  if (userName) {
+    await logActivity(userId, userName, 'CREATE', 'PARTY', String(partyId), `Created ledger account for ${party.name} (${party.partyType})`, wsId);
+  }
+
   return party;
 }
 
-export async function editParty(partyId: number, userId: number, data: any) {
+export async function editParty(partyId: number, userId: number, data: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data?.workspaceId);
   const docRef = db.collection(COLLECTIONS.PARTIES).doc(String(partyId));
   const snap = await docRef.get();
-  if (!snap.exists) {
+  let existing: any = null;
+  if (snap.exists) {
+    existing = snap.data();
+    assertWorkspaceDocument(existing, wsId, 'Party');
+  } else if (wsId) {
+    const subDocRef = db.collection(`workspaces/${wsId}/parties`).doc(String(partyId));
+    const subSnap = await subDocRef.get();
+    if (subSnap.exists) {
+      existing = subSnap.data();
+    }
+  }
+
+  if (!existing) {
     return null;
   }
-  const updated = { ...snap.data(), ...data, id: partyId };
+
+  const targetWsId = existing.workspaceId || wsId;
+  const updated = { ...existing, ...data, id: partyId, workspaceId: targetWsId };
   await docRef.set(updated, { merge: true });
+
+  if (targetWsId) {
+    try {
+      await db.collection(`workspaces/${targetWsId}/parties`).doc(String(partyId)).set(updated, { merge: true });
+    } catch (subErr) {
+      console.warn(`[editParty] Could not sync updated party to workspace subcollection:`, subErr);
+    }
+  }
   return updated;
 }
 
-export async function deleteParty(partyId: number, userId?: number, userName?: string) {
+export async function deleteParty(partyId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.PARTIES).doc(String(partyId));
   const snap = await docRef.get();
-  if (!snap.exists) return null;
-  const data = snap.data();
-  await docRef.delete();
+  let data: any = null;
+  if (snap.exists) {
+    data = snap.data();
+    assertWorkspaceDocument(data, wsId, 'Party');
+    await docRef.delete();
+  } else if (wsId) {
+    const subDocRef = db.collection(`workspaces/${wsId}/parties`).doc(String(partyId));
+    const subSnap = await subDocRef.get();
+    if (subSnap.exists) {
+      data = subSnap.data();
+      await subDocRef.delete();
+    }
+  }
+
+  if (!data) return null;
+
+  const targetWsId = data.workspaceId || wsId;
+  if (targetWsId) {
+    try {
+      await db.collection(`workspaces/${targetWsId}/parties`).doc(String(partyId)).delete();
+    } catch (subErr) {
+      console.warn(`[deleteParty] Could not delete party from workspace subcollection:`, subErr);
+    }
+  }
+
+  if (userName) {
+    await logActivity(Number(userId) || 1, userName, 'DELETE', 'PARTY', String(partyId), `Deleted ledger for ${data.name || partyId}`, targetWsId);
+  }
+
   return data;
 }
 
 // Inventory Items
-export async function getInventory(userId?: number) {
-  const snap = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get();
+export async function getInventory(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  if (!wsId) {
+    return [];
+  }
+  let query = db.collection(COLLECTIONS.INVENTORY_ITEMS).where('workspaceId', '==', wsId);
+  const snap = await query.get().catch((err) => {
+    console.warn(`[getInventory] Failed for workspace ${wsId}:`, err);
+    return { docs: [] };
+  });
   return snap.docs.map((doc) => doc.data());
 }
 
-export async function createInventoryItem(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function createInventoryItem(dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -276,10 +446,15 @@ export async function createInventoryItem(dataOrUserId: any, userIdOrData?: any,
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
+  if (!wsId) {
+    throw new Error('Active workspace ID is required to create inventory items.');
+  }
   const itemId = await getNextSequenceId('inventory_item_id');
   const item = {
     id: itemId,
     userId,
+    workspaceId: wsId,
     name: data.name,
     sku: data.sku || null,
     hsnCode: data.hsnCode,
@@ -297,30 +472,32 @@ export async function createInventoryItem(dataOrUserId: any, userIdOrData?: any,
   return item;
 }
 
-export async function editInventoryItem(itemId: number, userId: number, data: any) {
+export async function editInventoryItem(itemId: number, userId: number, data: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data?.workspaceId);
   const docRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(String(itemId));
   const snap = await docRef.get();
   if (!snap.exists) {
     return null;
   }
-  const updated = { ...snap.data(), ...data, id: itemId };
+  const existing = snap.data();
+  assertWorkspaceDocument(existing, wsId, 'Inventory Item');
+  const updated = { ...existing, ...data, id: itemId };
   await docRef.set(updated, { merge: true });
   return updated;
 }
 
-export async function adjustInventoryStock(itemId: number, userIdOrDelta: number, deltaQuantityOrCurrentStock?: number) {
+export async function adjustInventoryStock(itemId: number, userIdOrDelta: number, deltaQuantityOrCurrentStock?: number, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(String(itemId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
   const itemData = snap.data() as any;
+  assertWorkspaceDocument(itemData, wsId, 'Inventory Item');
 
   let newStockStr = '0';
   if (typeof deltaQuantityOrCurrentStock === 'number') {
-    // If called as (itemId, userId, deltaOrStock)
-    const current = parseFloat(itemData.currentStock || '0') || 0;
     newStockStr = String(Math.max(0, deltaQuantityOrCurrentStock));
   } else {
-    // If called as (itemId, deltaQuantity)
     const current = parseFloat(itemData.currentStock || '0') || 0;
     newStockStr = String(Math.max(0, current + userIdOrDelta));
   }
@@ -329,41 +506,96 @@ export async function adjustInventoryStock(itemId: number, userIdOrDelta: number
   return { ...itemData, currentStock: newStockStr, id: itemId };
 }
 
-export async function deleteInventoryItem(itemId: number, userId?: number, userName?: string) {
+export async function deleteInventoryItem(itemId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(String(itemId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
   const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Inventory Item');
   await docRef.delete();
   return data;
 }
 
 // Invoices (Sales & Purchases)
-export async function getInvoices(userId?: number, voucherType?: string) {
-  const invoicesSnap = await db.collection(COLLECTIONS.INVOICES).get();
-  let list = invoicesSnap.docs.map((doc) => doc.data());
-
-  if (voucherType) {
-    list = list.filter((inv: any) => inv.voucherType === voucherType);
+export async function getInvoices(userIdOrWsId?: any, voucherType?: string, optionalWorkspaceId?: string) {
+  let wsId = '';
+  let vType = voucherType;
+  if (typeof userIdOrWsId === 'string') {
+    wsId = userIdOrWsId;
+  } else if (optionalWorkspaceId) {
+    wsId = optionalWorkspaceId;
+  } else {
+    wsId = getActiveWorkspaceId();
   }
 
-  // Sort descending by id
+  if (!wsId) {
+    return [];
+  }
+
+  let query = db.collection(COLLECTIONS.INVOICES).where('workspaceId', '==', wsId);
+  if (vType) {
+    query = query.where('voucherType', '==', vType);
+  }
+  let invoicesSnap = await query.get().catch((err) => {
+    console.warn(`[getInvoices] Failed to query root invoices for ${wsId}:`, err);
+    return { docs: [] };
+  });
+
+  let docs = [...invoicesSnap.docs];
+  try {
+    let subQuery = db.collection(`workspaces/${wsId}/invoices`);
+    if (vType) {
+      subQuery = subQuery.where('voucherType', '==', vType);
+    }
+    const subSnap = await subQuery.get();
+    if (!subSnap.empty) {
+      const existingIds = new Set(docs.map((d: any) => String(d.id)));
+      for (const d of subSnap.docs) {
+        if (!existingIds.has(String(d.id))) {
+          docs.push(d);
+          existingIds.add(String(d.id));
+        }
+      }
+    }
+  } catch (subErr) {
+    // Non-fatal subcollection fallback
+  }
+
+  let list = docs.map((doc) => doc.data());
   return list.sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function getInvoiceDetails(invoiceId: number) {
+export async function getInvoiceDetails(invoiceId: number, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.INVOICES).doc(String(invoiceId));
   const snap = await docRef.get();
-  if (!snap.exists) return null;
-  return snap.data();
+  if (!snap.exists) {
+    if (wsId) {
+      const subRef = db.collection(`workspaces/${wsId}/invoices`).doc(String(invoiceId));
+      const subSnap = await subRef.get();
+      if (subSnap.exists) {
+        return subSnap.data();
+      }
+    }
+    return null;
+  }
+  const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Invoice');
+  return data;
 }
 
-export async function createInvoiceWithItems(userId: number, invoiceData: any, itemsInput?: any[]) {
+export async function createInvoiceWithItems(userId: number, invoiceData: any, itemsInput?: any[], optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || invoiceData.workspaceId);
+  if (!wsId) {
+    throw new Error('Active workspace ID is required to create invoice records.');
+  }
   const invoiceId = await getNextSequenceId('invoice_id');
   const rawItems = itemsInput || invoiceData.items || [];
   const invoiceDoc = {
     id: invoiceId,
     userId,
+    workspaceId: wsId,
     partyId: invoiceData.partyId ? Number(invoiceData.partyId) : null,
     voucherType: invoiceData.voucherType || 'sales',
     saleType: invoiceData.saleType || 'regular',
@@ -398,16 +630,21 @@ export async function createInvoiceWithItems(userId: number, invoiceData: any, i
   };
 
   await db.collection(COLLECTIONS.INVOICES).doc(String(invoiceId)).set(invoiceDoc);
+  try {
+    await db.collection(`workspaces/${wsId}/invoices`).doc(String(invoiceId)).set(invoiceDoc);
+  } catch (subErr) {
+    console.warn(`[createInvoiceWithItems] Subcollection mirror error:`, subErr);
+  }
 
   // Update sequential number in company profile if automatic
   try {
     const isPurchase = invoiceDoc.voucherType === 'purchase';
-    const profile = await getCompanyProfile(userId);
+    const profile = await getCompanyProfile(wsId);
     const counterKey = isPurchase ? 'nextPurchaseNumber' : 'nextInvoiceNumber';
-    const currentCounter = (profile as any)[counterKey] || 1;
+    const currentCounter = (profile as any)?.[counterKey] || 1;
     await upsertCompanyProfile(userId, {
       [counterKey]: currentCounter + 1,
-    });
+    }, wsId);
   } catch (err) {
     console.warn('Failed to bump invoice counter in company profile:', err);
   }
@@ -417,25 +654,39 @@ export async function createInvoiceWithItems(userId: number, invoiceData: any, i
     if (item.itemId) {
       const qty = parseFloat(item.quantity) || 0;
       const delta = invoiceDoc.voucherType === 'sales' ? -qty : qty;
-      await adjustInventoryStock(Number(item.itemId), delta);
+      await adjustInventoryStock(Number(item.itemId), delta, undefined, wsId);
     }
   }
 
   return invoiceDoc;
 }
 
-export async function editInvoiceWithItems(invoiceId: number, userId: number, invoiceData: any, itemsInput?: any[]) {
+export async function editInvoiceWithItems(invoiceId: number, userId: number, invoiceData: any, itemsInput?: any[], optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || invoiceData?.workspaceId);
   const docRef = db.collection(COLLECTIONS.INVOICES).doc(String(invoiceId));
   const snap = await docRef.get();
-  if (!snap.exists) return null;
+  let prevInvoice: any = null;
+  if (snap.exists) {
+    prevInvoice = snap.data() as any;
+    assertWorkspaceDocument(prevInvoice, wsId, 'Invoice');
+  } else if (wsId) {
+    const subRef = db.collection(`workspaces/${wsId}/invoices`).doc(String(invoiceId));
+    const subSnap = await subRef.get();
+    if (subSnap.exists) {
+      prevInvoice = subSnap.data() as any;
+    }
+  }
 
-  const prevInvoice = snap.data() as any;
+  if (!prevInvoice) return null;
+
+  const targetWsId = prevInvoice.workspaceId || wsId;
   const rawItems = itemsInput || invoiceData.items || prevInvoice.items || [];
 
   const updatedInvoice = {
     ...prevInvoice,
     ...invoiceData,
     id: invoiceId,
+    workspaceId: targetWsId,
     items: rawItems.map((it: any, idx: number) => ({
       ...it,
       id: idx + 1,
@@ -445,37 +696,75 @@ export async function editInvoiceWithItems(invoiceId: number, userId: number, in
   };
 
   await docRef.set(updatedInvoice, { merge: true });
+  if (targetWsId) {
+    try {
+      await db.collection(`workspaces/${targetWsId}/invoices`).doc(String(invoiceId)).set(updatedInvoice, { merge: true });
+    } catch (subErr) {
+      console.warn(`[editInvoiceWithItems] Subcollection mirror error:`, subErr);
+    }
+  }
   return updatedInvoice;
 }
 
-export async function deleteInvoice(invoiceId: number, userId?: number, userName?: string) {
+export async function deleteInvoice(invoiceId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.INVOICES).doc(String(invoiceId));
   const snap = await docRef.get();
-  if (!snap.exists) return null;
+  let inv: any = null;
+  if (snap.exists) {
+    inv = snap.data() as any;
+    assertWorkspaceDocument(inv, wsId, 'Invoice');
+    await docRef.delete();
+  } else if (wsId) {
+    const subRef = db.collection(`workspaces/${wsId}/invoices`).doc(String(invoiceId));
+    const subSnap = await subRef.get();
+    if (subSnap.exists) {
+      inv = subSnap.data() as any;
+      await subRef.delete();
+    }
+  }
 
-  const inv = snap.data() as any;
+  if (!inv) return null;
+
+  const targetWsId = inv.workspaceId || wsId;
+  if (targetWsId) {
+    try {
+      await db.collection(`workspaces/${targetWsId}/invoices`).doc(String(invoiceId)).delete();
+    } catch (subErr) {
+      console.warn(`[deleteInvoice] Subcollection delete error:`, subErr);
+    }
+  }
+
   // Reverse stock effect
   for (const item of inv?.items || []) {
     if (item.itemId) {
       const qty = parseFloat(item.quantity) || 0;
       const reverseDelta = inv.voucherType === 'sales' ? qty : -qty;
-      await adjustInventoryStock(Number(item.itemId), reverseDelta);
+      await adjustInventoryStock(Number(item.itemId), reverseDelta, undefined, targetWsId);
     }
   }
-  await docRef.delete();
+
   if (userName) {
-    await logActivity(Number(userId) || 1, userName, 'DELETE', 'INVOICE', String(invoiceId), `Deleted voucher ${inv?.invoiceNumber || ''}`);
+    await logActivity(Number(userId) || 1, userName, 'DELETE', 'INVOICE', String(invoiceId), `Deleted voucher ${inv?.invoiceNumber || ''}`, targetWsId);
   }
   return inv;
 }
 
 // Expenses
-export async function getExpenses(userId?: number) {
-  const snap = await db.collection(COLLECTIONS.EXPENSES).get();
+export async function getExpenses(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  if (!wsId) {
+    return [];
+  }
+  let query = db.collection(COLLECTIONS.EXPENSES).where('workspaceId', '==', wsId);
+  const snap = await query.get().catch((err) => {
+    console.warn(`[getExpenses] Failed for workspace ${wsId}:`, err);
+    return { docs: [] };
+  });
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function createExpense(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function createExpense(dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -486,10 +775,15 @@ export async function createExpense(dataOrUserId: any, userIdOrData?: any, userN
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
+  if (!wsId) {
+    throw new Error('Active workspace ID is required to create expense records.');
+  }
   const expenseId = await getNextSequenceId('expense_id');
   const expense = {
     id: expenseId,
     userId,
+    workspaceId: wsId,
     category: data.category || 'Other Expenses',
     amount: String(data.amount || '0.00'),
     date: data.date || data.expenseDate || new Date().toISOString().split('T')[0],
@@ -505,44 +799,87 @@ export async function createExpense(dataOrUserId: any, userIdOrData?: any, userN
   };
 
   await db.collection(COLLECTIONS.EXPENSES).doc(String(expenseId)).set(expense);
+  if (userName) {
+    await logActivity(userId, userName, 'CREATE', 'EXPENSE', String(expenseId), `Recorded expense of ₹${expense.amount} for ${expense.category}`, wsId);
+  }
   return expense;
 }
 
-export async function editExpense(expenseId: number, userId: number, data: any) {
+export async function editExpense(expenseId: number, userId: number, data: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data?.workspaceId);
   const docRef = db.collection(COLLECTIONS.EXPENSES).doc(String(expenseId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  const updated = { ...snap.data(), ...data, id: expenseId };
+  const existing = snap.data();
+  assertWorkspaceDocument(existing, wsId, 'Expense');
+  const updated = { ...existing, ...data, id: expenseId };
   await docRef.set(updated, { merge: true });
   return updated;
 }
 
-export async function deleteExpense(expenseId: number, userId?: number, userName?: string) {
+export async function deleteExpense(expenseId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.EXPENSES).doc(String(expenseId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
   const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Expense');
   await docRef.delete();
   return data;
 }
 
 // Payment Vouchers (Receipts & Payments)
-export async function getPayments(userId?: number, voucherType?: string) {
-  const snap = await db.collection(COLLECTIONS.PAYMENTS).get();
-  let list = snap.docs.map((doc) => doc.data());
-  if (voucherType) {
-    list = list.filter((p: any) => p.voucherType === voucherType);
+export async function getPayments(userIdOrWsId?: any, voucherType?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  if (!wsId) {
+    return [];
   }
+
+  let query = db.collection(COLLECTIONS.PAYMENTS).where('workspaceId', '==', wsId);
+  if (voucherType) {
+    query = query.where('voucherType', '==', voucherType);
+  }
+  const snap = await query.get().catch((err) => {
+    console.warn(`[getPayments] Failed to query root payments for workspace ${wsId}:`, err);
+    return { docs: [] };
+  });
+
+  let docs = [...snap.docs];
+  try {
+    let subQuery = db.collection(`workspaces/${wsId}/payments`);
+    if (voucherType) {
+      subQuery = subQuery.where('voucherType', '==', voucherType);
+    }
+    const subSnap = await subQuery.get();
+    if (!subSnap.empty) {
+      const existingIds = new Set(docs.map((d: any) => String(d.id)));
+      for (const d of subSnap.docs) {
+        if (!existingIds.has(String(d.id))) {
+          docs.push(d);
+          existingIds.add(String(d.id));
+        }
+      }
+    }
+  } catch (subErr) {
+    // Non-fatal subcollection fallback
+  }
+
+  let list = docs.map((doc) => doc.data());
   return list.sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function getNextPaymentVoucherNumber(userId: number, voucherType: 'receipt' | 'payment') {
-  const company = await getCompanyProfile(userId);
+export async function getNextPaymentVoucherNumber(userId: number, voucherType: 'receipt' | 'payment', optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
+  const company = await getCompanyProfile(wsId);
   const prefix = voucherType === 'receipt' ? (company?.receiptPrefix || 'REC/2026-27/') : (company?.paymentPrefix || 'PAY/2026-27/');
   const counterKey = voucherType === 'receipt' ? 'nextReceiptNumber' : 'nextPaymentNumber';
   let counter = (company as any)?.[counterKey] || 1;
 
-  const snap = await db.collection(COLLECTIONS.PAYMENTS).where('voucherType', '==', voucherType).get();
+  let query = db.collection(COLLECTIONS.PAYMENTS).where('voucherType', '==', voucherType);
+  if (wsId) {
+    query = query.where('workspaceId', '==', wsId);
+  }
+  const snap = await query.get();
   const existingNumbers = new Set(snap.docs.map((d) => (d.data().voucherNumber || '').trim().toLowerCase()));
 
   let candidate = formatInvoiceNumber(prefix, counter, 3, '');
@@ -554,11 +891,16 @@ export async function getNextPaymentVoucherNumber(userId: number, voucherType: '
   return { prefix, counter, formattedNumber: candidate };
 }
 
-export async function createPaymentVoucher(userId: number, data: any) {
+export async function createPaymentVoucher(userId: number, data: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
+  if (!wsId) {
+    throw new Error('Active workspace ID is required to create payment vouchers.');
+  }
   const paymentId = await getNextSequenceId('payment_id');
   const payment = {
     id: paymentId,
     userId,
+    workspaceId: wsId,
     voucherType: data.voucherType || 'receipt',
     voucherNumber: data.voucherNumber,
     date: data.date,
@@ -577,14 +919,19 @@ export async function createPaymentVoucher(userId: number, data: any) {
   };
 
   await db.collection(COLLECTIONS.PAYMENTS).doc(String(paymentId)).set(payment);
+  try {
+    await db.collection(`workspaces/${wsId}/payments`).doc(String(paymentId)).set(payment);
+  } catch (subErr) {
+    console.warn(`[createPaymentVoucher] Subcollection mirror error:`, subErr);
+  }
 
   // Bump next receipt/payment counter in company profile
   try {
     const counterKey = payment.voucherType === 'receipt' ? 'nextReceiptNumber' : 'nextPaymentNumber';
-    const profile = await getCompanyProfile(userId);
+    const profile = await getCompanyProfile(wsId);
     await upsertCompanyProfile(userId, {
-      [counterKey]: ((profile as any)[counterKey] || 1) + 1,
-    });
+      [counterKey]: ((profile as any)?.[counterKey] || 1) + 1,
+    }, wsId);
   } catch (e) {
     console.warn('Failed to bump payment counter:', e);
   }
@@ -592,29 +939,64 @@ export async function createPaymentVoucher(userId: number, data: any) {
   return payment;
 }
 
-export async function deletePaymentVoucher(paymentId: number, userId?: number) {
+export async function deletePaymentVoucher(paymentId: number, userId?: number, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.PAYMENTS).doc(String(paymentId));
   const snap = await docRef.get();
-  if (!snap.exists) return null;
-  const data = snap.data();
-  await docRef.delete();
+  let data: any = null;
+  if (snap.exists) {
+    data = snap.data();
+    assertWorkspaceDocument(data, wsId, 'Payment Voucher');
+    await docRef.delete();
+  } else if (wsId) {
+    const subRef = db.collection(`workspaces/${wsId}/payments`).doc(String(paymentId));
+    const subSnap = await subRef.get();
+    if (subSnap.exists) {
+      data = subSnap.data();
+      await subRef.delete();
+    }
+  }
+
+  if (!data) return null;
+
+  const targetWsId = data.workspaceId || wsId;
+  if (targetWsId) {
+    try {
+      await db.collection(`workspaces/${targetWsId}/payments`).doc(String(paymentId)).delete();
+    } catch (subErr) {
+      console.warn(`[deletePaymentVoucher] Subcollection delete error:`, subErr);
+    }
+  }
   return data;
 }
 
 // Journal Entries & Contras
-export async function getJournalEntries(userId?: number) {
-  const snap = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get();
+export async function getJournalEntries(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  if (!wsId) {
+    return [];
+  }
+  let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES).where('workspaceId', '==', wsId);
+  const snap = await query.get().catch((err) => {
+    console.warn(`[getJournalEntries] Failed for workspace ${wsId}:`, err);
+    return { docs: [] };
+  });
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function getNextJournalVoucherNumber(userId: number, entryType: string) {
-  const company = await getCompanyProfile(userId);
+export async function getNextJournalVoucherNumber(userId: number, entryType: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
+  const company = await getCompanyProfile(wsId);
   const isContra = entryType === 'contra';
   const prefix = isContra ? (company?.contraPrefix || 'CONTRA/2026-27/') : (company?.journalPrefix || 'JV/2026-27/');
   const counterKey = isContra ? 'nextContraNumber' : 'nextJournalNumber';
   let counter = (company as any)?.[counterKey] || 1;
 
-  const snap = await db.collection(COLLECTIONS.JOURNAL_ENTRIES).get();
+  let query = db.collection(COLLECTIONS.JOURNAL_ENTRIES);
+  if (wsId) {
+    query = query.where('workspaceId', '==', wsId);
+  }
+  const snap = await query.get();
   const existingNumbers = new Set(snap.docs.map((d) => (d.data().voucherNumber || '').trim().toLowerCase()));
 
   let candidate = formatInvoiceNumber(prefix, counter, 3, '');
@@ -626,7 +1008,7 @@ export async function getNextJournalVoucherNumber(userId: number, entryType: str
   return { prefix, counter, formattedNumber: candidate };
 }
 
-export async function createJournalEntry(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function createJournalEntry(dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -637,10 +1019,15 @@ export async function createJournalEntry(dataOrUserId: any, userIdOrData?: any, 
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
+  if (!wsId) {
+    throw new Error('Active workspace ID is required to create journal entries.');
+  }
   const entryId = await getNextSequenceId('journal_entry_id');
   const entry = {
     id: entryId,
     userId,
+    workspaceId: wsId,
     entryType: data.entryType || 'journal',
     voucherNumber: data.voucherNumber,
     date: data.date,
@@ -655,34 +1042,49 @@ export async function createJournalEntry(dataOrUserId: any, userIdOrData?: any, 
   };
 
   await db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(String(entryId)).set(entry);
+  if (userName) {
+    await logActivity(userId, userName, 'CREATE', 'JOURNAL', String(entryId), `Created journal voucher ${entry.voucherNumber}`, wsId);
+  }
   return entry;
 }
 
-export async function editJournalEntry(entryId: number, userId: number, data: any) {
+export async function editJournalEntry(entryId: number, userId: number, data: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data?.workspaceId);
   const docRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(String(entryId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  const updated = { ...snap.data(), ...data, id: entryId };
+  const existing = snap.data();
+  assertWorkspaceDocument(existing, wsId, 'Journal Entry');
+  const updated = { ...existing, ...data, id: entryId };
   await docRef.set(updated, { merge: true });
   return updated;
 }
 
-export async function deleteJournalEntry(entryId: number, userId?: number, userName?: string) {
+export async function deleteJournalEntry(entryId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.JOURNAL_ENTRIES).doc(String(entryId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
   const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Journal Entry');
   await docRef.delete();
   return data;
 }
 
 // Cheque Books
-export async function getChequeBooks(userId?: number) {
-  const snap = await db.collection(COLLECTIONS.CHEQUE_BOOKS).get();
+export async function getChequeBooks(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  let query = db.collection(COLLECTIONS.CHEQUE_BOOKS);
+  let snap;
+  if (wsId) {
+    snap = await query.where('workspaceId', '==', wsId).get();
+  } else {
+    snap = await query.get();
+  }
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function createChequeBook(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function createChequeBook(dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -693,6 +1095,7 @@ export async function createChequeBook(dataOrUserId: any, userIdOrData?: any, us
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
   const bookId = await getNextSequenceId('cheque_book_id');
   const startNum = Number(data.startNumber);
   const endNum = Number(data.endNumber);
@@ -701,6 +1104,7 @@ export async function createChequeBook(dataOrUserId: any, userIdOrData?: any, us
   const book = {
     id: bookId,
     userId,
+    workspaceId: wsId || null,
     bankName: data.bankName,
     accountNumber: data.accountNumber || null,
     bookName: data.bookName,
@@ -717,31 +1121,43 @@ export async function createChequeBook(dataOrUserId: any, userIdOrData?: any, us
   return book;
 }
 
-export async function editChequeBook(bookId: number, userId: number, data: any) {
+export async function editChequeBook(bookId: number, userId: number, data: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data?.workspaceId);
   const docRef = db.collection(COLLECTIONS.CHEQUE_BOOKS).doc(String(bookId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  const updated = { ...snap.data(), ...data, id: bookId };
+  const existing = snap.data();
+  assertWorkspaceDocument(existing, wsId, 'Cheque Book');
+  const updated = { ...existing, ...data, id: bookId };
   await docRef.set(updated, { merge: true });
   return updated;
 }
 
-export async function deleteChequeBook(bookId: number, userId?: number, userName?: string) {
+export async function deleteChequeBook(bookId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.CHEQUE_BOOKS).doc(String(bookId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
   const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Cheque Book');
   await docRef.delete();
   return data;
 }
 
 // Cheques
-export async function getCheques(userId?: number) {
-  const snap = await db.collection(COLLECTIONS.CHEQUES).get();
+export async function getCheques(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  let query = db.collection(COLLECTIONS.CHEQUES);
+  let snap;
+  if (wsId) {
+    snap = await query.where('workspaceId', '==', wsId).get();
+  } else {
+    snap = await query.get();
+  }
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function createCheque(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function createCheque(dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -752,10 +1168,12 @@ export async function createCheque(dataOrUserId: any, userIdOrData?: any, userNa
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
   const chequeId = await getNextSequenceId('cheque_id');
   const cheque = {
     id: chequeId,
     userId,
+    workspaceId: wsId || null,
     chequeBookId: data.chequeBookId ? Number(data.chequeBookId) : null,
     chequeType: data.chequeType || 'inward',
     chequeNumber: data.chequeNumber,
@@ -786,16 +1204,19 @@ export async function createCheque(dataOrUserId: any, userIdOrData?: any, userNa
   return cheque;
 }
 
-export async function editCheque(chequeId: number, userId: number, data: any) {
+export async function editCheque(chequeId: number, userId: number, data: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data?.workspaceId);
   const docRef = db.collection(COLLECTIONS.CHEQUES).doc(String(chequeId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  const updated = { ...snap.data(), ...data, id: chequeId };
+  const existing = snap.data();
+  assertWorkspaceDocument(existing, wsId, 'Cheque');
+  const updated = { ...existing, ...data, id: chequeId };
   await docRef.set(updated, { merge: true });
   return updated;
 }
 
-export async function updateChequeStatus(chequeId: number, statusDataOrUserId: any, userIdOrStatusData?: any, userName?: string) {
+export async function updateChequeStatus(chequeId: number, statusDataOrUserId: any, userIdOrStatusData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let statusData: any = {};
   if (typeof statusDataOrUserId === 'object' && statusDataOrUserId !== null) {
@@ -806,37 +1227,52 @@ export async function updateChequeStatus(chequeId: number, statusDataOrUserId: a
     statusData = userIdOrStatusData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.CHEQUES).doc(String(chequeId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  const updated = { ...snap.data(), ...statusData, id: chequeId };
+  const existing = snap.data();
+  assertWorkspaceDocument(existing, wsId, 'Cheque');
+  const updated = { ...existing, ...statusData, id: chequeId };
   await docRef.set(updated, { merge: true });
   return updated;
 }
 
-export async function deleteCheque(chequeId: number, userId?: number, userName?: string) {
+export async function deleteCheque(chequeId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.CHEQUES).doc(String(chequeId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
   const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Cheque');
   await docRef.delete();
   return data;
 }
 
 // Bank Statements & Automated Reconciliation
-export async function getBankStatements(userId?: number) {
-  const snap = await db.collection(COLLECTIONS.BANK_STATEMENTS).get();
+export async function getBankStatements(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+  let query = db.collection(COLLECTIONS.BANK_STATEMENTS);
+  let snap;
+  if (wsId) {
+    snap = await query.where('workspaceId', '==', wsId).get();
+  } else {
+    snap = await query.get();
+  }
   return snap.docs.map((doc) => doc.data()).sort((a: any, b: any) => (b.id || 0) - (a.id || 0));
 }
 
-export async function getBankStatementById(statementId: number, userId?: number) {
+export async function getBankStatementById(statementId: number, userId?: number, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.BANK_STATEMENTS).doc(String(statementId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  return snap.data();
+  const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Bank Statement');
+  return data;
 }
 
-export async function createBankStatement(dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function createBankStatement(dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -847,6 +1283,7 @@ export async function createBankStatement(dataOrUserId: any, userIdOrData?: any,
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data.workspaceId);
   const statementId = await getNextSequenceId('bank_statement_id');
   const transactions = (data.transactions || []).map((t: any, idx: number) => ({
     ...t,
@@ -857,6 +1294,7 @@ export async function createBankStatement(dataOrUserId: any, userIdOrData?: any,
   const statement = {
     id: statementId,
     userId,
+    workspaceId: wsId || null,
     bankName: data.bankName,
     accountNumber: data.accountNumber || null,
     fileName: data.fileName,
@@ -877,7 +1315,7 @@ export async function createBankStatement(dataOrUserId: any, userIdOrData?: any,
   return statement;
 }
 
-export async function updateBankStatement(statementId: number, dataOrUserId: any, userIdOrData?: any, userName?: string) {
+export async function updateBankStatement(statementId: number, dataOrUserId: any, userIdOrData?: any, userName?: string, optionalWorkspaceId?: string) {
   let userId = 1;
   let data: any = {};
   if (typeof dataOrUserId === 'object' && dataOrUserId !== null) {
@@ -888,19 +1326,24 @@ export async function updateBankStatement(statementId: number, dataOrUserId: any
     data = userIdOrData || {};
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || data?.workspaceId);
   const docRef = db.collection(COLLECTIONS.BANK_STATEMENTS).doc(String(statementId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  const updated = { ...snap.data(), ...data, id: statementId };
+  const existing = snap.data();
+  assertWorkspaceDocument(existing, wsId, 'Bank Statement');
+  const updated = { ...existing, ...data, id: statementId };
   await docRef.set(updated, { merge: true });
   return updated;
 }
 
-export async function deleteBankStatement(statementId: number, userId?: number, userName?: string) {
+export async function deleteBankStatement(statementId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.BANK_STATEMENTS).doc(String(statementId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
   const data = snap.data();
+  assertWorkspaceDocument(data, wsId, 'Bank Statement');
   await docRef.delete();
   return data;
 }
@@ -918,13 +1361,16 @@ export async function reconcileBankStatementTransaction(
     matchConfidence?: number;
     matchReason?: string;
     notes?: string;
-  }
+  },
+  optionalWorkspaceId?: string
 ) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.BANK_STATEMENTS).doc(String(statementId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
 
   const stmt = snap.data() as any;
+  assertWorkspaceDocument(stmt, wsId, 'Bank Statement');
   const transactions = (stmt.transactions || []).map((t: any) => {
     if (t.id === transactionId) {
       return {
@@ -946,12 +1392,14 @@ export async function reconcileBankStatementTransaction(
   return { ...stmt, transactions, reconciledCount };
 }
 
-export async function unreconcileBankStatementTransaction(statementId: number, transactionId: string, userId?: number) {
+export async function unreconcileBankStatementTransaction(statementId: number, transactionId: string, userId?: number, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.BANK_STATEMENTS).doc(String(statementId));
   const snap = await docRef.get();
   if (!snap.exists) return null;
 
   const stmt = snap.data() as any;
+  assertWorkspaceDocument(stmt, wsId, 'Bank Statement');
   const transactions = (stmt.transactions || []).map((t: any) => {
     if (t.id === transactionId) {
       return {
@@ -981,22 +1429,22 @@ export async function unreconcileBankStatementTransaction(statementId: number, t
 }
 
 // Financial Dashboard Summary
-export async function getFinancialSummary(userId?: number) {
-  const invoicesSnap = await db.collection(COLLECTIONS.INVOICES).get();
-  const expensesSnap = await db.collection(COLLECTIONS.EXPENSES).get();
-  const inventorySnap = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get();
-  const chequesSnap = await db.collection(COLLECTIONS.CHEQUES).get();
+export async function getFinancialSummary(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
 
-  const invoicesList = invoicesSnap.docs.map((d) => d.data() as any);
-  const expensesList = expensesSnap.docs.map((d) => d.data() as any);
-  const inventoryList = inventorySnap.docs.map((d) => d.data() as any);
-  const chequesList = chequesSnap.docs.map((d) => d.data() as any);
+  const [invoicesList, expensesList, inventoryList, chequesList, partiesWithBalance] = await Promise.all([
+    getInvoices(wsId),
+    getExpenses(wsId),
+    getInventory(wsId),
+    getCheques(wsId),
+    getParties(wsId),
+  ]);
 
   let totalSales = 0;
   let totalPurchases = 0;
   let totalTaxCollected = 0;
 
-  for (const inv of invoicesList) {
+  for (const inv of invoicesList as any[]) {
     if (inv.status === 'cancelled') continue;
     const gTotal = parseFloat(inv.grandTotal) || 0;
     const tax = parseFloat(inv.taxTotal) || 0;
@@ -1010,7 +1458,7 @@ export async function getFinancialSummary(userId?: number) {
 
   let totalExpenses = 0;
   let totalTaxPaidOnExpenses = 0;
-  for (const exp of expensesList) {
+  for (const exp of expensesList as any[]) {
     totalExpenses += parseFloat(exp.amount) || 0;
     totalTaxPaidOnExpenses += parseFloat(exp.gstPaid) || 0;
   }
@@ -1019,7 +1467,6 @@ export async function getFinancialSummary(userId?: number) {
   const netProfit = grossProfit - totalExpenses;
   const netGstPayable = Math.max(0, totalTaxCollected - totalTaxPaidOnExpenses);
 
-  const partiesWithBalance = await getParties(userId);
   let totalReceivables = 0;
   let totalPayables = 0;
 
@@ -1035,13 +1482,13 @@ export async function getFinancialSummary(userId?: number) {
   }
 
   let totalStockValuation = 0;
-  for (const item of inventoryList) {
+  for (const item of inventoryList as any[]) {
     const qty = parseFloat(item.currentStock) || 0;
     const price = parseFloat(item.purchasePrice) || parseFloat(item.sellingPrice) || 0;
     totalStockValuation += qty * price;
   }
 
-  const inHandCheques = chequesList.filter((c: any) => c.status === 'in_hand');
+  const inHandCheques = (chequesList as any[]).filter((c: any) => c.status === 'in_hand');
   const chequesInHandAmount = inHandCheques.reduce((sum: number, c: any) => sum + (parseFloat(c.amount) || 0), 0);
 
   return {
@@ -1065,7 +1512,9 @@ export async function getFinancialSummary(userId?: number) {
 }
 
 // Backup & Restore
-export async function getFullDataBackup(userId?: number) {
+export async function getFullDataBackup(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+
   const [
     companyProfile,
     parties,
@@ -1079,22 +1528,23 @@ export async function getFullDataBackup(userId?: number) {
     bankStatements,
     activityLogs,
   ] = await Promise.all([
-    getCompanyProfile(userId),
-    db.collection(COLLECTIONS.PARTIES).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.INVENTORY_ITEMS).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.INVOICES).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.EXPENSES).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.PAYMENTS).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.JOURNAL_ENTRIES).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.CHEQUE_BOOKS).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.CHEQUES).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.BANK_STATEMENTS).get().then((s) => s.docs.map((d) => d.data())),
-    db.collection(COLLECTIONS.ACTIVITY_LOGS).get().then((s) => s.docs.map((d) => d.data())),
+    getCompanyProfile(wsId),
+    getParties(wsId),
+    getInventory(wsId),
+    getInvoices(wsId),
+    getExpenses(wsId),
+    getPayments(wsId),
+    getJournalEntries(wsId),
+    getChequeBooks(wsId),
+    getCheques(wsId),
+    getBankStatements(wsId),
+    getActivityLogs(wsId, 500),
   ]);
 
   return {
     version: '2.0.0-firestore',
     databaseEngine: 'Google Cloud Firestore',
+    workspaceId: wsId || null,
     exportTimestamp: new Date().toISOString(),
     companyProfile,
     parties,
@@ -1110,7 +1560,7 @@ export async function getFullDataBackup(userId?: number) {
   };
 }
 
-export async function restoreDataFromBackup(backupDataOrUserId: any, userIdOrBackupData: any) {
+export async function restoreDataFromBackup(backupDataOrUserId: any, userIdOrBackupData: any, optionalWorkspaceId?: string) {
   let backupData: any;
   let userId: number;
 
@@ -1126,9 +1576,11 @@ export async function restoreDataFromBackup(backupDataOrUserId: any, userIdOrBac
     throw new Error('Invalid backup JSON payload');
   }
 
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || backupData.workspaceId);
+
   // Restore company profile
   if (backupData.companyProfile) {
-    await upsertCompanyProfile(userId, backupData.companyProfile);
+    await upsertCompanyProfile(userId, backupData.companyProfile, wsId);
   }
 
   // Helper to batch insert docs
@@ -1137,7 +1589,7 @@ export async function restoreDataFromBackup(backupDataOrUserId: any, userIdOrBac
     const batch = db.batch();
     for (const item of items) {
       const docRef = db.collection(collectionName).doc(String(item.id || Date.now()));
-      batch.set(docRef, { ...item, userId }, { merge: true });
+      batch.set(docRef, { ...item, userId, workspaceId: wsId || null }, { merge: true });
     }
     await batch.commit();
   };
@@ -1157,7 +1609,8 @@ export async function restoreDataFromBackup(backupDataOrUserId: any, userIdOrBac
   return { success: true };
 }
 
-export async function clearMasterLedger(userId: number) {
+export async function clearMasterLedger(userId: number, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const collectionsToClear = [
     COLLECTIONS.INVOICES,
     COLLECTIONS.EXPENSES,
@@ -1168,14 +1621,22 @@ export async function clearMasterLedger(userId: number) {
   ];
 
   for (const col of collectionsToClear) {
-    const snap = await db.collection(col).get();
+    let query = db.collection(col);
+    if (wsId) {
+      query = query.where('workspaceId', '==', wsId);
+    }
+    const snap = await query.get();
     const batch = db.batch();
     snap.docs.forEach((d) => batch.delete(d.ref));
     await batch.commit();
   }
 
   // Reset inventory item current stock back to opening stock
-  const invSnap = await db.collection(COLLECTIONS.INVENTORY_ITEMS).get();
+  let invQuery = db.collection(COLLECTIONS.INVENTORY_ITEMS);
+  if (wsId) {
+    invQuery = invQuery.where('workspaceId', '==', wsId);
+  }
+  const invSnap = await invQuery.get();
   const invBatch = db.batch();
   invSnap.docs.forEach((d) => {
     const data = d.data();
@@ -1190,7 +1651,9 @@ export async function clearMasterLedger(userId: number) {
 // SPA Client Convenience Wrappers & Aggregators
 // ==========================================
 
-export async function getAppData(userId?: number) {
+export async function getAppData(userIdOrWsId?: any, optionalWorkspaceId?: string) {
+  const wsId = resolveWorkspaceId(typeof userIdOrWsId === 'string' ? userIdOrWsId : optionalWorkspaceId);
+
   const [
     company,
     parties,
@@ -1205,18 +1668,18 @@ export async function getAppData(userId?: number) {
     summary,
     activityLogs,
   ] = await Promise.all([
-    getCompanyProfile(userId),
-    getParties(userId),
-    getInventory(userId),
-    getInvoices(userId),
-    getExpenses(userId),
-    getPayments(userId),
-    getJournalEntries(userId),
-    getCheques(userId),
-    getChequeBooks(userId),
-    getBankStatements(userId),
-    getFinancialSummary(userId),
-    getActivityLogs(userId, 50),
+    getCompanyProfile(wsId),
+    getParties(wsId),
+    getInventory(wsId),
+    getInvoices(wsId),
+    getExpenses(wsId),
+    getPayments(wsId),
+    getJournalEntries(wsId),
+    getCheques(wsId),
+    getChequeBooks(wsId),
+    getBankStatements(wsId),
+    getFinancialSummary(wsId),
+    getActivityLogs(wsId, 50),
   ]);
 
   return {
@@ -1236,93 +1699,98 @@ export async function getAppData(userId?: number) {
   };
 }
 
-export async function createInvoice(payload: any, userId?: number, userName?: string) {
+export async function createInvoice(payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  const res = await createInvoiceWithItems(uid, payload, payload?.items || []);
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || payload?.workspaceId);
+  const res = await createInvoiceWithItems(uid, payload, payload?.items || [], wsId);
   if (userName) {
-    await logActivity(uid, userName, 'CREATE', 'INVOICE', String(res?.id || ''), `Created invoice ${payload?.invoiceNumber || ''}`);
+    await logActivity(uid, userName, 'CREATE', 'INVOICE', String(res?.id || ''), `Created invoice ${payload?.invoiceNumber || ''}`, wsId);
   }
   return res;
 }
 
-export async function updateInvoice(invoiceId: number, payload: any, userId?: number, userName?: string) {
+export async function updateInvoice(invoiceId: number, payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  const res = await editInvoiceWithItems(invoiceId, uid, payload, payload?.items || []);
+  const wsId = resolveWorkspaceId(optionalWorkspaceId || payload?.workspaceId);
+  const res = await editInvoiceWithItems(invoiceId, uid, payload, payload?.items || [], wsId);
   if (userName) {
-    await logActivity(uid, userName, 'UPDATE', 'INVOICE', String(invoiceId), `Updated invoice ${payload?.invoiceNumber || ''}`);
+    await logActivity(uid, userName, 'UPDATE', 'INVOICE', String(invoiceId), `Updated invoice ${payload?.invoiceNumber || ''}`, wsId);
   }
   return res;
 }
 
-export async function updateExpense(expenseId: number, payload: any, userId?: number, userName?: string) {
+export async function updateExpense(expenseId: number, payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return editExpense(expenseId, uid, payload);
+  return editExpense(expenseId, uid, payload, optionalWorkspaceId);
 }
 
-export async function createPayment(payload: any, userId?: number, userName?: string) {
+export async function createPayment(payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return createPaymentVoucher(uid, payload);
+  return createPaymentVoucher(uid, payload, optionalWorkspaceId);
 }
 
-export async function deletePayment(paymentId: number, userId?: number, userName?: string) {
+export async function deletePayment(paymentId: number, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return deletePaymentVoucher(paymentId, uid);
+  return deletePaymentVoucher(paymentId, uid, optionalWorkspaceId);
 }
 
-export async function updateJournalEntry(entryId: number, payload: any, userId?: number, userName?: string) {
+export async function updateJournalEntry(entryId: number, payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return editJournalEntry(entryId, uid, payload);
+  return editJournalEntry(entryId, uid, payload, optionalWorkspaceId);
 }
 
-export async function updateParty(partyId: number, payload: any, userId?: number, userName?: string) {
+export async function updateParty(partyId: number, payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return editParty(partyId, uid, payload);
+  return editParty(partyId, uid, payload, optionalWorkspaceId);
 }
 
-export async function updateInventoryItem(itemId: number, payload: any, userId?: number, userName?: string) {
+export async function updateInventoryItem(itemId: number, payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return editInventoryItem(itemId, uid, payload);
+  return editInventoryItem(itemId, uid, payload, optionalWorkspaceId);
 }
 
-export async function adjustStock(itemId: number, newStock: number, reason: string, userId?: number, userName?: string) {
+export async function adjustStock(itemId: number, newStock: number, reason: string, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
+  const wsId = resolveWorkspaceId(optionalWorkspaceId);
   const docRef = db.collection(COLLECTIONS.INVENTORY_ITEMS).doc(String(itemId));
   const snap = await docRef.get();
   if (snap.exists) {
+    const data = snap.data();
+    assertWorkspaceDocument(data, wsId, 'Inventory Item');
     await docRef.update({
       currentStock: String(newStock),
       updatedAt: new Date().toISOString(),
     });
-    await logActivity(uid, userName || 'User', 'ADJUST_STOCK', 'INVENTORY', String(itemId), `Stock adjusted to ${newStock}. Reason: ${reason}`);
+    await logActivity(uid, userName || 'User', 'ADJUST_STOCK', 'INVENTORY', String(itemId), `Stock adjusted to ${newStock}. Reason: ${reason}`, wsId);
   }
 }
 
-export async function saveCompanyProfile(payload: any, userId?: number, userName?: string) {
+export async function saveCompanyProfile(payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return upsertCompanyProfile(uid, payload);
+  return upsertCompanyProfile(uid, payload, optionalWorkspaceId);
 }
 
-export async function clearAllMasterLedgers(userId?: number, userName?: string) {
+export async function clearAllMasterLedgers(userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return clearMasterLedger(uid);
+  return clearMasterLedger(uid, optionalWorkspaceId);
 }
 
-export async function updateCheque(chequeId: number, payload: any, userId?: number, userName?: string) {
+export async function updateCheque(chequeId: number, payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return editCheque(chequeId, uid, payload);
+  return editCheque(chequeId, uid, payload, optionalWorkspaceId);
 }
 
-export async function updateChequeBook(bookId: number, payload: any, userId?: number, userName?: string) {
+export async function updateChequeBook(bookId: number, payload: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return editChequeBook(bookId, uid, payload);
+  return editChequeBook(bookId, uid, payload, optionalWorkspaceId);
 }
 
-export async function reconcileBankTransaction(statementId: number, transactionId: string, matchData: any, userId?: number, userName?: string) {
+export async function reconcileBankTransaction(statementId: number, transactionId: string, matchData: any, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return reconcileBankStatementTransaction(statementId, transactionId, uid, matchData);
+  return reconcileBankStatementTransaction(statementId, transactionId, uid, matchData, optionalWorkspaceId);
 }
 
-export async function unreconcileBankTransaction(statementId: number, transactionId: string, userId?: number, userName?: string) {
+export async function unreconcileBankTransaction(statementId: number, transactionId: string, userId?: number, userName?: string, optionalWorkspaceId?: string) {
   const uid = Number(userId) || 1;
-  return unreconcileBankStatementTransaction(statementId, transactionId, uid);
+  return unreconcileBankStatementTransaction(statementId, transactionId, uid, optionalWorkspaceId);
 }

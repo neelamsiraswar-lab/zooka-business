@@ -70,6 +70,13 @@ export async function getOrCreateUser(
         await doc.ref.update({ role: targetRole });
       }
 
+      // Maintain server-side security rule lookup document keyed by Auth UID
+      try {
+        await usersRef.doc(uid).set(userObj, { merge: true });
+      } catch (syncErr) {
+        console.warn('Could not mirror user doc to uid key:', syncErr);
+      }
+
       userMemoryCache.set(uid, { user: userObj, expiresAt: Date.now() + 5 * 60 * 1000 });
       return userObj;
     }
@@ -98,6 +105,14 @@ export async function getOrCreateUser(
         displayName: updatedUser.displayName,
         avatarUrl: updatedUser.avatarUrl,
       });
+
+      // Maintain server-side security rule lookup document keyed by Auth UID
+      try {
+        await usersRef.doc(uid).set(updatedUser, { merge: true });
+      } catch (syncErr) {
+        console.warn('Could not mirror user doc to uid key:', syncErr);
+      }
+
       userMemoryCache.set(uid, { user: updatedUser, expiresAt: Date.now() + 5 * 60 * 1000 });
       return updatedUser;
     }
@@ -119,6 +134,14 @@ export async function getOrCreateUser(
     };
 
     await usersRef.doc(String(nextId)).set(newUser);
+    // Mirror to uid key so Firestore security rules can directly evaluate roles server-side
+    if (uid) {
+      try {
+        await usersRef.doc(uid).set(newUser, { merge: true });
+      } catch (syncErr) {
+        console.warn('Could not mirror user doc to uid key:', syncErr);
+      }
+    }
     userMemoryCache.set(uid, { user: newUser, expiresAt: Date.now() + 5 * 60 * 1000 });
     return newUser;
   } catch (error) {
@@ -151,11 +174,51 @@ export async function updateUserProfile(
     workspaces?: string[];
     status?: 'active' | 'suspended';
     phone?: string;
-  }
+  },
+  operatorUser?: Partial<DbUser> | null
 ) {
   const usersRef = db.collection(COLLECTIONS.USERS);
   const docRef = usersRef.doc(String(userId));
   const snap = await docRef.get();
+
+  let existingUser: DbUser | null = null;
+  if (snap.exists) {
+    existingUser = { id: userId, ...(snap.data() as any) };
+  } else {
+    const q = await usersRef.where('id', '==', userId).limit(1).get();
+    if (!q.empty) {
+      existingUser = { id: userId, ...(q.docs[0].data() as any) };
+    }
+  }
+
+  if (!existingUser) {
+    throw new Error(`User with ID ${userId} not found`);
+  }
+
+  // IDOR & RBAC Protection: check if operator is authorized to update this user
+  if (operatorUser) {
+    const isSuper = (operatorUser.email || '').toLowerCase().trim() === 'nawarkuldeep@gmail.com' || operatorUser.role === 'super_admin';
+    if (!isSuper) {
+      // Regular user updating their own profile
+      if (operatorUser.id === userId) {
+        // Prevent privilege escalation: regular users cannot grant themselves higher roles
+        if (data.role && data.role !== existingUser.role) {
+          throw new Error('Unauthorized: You cannot modify your own assigned administrative role.');
+        }
+      } else {
+        // Another user updating this user: must be workspace admin in the same workspace
+        if (operatorUser.role !== 'admin') {
+          throw new Error('Unauthorized: Only workspace administrators can manage other team members.');
+        }
+        // Verify tenant match
+        const operatorWs = operatorUser.workspaceId;
+        const targetWs = existingUser.workspaceId;
+        if (operatorWs && targetWs && operatorWs !== targetWs) {
+          throw new Error('Unauthorized: Cannot modify user belonging to another workspace (IDOR prevented).');
+        }
+      }
+    }
+  }
 
   const updatePayload: Partial<DbUser> = {};
   if (data.displayName !== undefined) updatePayload.displayName = data.displayName.trim();
@@ -175,7 +238,6 @@ export async function updateUserProfile(
     const refreshed = await docRef.get();
     updatedUser = { id: userId, ...(refreshed.data() as any) };
   } else {
-    // If querying by numeric ID didn't find the doc directly, query where id == userId
     const q = await usersRef.where('id', '==', userId).limit(1).get();
     if (!q.empty) {
       const matchDoc = q.docs[0];
@@ -184,6 +246,15 @@ export async function updateUserProfile(
       updatedUser = { id: userId, ...(refreshed.data() as any) };
     } else {
       throw new Error(`User with ID ${userId} not found`);
+    }
+  }
+
+  // Ensure server-side UID key is updated for Firestore rules
+  if (updatedUser.uid) {
+    try {
+      await usersRef.doc(updatedUser.uid).set(updatedUser, { merge: true });
+    } catch (syncErr) {
+      console.warn('Could not mirror updated user doc to uid key:', syncErr);
     }
   }
 
@@ -197,15 +268,20 @@ export async function updateUserProfile(
   return updatedUser;
 }
 
-export async function deleteUser(userId: number, reassignToUserId?: number) {
+export async function deleteUser(
+  userId: number,
+  reassignToUserId?: number,
+  operatorUser?: Partial<DbUser> | null
+) {
   // Clear the in-memory cache completely
   userMemoryCache.clear();
 
   const usersRef = db.collection(COLLECTIONS.USERS);
   let targetUser: DbUser | null = null;
 
-  // Retrieve all user docs to find and delete any doc matching the ID
+  // Retrieve user doc to inspect permissions
   const snap = await usersRef.get();
+  let matchedDocRef: any = null;
   for (const docSnap of snap.docs) {
     const data = docSnap.data();
     const numericId = typeof data.id === 'number' ? data.id : parseInt(docSnap.id);
@@ -218,10 +294,41 @@ export async function deleteUser(userId: number, reassignToUserId?: number) {
         role: data.role || 'accountant',
         avatarUrl: data.avatarUrl || null,
         createdAt: data.createdAt || new Date().toISOString(),
+        workspaceId: data.workspaceId || null,
+        workspaces: data.workspaces || [],
       };
-      await docSnap.ref.delete();
-      console.log(`Deleted user document ${docSnap.id} (User ID: ${userId}) from Firestore`);
+      matchedDocRef = docSnap.ref;
+      break;
     }
+  }
+
+  if (!targetUser) {
+    return { id: userId, email: '', role: 'accountant', uid: `user-${userId}`, displayName: 'User', createdAt: new Date().toISOString() };
+  }
+
+  // Check: never delete super admin
+  if (targetUser.email.toLowerCase().trim() === 'nawarkuldeep@gmail.com' || targetUser.role === 'super_admin') {
+    throw new Error('Unauthorized: The primary Super Admin account cannot be deleted.');
+  }
+
+  // IDOR & Tenant check
+  if (operatorUser) {
+    const isSuper = (operatorUser.email || '').toLowerCase().trim() === 'nawarkuldeep@gmail.com' || operatorUser.role === 'super_admin';
+    if (!isSuper) {
+      if (operatorUser.role !== 'admin') {
+        throw new Error('Unauthorized: Only workspace administrators can delete members.');
+      }
+      const operatorWs = operatorUser.workspaceId;
+      const targetWs = targetUser.workspaceId;
+      if (operatorWs && targetWs && operatorWs !== targetWs) {
+        throw new Error('Unauthorized: Cannot delete user belonging to another workspace (IDOR prevented).');
+      }
+    }
+  }
+
+  if (matchedDocRef) {
+    await matchedDocRef.delete();
+    console.log(`Deleted user document (User ID: ${userId}) from Firestore`);
   }
 
   // Also ensure direct doc reference deletion
@@ -261,10 +368,10 @@ export async function deleteUser(userId: number, reassignToUserId?: number) {
     }
   }
 
-  return targetUser || { id: userId, email: '', role: 'accountant', uid: `user-${userId}`, displayName: 'User', createdAt: new Date().toISOString() };
+  return targetUser;
 }
 
-export async function getAllUsers(): Promise<DbUser[]> {
+export async function getAllUsers(requestingUser?: Partial<DbUser> | null): Promise<DbUser[]> {
   const usersRef = db.collection(COLLECTIONS.USERS);
   const snapshot = await usersRef.get();
   let all: DbUser[] = snapshot.docs.map((doc) => {
@@ -310,12 +417,30 @@ export async function getAllUsers(): Promise<DbUser[]> {
     auditor: 4,
   };
 
-  return uniqueUsers.sort((a, b) => {
+  const sorted = uniqueUsers.sort((a, b) => {
     const rankA = roleRank[a.role] ?? 10;
     const rankB = roleRank[b.role] ?? 10;
     if (rankA !== rankB) return rankA - rankB;
     return (a.displayName || '').localeCompare(b.displayName || '');
   });
+
+  // If requestingUser is a regular tenant user (not super admin), filter to only users in their workspace
+  if (requestingUser) {
+    const isSuper = (requestingUser.email || '').toLowerCase().trim() === 'nawarkuldeep@gmail.com' || requestingUser.role === 'super_admin';
+    if (!isSuper) {
+      const targetWs = requestingUser.workspaceId || '';
+      const targetEmail = (requestingUser.email || '').toLowerCase().trim();
+      return sorted.filter((u) => {
+        const uEmail = (u.email || '').toLowerCase().trim();
+        if (targetEmail && uEmail === targetEmail) return true;
+        if (targetWs && u.workspaceId === targetWs) return true;
+        if (targetWs && Array.isArray(u.workspaces) && u.workspaces.includes(targetWs)) return true;
+        return false;
+      });
+    }
+  }
+
+  return sorted;
 }
 
 export async function getWorkspaceUsers(workspaceId: string, ownerEmail?: string): Promise<DbUser[]> {

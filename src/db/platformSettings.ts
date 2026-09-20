@@ -1,6 +1,7 @@
 // src/db/platformSettings.ts
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db, COLLECTIONS, rawFirestore } from './index';
+import { auth } from '../lib/firebase';
 
 export interface PlatformSettings {
   appName: string;
@@ -129,12 +130,19 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
       return merged;
     }
 
-    // Seed default document in Firestore for persistent cloud backing
+    // Default document fallback for persistent cloud backing
     const initialSettings: PlatformSettings = {
       ...FALLBACK_PLATFORM_SETTINGS,
       updatedAt: new Date().toISOString(),
     };
-    await docRef.set(initialSettings);
+    const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
+    if (isSuperAdminUser) {
+      try {
+        await docRef.set(initialSettings);
+      } catch (seedErr) {
+        console.warn('Could not seed initial platform_settings to Firestore:', seedErr);
+      }
+    }
     syncLocalStorageCache(initialSettings);
     return initialSettings;
   } catch (err) {

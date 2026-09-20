@@ -34,7 +34,7 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
   onClose,
   onSuccess,
 }) => {
-  const { signInSuperAdmin, signInWithEmail, loading } = useAuth();
+  const { signInSuperAdmin, session, user, loading } = useAuth();
 
   const [masterCredential, setMasterCredential] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -97,9 +97,17 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
       return;
     }
 
+    const isOwner = session?.email === 'nawarkuldeep@gmail.com' || (user as any)?.email === 'nawarkuldeep@gmail.com';
+    const credToUse = masterCredential.trim();
+
+    if (!isOwner && !credToUse) {
+      setAuthError('Please enter your Super Admin Master Password or PIN below.');
+      return;
+    }
+
     setIsAuthenticating(true);
     try {
-      await signInSuperAdmin(SESSION_CONFIG.SUPER_ADMIN_MASTER_PIN, rememberMe);
+      await signInSuperAdmin(credToUse || undefined, rememberMe);
       setAuthSuccess('Master Access Verified! Entering Super Admin Console...');
       setTimeout(() => {
         onClose();
@@ -242,7 +250,7 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
                   id="input-sa-master-credential"
                   value={masterCredential}
                   onChange={(e) => setMasterCredential(e.target.value)}
-                  placeholder="Enter Master Password or PIN (e.g. 2785)"
+                  placeholder="Enter Master Password or PIN"
                   disabled={bfStatus.isBruteForceLocked}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-10 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition font-mono text-xs disabled:opacity-50"
                 />

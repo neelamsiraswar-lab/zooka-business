@@ -3,8 +3,87 @@ import { db, COLLECTIONS, getNextSequenceId } from './index';
 import { Workspace } from '../types';
 import { logActivity } from './dataService';
 import { getPlatformSettings } from './platformSettings';
+import { getStoredSession } from '../lib/sessionSecurity';
 
 export const ACTIVE_WORKSPACE_KEY = 'apex_gst_active_workspace_id';
+
+export interface WorkspaceUserContext {
+  email?: string;
+  role?: string;
+  id?: number | string;
+  userId?: number | string;
+  workspaceId?: string | null;
+  workspaces?: string[];
+}
+
+export function getAuthenticatedUserContext(explicitUser?: WorkspaceUserContext | null): WorkspaceUserContext | null {
+  if (explicitUser && (explicitUser.email || explicitUser.role)) {
+    return explicitUser;
+  }
+  try {
+    const session = getStoredSession();
+    if (session) {
+      return {
+        email: session.email,
+        role: session.role,
+        id: session.userId || session.uid,
+        userId: session.userId,
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function isSuperAdminUser(user?: WorkspaceUserContext | null): boolean {
+  if (!user) return false;
+  const email = (user.email || '').toLowerCase().trim();
+  return email === 'nawarkuldeep@gmail.com' || user.role === 'super_admin';
+}
+
+export async function validateWorkspaceAccess(
+  user: WorkspaceUserContext | null | undefined,
+  workspaceId: string
+): Promise<boolean> {
+  if (!workspaceId) return false;
+  const ctx = getAuthenticatedUserContext(user);
+  if (!ctx) return false;
+  if (isSuperAdminUser(ctx)) return true;
+
+  const normalizedEmail = (ctx.email || '').toLowerCase().trim();
+
+  // Check direct membership in session/user context
+  if (ctx.workspaceId === workspaceId) return true;
+  if (Array.isArray(ctx.workspaces) && ctx.workspaces.includes(workspaceId)) return true;
+
+  // Check Firestore workspace doc owner
+  try {
+    const snap = await db.collection(COLLECTIONS.WORKSPACES).doc(workspaceId).get();
+    if (snap.exists) {
+      const data = snap.data() as Workspace;
+      if (data.ownerEmail && data.ownerEmail.toLowerCase().trim() === normalizedEmail) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error('Error validating workspace access:', err);
+  }
+
+  // Also check if user is recorded in user doc for this workspace
+  try {
+    const userDocSnap = await db.collection(COLLECTIONS.USERS).where('email', '==', normalizedEmail).limit(1).get();
+    if (!userDocSnap.empty) {
+      const uData = userDocSnap.docs[0].data();
+      if (uData.workspaceId === workspaceId) return true;
+      if (Array.isArray(uData.workspaces) && uData.workspaces.includes(workspaceId)) return true;
+    }
+  } catch {
+    // ignore
+  }
+
+  return false;
+}
 
 export function getActiveWorkspaceId(): string {
   try {
@@ -24,15 +103,27 @@ export function setActiveWorkspaceId(workspaceId: string): void {
   }
 }
 
-export async function getActiveWorkspace(): Promise<Workspace | null> {
+export async function getActiveWorkspace(user?: WorkspaceUserContext | null): Promise<Workspace | null> {
   const activeId = getActiveWorkspaceId();
-  const all = await getAllWorkspaces();
+  const all = await getAllWorkspaces(user);
   if (!all || all.length === 0) return null;
-  const found = (activeId ? all.find((w) => w.id === activeId) : null) || all[0] || null;
-  return found;
+
+  // Verify that activeId belongs to user's authorized workspaces (IDOR prevention)
+  const found = (activeId ? all.find((w) => w.id === activeId) : null);
+  if (found) {
+    return found;
+  }
+
+  // Fallback to first authorized workspace and sanitize localStorage
+  const fallback = all[0];
+  if (fallback) {
+    setActiveWorkspaceId(fallback.id);
+    return fallback;
+  }
+  return null;
 }
 
-export async function getAllWorkspaces(): Promise<Workspace[]> {
+export async function getAllWorkspaces(user?: WorkspaceUserContext | null): Promise<Workspace[]> {
   try {
     const workspacesRef = db.collection(COLLECTIONS.WORKSPACES);
     const snap = await workspacesRef.get();
@@ -90,15 +181,38 @@ export async function getAllWorkspaces(): Promise<Workspace[]> {
       });
     }
 
-    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const ctx = getAuthenticatedUserContext(user);
+    // If super admin, return all workspaces
+    if (!ctx || isSuperAdminUser(ctx)) {
+      return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
+    // Regular tenant user: only return workspaces they own or belong to
+    const normalizedEmail = (ctx.email || '').toLowerCase().trim();
+    const authorized = list.filter((w) => {
+      if (w.ownerEmail && w.ownerEmail.toLowerCase().trim() === normalizedEmail) return true;
+      if (ctx.workspaceId && w.id === ctx.workspaceId) return true;
+      if (Array.isArray(ctx.workspaces) && ctx.workspaces.includes(w.id)) return true;
+      return false;
+    });
+
+    return authorized.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (err) {
     console.error('Failed to get all workspaces from Firestore:', err);
     return [];
   }
 }
 
-export async function getWorkspace(id: string): Promise<Workspace | null> {
+export async function getWorkspace(id: string, user?: WorkspaceUserContext | null): Promise<Workspace | null> {
   try {
+    const ctx = getAuthenticatedUserContext(user);
+    if (ctx && !isSuperAdminUser(ctx)) {
+      const isAllowed = await validateWorkspaceAccess(ctx, id);
+      if (!isAllowed) {
+        console.warn(`[IDOR Prevention] Unauthorized attempt to access workspace ${id} by ${ctx.email}`);
+        return null;
+      }
+    }
     const docRef = db.collection(COLLECTIONS.WORKSPACES).doc(id);
     const snap = await docRef.get();
     if (snap.exists) {
@@ -201,13 +315,32 @@ export async function createWorkspace(
     console.error('Failed to write company profile for new workspace:', err);
   }
 
+  // Associate new workspace with creator user document if existing
+  try {
+    const usersRef = db.collection(COLLECTIONS.USERS);
+    const userQuery = await usersRef.where('email', '==', newWorkspace.ownerEmail.toLowerCase().trim()).limit(1).get();
+    if (!userQuery.empty) {
+      const userDoc = userQuery.docs[0];
+      const existingWorkspaces = Array.isArray(userDoc.data().workspaces) ? userDoc.data().workspaces : [];
+      if (!existingWorkspaces.includes(id)) {
+        existingWorkspaces.push(id);
+      }
+      await userDoc.ref.update({
+        workspaceId: userDoc.data().workspaceId || id,
+        workspaces: existingWorkspaces,
+      });
+    }
+  } catch (userErr) {
+    console.warn('Failed to associate workspace with user document:', userErr);
+  }
+
   await logActivity(
     1,
     creatorEmail,
     'create_workspace',
     'workspace',
     id,
-    `Super Admin created new workspace "${newWorkspace.name}" (GSTIN: ${newWorkspace.gstin || 'Unregistered'}, Plan: ${newWorkspace.plan.toUpperCase()})`
+    `Workspace created "${newWorkspace.name}" (GSTIN: ${newWorkspace.gstin || 'Unregistered'}, Plan: ${newWorkspace.plan.toUpperCase()})`
   );
 
   return newWorkspace;
@@ -216,8 +349,16 @@ export async function createWorkspace(
 export async function updateWorkspace(
   id: string,
   data: Partial<Workspace>,
-  updaterEmail: string = 'nawarkuldeep@gmail.com'
+  userOrEmail?: any
 ): Promise<Workspace> {
+  const ctx = getAuthenticatedUserContext(typeof userOrEmail === 'object' ? userOrEmail : { email: userOrEmail });
+  if (ctx && !isSuperAdminUser(ctx)) {
+    const isAllowed = await validateWorkspaceAccess(ctx, id);
+    if (!isAllowed) {
+      throw new Error(`Unauthorized: You do not have permission to modify workspace ${id} (IDOR prevented).`);
+    }
+  }
+
   const workspacesRef = db.collection(COLLECTIONS.WORKSPACES);
   const docRef = workspacesRef.doc(id);
   const snap = await docRef.get();
@@ -235,13 +376,14 @@ export async function updateWorkspace(
 
   await docRef.set(updated, { merge: true });
 
+  const updaterEmail = (ctx && ctx.email) || (typeof userOrEmail === 'string' ? userOrEmail : 'admin@apex.local');
   await logActivity(
     1,
     updaterEmail,
     'update_workspace',
     'workspace',
     id,
-    `Super Admin updated workspace "${updated.name}" settings and status: ${updated.status}`
+    `Updated workspace "${updated.name}" settings and status: ${updated.status}`
   );
 
   return updated;
@@ -249,18 +391,26 @@ export async function updateWorkspace(
 
 export async function deleteWorkspace(
   id: string,
-  operatorEmail: string = 'nawarkuldeep@gmail.com'
+  userOrEmail?: any
 ): Promise<void> {
-  const docRef = db.collection(COLLECTIONS.WORKSPACES).doc(id);
+  const ctx = getAuthenticatedUserContext(typeof userOrEmail === 'object' ? userOrEmail : { email: userOrEmail });
+  if (ctx && !isSuperAdminUser(ctx)) {
+    const isAllowed = await validateWorkspaceAccess(ctx, id);
+    if (!isAllowed) {
+      throw new Error(`Unauthorized: You do not have permission to delete workspace ${id} (IDOR prevented).`);
+    }
+  }
 
+  const docRef = db.collection(COLLECTIONS.WORKSPACES).doc(id);
   await docRef.delete();
 
+  const operatorEmail = (ctx && ctx.email) || (typeof userOrEmail === 'string' ? userOrEmail : 'admin@apex.local');
   await logActivity(
     1,
     operatorEmail,
     'delete_workspace',
     'workspace',
     id,
-    `Super Admin deleted workspace ID ${id}`
+    `Deleted workspace ID ${id}`
   );
 }

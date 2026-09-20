@@ -56,26 +56,34 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
   const path = COLLECTIONS.SUBSCRIPTION_PLANS;
   try {
     const plansRef = db.collection(path);
-    const snap = await plansRef.get();
+    let snap: any = null;
+    try {
+      snap = await plansRef.get();
+    } catch (readErr) {
+      console.warn('Could not read subscription plans from Firestore, falling back to built-in defaults:', readErr);
+      return DEFAULT_BUILTIN_PLANS;
+    }
 
     const plans: PlanTierConfig[] = [];
-    snap.docs.forEach((d: any) => {
-      const data = d.data();
-      const defaultDef = DEFAULT_BUILTIN_PLANS.find((p) => p.id === d.id);
-      plans.push({
-        ...(defaultDef || {}),
-        ...data,
-        id: d.id,
-        order: data.order !== undefined && data.order !== null ? Number(data.order) : (defaultDef?.order ?? 999),
-        features: data.features && data.features.length > 0 ? data.features : (defaultDef?.features || []),
-        color: data.color || defaultDef?.color || PLAN_COLOR_PRESETS.indigo,
+    if (snap && snap.docs) {
+      snap.docs.forEach((d: any) => {
+        const data = d.data();
+        const defaultDef = DEFAULT_BUILTIN_PLANS.find((p) => p.id === d.id);
+        plans.push({
+          ...(defaultDef || {}),
+          ...data,
+          id: d.id,
+          order: data.order !== undefined && data.order !== null ? Number(data.order) : (defaultDef?.order ?? 999),
+          features: data.features && data.features.length > 0 ? data.features : (defaultDef?.features || []),
+          color: data.color || defaultDef?.color || PLAN_COLOR_PRESETS.indigo,
+        });
       });
-    });
+    }
 
-    // Ensure all default built-in plans exist in Firestore and in returned list
+    // Ensure all default built-in plans are present in the returned list
+    const isSuperAdminUser = auth?.currentUser?.email?.toLowerCase().trim() === 'nawarkuldeep@gmail.com';
     for (const def of DEFAULT_BUILTIN_PLANS) {
       if (!plans.some((p) => p.id === def.id)) {
-        const docRef = db.collection(path).doc(def.id);
         const planWithMeta: PlanTierConfig = {
           ...def,
           isBuiltIn: true,
@@ -84,7 +92,16 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
           createdAt: def.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        await docRef.set(planWithMeta, { merge: true });
+
+        // Only persist to Firestore if the current user has Super Admin write permissions
+        if (isSuperAdminUser) {
+          try {
+            const docRef = db.collection(path).doc(def.id);
+            await docRef.set(planWithMeta, { merge: true });
+          } catch (seedErr) {
+            console.warn(`Background seeding for plan ${def.id} skipped:`, seedErr);
+          }
+        }
         plans.push(planWithMeta);
       }
     }
@@ -99,7 +116,7 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
 
     return plans;
   } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, path);
+    console.warn('getAllSubscriptionPlans encountered an error, using defaults:', err);
     return DEFAULT_BUILTIN_PLANS;
   }
 }

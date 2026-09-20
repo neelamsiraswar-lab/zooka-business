@@ -246,6 +246,7 @@ export interface CompanyProfile {
 export interface Party {
   id: number;
   userId: number;
+  workspaceId?: string;
   partyType: 'customer' | 'vendor';
   name: string;
   gstin?: string;
@@ -266,6 +267,7 @@ export interface Party {
 export interface InventoryItem {
   id: number;
   userId: number;
+  workspaceId?: string;
   name: string;
   sku?: string;
   hsnCode: string;
@@ -299,6 +301,7 @@ export interface InvoiceItem {
 export interface Invoice {
   id: number;
   userId: number;
+  workspaceId?: string;
   partyId?: number;
   voucherType: 'sales' | 'purchase' | 'receipt' | 'payment';
   saleType?: 'regular' | 'bill_of_supply' | 'export_with_tax' | 'export_without_tax' | 'rcm' | 'sez';
@@ -331,6 +334,7 @@ export interface Invoice {
 export interface PaymentVoucher {
   id: number;
   userId: number;
+  workspaceId?: string;
   voucherType: 'receipt' | 'payment';
   voucherNumber: string;
   date: string;
@@ -351,6 +355,7 @@ export interface PaymentVoucher {
 export interface JournalEntry {
   id: number;
   userId: number;
+  workspaceId?: string;
   entryType: 'journal' | 'contra' | 'debit_note' | 'credit_note' | 'adjustment' | 'opening';
   voucherNumber: string;
   date: string;
@@ -391,6 +396,7 @@ export interface TrialBalanceItem {
 export interface Expense {
   id: number;
   userId: number;
+  workspaceId?: string;
   category: string;
   amount: string;
   date: string;
@@ -426,6 +432,7 @@ export interface FinancialSummary {
 export interface ActivityLog {
   id: number;
   userId: number;
+  workspaceId?: string;
   userEmail: string;
   action: string;
   entityType: string;
@@ -437,6 +444,7 @@ export interface ActivityLog {
 export interface ChequeBook {
   id: number;
   userId: number;
+  workspaceId?: string;
   bankName: string;
   accountNumber?: string;
   bookName: string;
@@ -452,6 +460,7 @@ export interface ChequeBook {
 export interface Cheque {
   id: number;
   userId: number;
+  workspaceId?: string;
   chequeBookId?: number;
   chequeType: 'inward' | 'outward'; // inward = received (customer), outward = issued (vendor/expense)
   chequeNumber: string; // e.g. "000101"
@@ -502,6 +511,7 @@ export interface BankTransaction {
 export interface BankStatement {
   id: number;
   userId: number;
+  workspaceId?: string;
   bankName: string;
   accountNumber?: string;
   fileName: string;

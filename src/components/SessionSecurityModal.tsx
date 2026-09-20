@@ -292,7 +292,7 @@ export const SessionSecurityModal: React.FC<SessionSecurityModalProps> = ({
                   type="password"
                   value={masterPinInput}
                   onChange={(e) => setMasterPinInput(e.target.value)}
-                  placeholder="Enter Master Security PIN (e.g. 2785)"
+                  placeholder="Enter Master Security PIN"
                   className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
                 />
                 <button

@@ -477,26 +477,6 @@ export function isSuperAdmin(user: any, profile: any): boolean {
   return false;
 }
 
-export interface RolePinConfig {
-  admin: string;
-  accountant: string;
-  billing_operator: string;
-  auditor: string;
-  master: string;
-}
-
-export const DEFAULT_ROLE_PINS: RolePinConfig = {
-  admin: '9999',
-  accountant: '2222',
-  billing_operator: '1111',
-  auditor: '3333',
-  master: '1234',
-};
-
-export function getRoleDefaultPin(role: UserRole): string {
-  return DEFAULT_ROLE_PINS[role] || DEFAULT_ROLE_PINS.master;
-}
-
 export interface PermissionMatrixCategory {
   category: string;
   features: {

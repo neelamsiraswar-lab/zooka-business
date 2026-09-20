@@ -45,6 +45,7 @@ import {
   ROLE_CONFIG,
   isSuperAdmin,
 } from './lib/permissions';
+import { getStoredSession } from './lib/sessionSecurity';
 import {
   getAppData,
   createInvoice,
@@ -94,17 +95,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>(() => {
     try {
       // If super admin, ALWAYS start directly on super_admin dashboard
-      const savedDevUser = localStorage.getItem('apex_gst_dev_user');
-      let isDevSuper = false;
-      if (savedDevUser) {
-        try {
-          const parsed = JSON.parse(savedDevUser);
-          if (parsed.email?.toLowerCase() === 'nawarkuldeep@gmail.com' || parsed.role === 'super_admin') {
-            isDevSuper = true;
-          }
-        } catch {}
+      const stored = getStoredSession();
+      if (stored && (stored.email?.toLowerCase() === 'nawarkuldeep@gmail.com' || stored.role === 'super_admin')) {
+        return 'super_admin';
       }
-      if (isDevSuper) return 'super_admin';
 
       const isSuper = (profile?.role === 'super_admin') || (user?.email && ['nawarkuldeep@gmail.com'].includes(user.email.toLowerCase()));
       if (isSuper) return 'super_admin';
