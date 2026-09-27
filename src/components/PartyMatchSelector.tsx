@@ -269,19 +269,26 @@ export const PartyMatchSelector: React.FC<PartyMatchSelectorProps> = ({
       ) : (
         /* STANDARD POPUP COMBOBOX TRIGGER */
         <div className="relative">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setIsOpen(!isOpen)}
+          <div
+            role="button"
+            tabIndex={disabled ? -1 : 0}
+            aria-disabled={disabled}
+            onClick={() => !disabled && setIsOpen(!isOpen)}
+            onKeyDown={(e) => {
+              if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                setIsOpen(!isOpen);
+              }
+            }}
             aria-haspopup="listbox"
             aria-expanded={isOpen}
-            className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 bg-slate-950 hover:bg-slate-900 border rounded-xl text-white transition shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${
+            className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 bg-slate-950 hover:bg-slate-900 border rounded-xl text-white transition shadow-sm cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${
               isCustomName
                 ? 'border-emerald-500/50 ring-1 ring-emerald-500/20'
                 : selectedParty
                 ? 'border-slate-700 hover:border-slate-600'
                 : 'border-slate-700 hover:border-slate-600'
-            } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+            } ${disabled ? 'opacity-60 cursor-not-allowed pointer-events-none' : ''}`}
           >
             <div className="flex items-center gap-2.5 truncate min-w-0">
               <div className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 shrink-0">
@@ -340,8 +347,11 @@ export const PartyMatchSelector: React.FC<PartyMatchSelectorProps> = ({
               {(selectedParty || partyName) && !disabled && (
                 <button
                   type="button"
-                  onClick={handleClear}
-                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClear(e);
+                  }}
+                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer"
                   title="Clear party"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -353,7 +363,7 @@ export const PartyMatchSelector: React.FC<PartyMatchSelectorProps> = ({
                 }`}
               />
             </div>
-          </button>
+          </div>
 
           {/* Floating In-App Dropdown Popover */}
           {isOpen && !disabled && (
