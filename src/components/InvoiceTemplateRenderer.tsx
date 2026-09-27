@@ -439,16 +439,16 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
           {/* Line Items Table */}
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full border-collapse text-left text-xs">
-              <thead style={{ backgroundColor: color.hex }} className="text-white uppercase text-[10px]">
+              <thead style={{ backgroundColor: color.hex }} className="text-white uppercase text-[10px] tracking-wider">
                 <tr>
-                  <th className="p-2.5 font-semibold">#</th>
-                  <th className="p-2.5 font-semibold">Item & Description</th>
-                  <th className="p-2.5 text-center font-semibold">HSN/SAC</th>
-                  <th className="p-2.5 text-right font-semibold">Qty</th>
-                  <th className="p-2.5 text-right font-semibold">Rate (₹)</th>
-                  <th className="p-2.5 text-right font-semibold">Taxable (₹)</th>
-                  <th className="p-2.5 text-right font-semibold">GST %</th>
-                  <th className="p-2.5 text-right font-semibold">Total (₹)</th>
+                  <th className="p-2.5 font-semibold text-center w-8">#</th>
+                  <th className="p-2.5 font-semibold text-left">Item & Description</th>
+                  <th className="p-2.5 text-center font-semibold w-20">HSN/SAC</th>
+                  <th className="p-2.5 text-right font-semibold w-16">Qty</th>
+                  <th className="p-2.5 text-right font-semibold w-24">Rate (₹)</th>
+                  <th className="p-2.5 text-right font-semibold w-24">Taxable (₹)</th>
+                  <th className="p-2.5 text-right font-semibold w-16">GST %</th>
+                  <th className="p-2.5 text-right font-semibold w-28">Total (₹)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -457,27 +457,27 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                     const c = computeItemRow(it);
                     return (
                       <tr key={idx} className="hover:bg-slate-50/80">
-                        <td className="p-2.5 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                        <td className="p-2.5 font-medium text-slate-900">
-                          {it.itemName}
+                        <td className="p-2.5 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                        <td className="p-2.5 text-left font-medium text-slate-900">
+                          <div>{it.itemName}</div>
                           {it.isTaxInclusive && (
-                            <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-normal">
+                            <span className="inline-block mt-0.5 text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-normal">
                               Tax-Incl
                             </span>
                           )}
                         </td>
                         <td className="p-2.5 text-center font-mono text-slate-600">{it.hsnCode || '—'}</td>
-                        <td className="p-2.5 text-right font-mono text-slate-700">
-                          {c.qty} {it.unit}
+                        <td className="p-2.5 text-right font-mono tabular-nums text-slate-700">
+                          {c.qty} {it.unit || 'PCS'}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-slate-700">
+                        <td className="p-2.5 text-right font-mono tabular-nums text-slate-700">
                           ₹{c.rate.toFixed(2)}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-slate-700">
+                        <td className="p-2.5 text-right font-mono tabular-nums text-slate-700">
                           ₹{c.taxable.toFixed(2)}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-slate-700">{c.gstRate}%</td>
-                        <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                        <td className="p-2.5 text-right font-mono tabular-nums text-slate-700">{c.gstRate}%</td>
+                        <td className="p-2.5 text-right font-mono tabular-nums font-bold text-slate-900">
                           ₹{c.total.toFixed(2)}
                         </td>
                       </tr>
@@ -872,7 +872,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                 <thead className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 uppercase font-black tracking-wider text-[9px]">
                   <tr>
                     <th className="border-r border-slate-900 p-1.5 text-center w-7">#</th>
-                    <th className="border-r border-slate-900 p-1.5">Description of Goods / Services</th>
+                    <th className="border-r border-slate-900 p-1.5 text-left">Description of Goods / Services</th>
                     <th className="border-r border-slate-900 p-1.5 text-center w-16">HSN/SAC</th>
                     <th className="border-r border-slate-900 p-1.5 text-right w-16">Qty / Unit</th>
                     <th className="border-r border-slate-900 p-1.5 text-right w-20">Rate (₹)</th>
@@ -888,28 +888,28 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                       return (
                         <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50/70' : 'bg-white'}>
                           <td className="border-r border-slate-900 p-1.5 text-center font-mono text-slate-500">{idx + 1}</td>
-                          <td className="border-r border-slate-900 p-1.5 font-medium text-slate-950">
+                          <td className="border-r border-slate-900 p-1.5 text-left font-medium text-slate-950">
                             <div>{it.itemName}</div>
                             {it.isTaxInclusive && (
-                              <span className="text-[8.5px] text-amber-800 bg-amber-50 px-1 rounded font-mono font-normal">
+                              <span className="inline-block mt-0.5 text-[8.5px] text-amber-800 bg-amber-50 px-1 rounded font-mono font-normal">
                                 Tax-Inclusive Rate
                               </span>
                             )}
                           </td>
                           <td className="border-r border-slate-900 p-1.5 text-center font-mono text-slate-700">{it.hsnCode || '—'}</td>
-                          <td className="border-r border-slate-900 p-1.5 text-right font-mono text-slate-800">
+                          <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums text-slate-800">
                             {c.qty} {it.unit || 'PCS'}
                           </td>
-                          <td className="border-r border-slate-900 p-1.5 text-right font-mono text-slate-800">
+                          <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums text-slate-800">
                             ₹{c.rate.toFixed(2)}
                           </td>
-                          <td className="border-r border-slate-900 p-1.5 text-right font-mono font-medium text-slate-900">
+                          <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums font-medium text-slate-900">
                             ₹{c.taxable.toFixed(2)}
                           </td>
-                          <td className="border-r border-slate-900 p-1.5 text-right font-mono text-slate-800">
+                          <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums text-slate-800">
                             {c.gstRate}%
                           </td>
-                          <td className="p-1.5 text-right font-mono font-bold text-slate-950">
+                          <td className="p-1.5 text-right font-mono tabular-nums font-bold text-slate-950">
                             ₹{c.total.toFixed(2)}
                           </td>
                         </tr>
@@ -926,17 +926,17 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                     <td colSpan={3} className="border-r border-slate-900 p-1.5 text-right uppercase">
                       Total Items ({invoice.items?.length || 0}):
                     </td>
-                    <td className="border-r border-slate-900 p-1.5 text-right font-mono">
+                    <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums">
                       {invoice.items?.reduce((acc, i) => acc + (parseFloat(String(i.quantity)) || 0), 0) || 0}
                     </td>
                     <td className="border-r border-slate-900 p-1.5"></td>
-                    <td className="border-r border-slate-900 p-1.5 text-right font-mono">
+                    <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums">
                       ₹{subtotalVal.toFixed(2)}
                     </td>
-                    <td className="border-r border-slate-900 p-1.5 text-right font-mono">
+                    <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums">
                       ₹{taxTotalVal.toFixed(2)}
                     </td>
-                    <td className="p-1.5 text-right font-mono text-slate-950">
+                    <td className="p-1.5 text-right font-mono tabular-nums text-slate-950">
                       ₹{grandTotalVal.toFixed(2)}
                     </td>
                   </tr>
@@ -1176,16 +1176,16 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
 
           {/* Dense Items Table */}
           <table className="w-full border-collapse text-left text-[10px]">
-            <thead className="bg-slate-100 border-y border-slate-400 uppercase">
+            <thead className="bg-slate-100 border-y border-slate-400 uppercase tracking-wider">
               <tr>
-                <th className="p-1">#</th>
-                <th className="p-1">Particulars</th>
-                <th className="p-1 text-center">HSN</th>
-                <th className="p-1 text-right">Qty</th>
-                <th className="p-1 text-right">Rate</th>
-                <th className="p-1 text-right">Taxable</th>
-                <th className="p-1 text-right">GST</th>
-                <th className="p-1 text-right">Total</th>
+                <th className="p-1 text-center w-8">#</th>
+                <th className="p-1 text-left">Particulars</th>
+                <th className="p-1 text-center w-16">HSN</th>
+                <th className="p-1 text-right w-16">Qty</th>
+                <th className="p-1 text-right w-20">Rate</th>
+                <th className="p-1 text-right w-20">Taxable</th>
+                <th className="p-1 text-right w-14">GST</th>
+                <th className="p-1 text-right w-24">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -1194,14 +1194,14 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                   const c = computeItemRow(it);
                   return (
                     <tr key={i}>
-                      <td className="p-1">{i + 1}</td>
-                      <td className="p-1 font-semibold">{it.itemName}</td>
-                      <td className="p-1 text-center">{it.hsnCode || '—'}</td>
-                      <td className="p-1 text-right">{c.qty} {it.unit}</td>
-                      <td className="p-1 text-right">₹{c.rate.toFixed(2)}</td>
-                      <td className="p-1 text-right">₹{c.taxable.toFixed(2)}</td>
-                      <td className="p-1 text-right">{c.gstRate}%</td>
-                      <td className="p-1 text-right font-bold">₹{c.total.toFixed(2)}</td>
+                      <td className="p-1 text-center text-slate-500">{i + 1}</td>
+                      <td className="p-1 text-left font-semibold">{it.itemName}</td>
+                      <td className="p-1 text-center text-slate-600">{it.hsnCode || '—'}</td>
+                      <td className="p-1 text-right tabular-nums">{c.qty} {it.unit || 'PCS'}</td>
+                      <td className="p-1 text-right tabular-nums">₹{c.rate.toFixed(2)}</td>
+                      <td className="p-1 text-right tabular-nums">₹{c.taxable.toFixed(2)}</td>
+                      <td className="p-1 text-right tabular-nums">{c.gstRate}%</td>
+                      <td className="p-1 text-right tabular-nums font-bold">₹{c.total.toFixed(2)}</td>
                     </tr>
                   );
                 })}
@@ -1429,7 +1429,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                 <thead style={{ backgroundColor: color.hex }} className="text-white uppercase text-[10px] tracking-wider">
                   <tr>
                     <th className="py-2.5 px-3 font-semibold text-center w-10">#</th>
-                    <th className="py-2.5 px-3 font-semibold">Description of Goods & Services</th>
+                    <th className="py-2.5 px-3 font-semibold text-left">Description of Goods & Services</th>
                     <th className="py-2.5 px-3 font-semibold text-center w-24">HSN/SAC</th>
                     <th className="py-2.5 px-3 font-semibold text-right w-20">Qty</th>
                     <th className="py-2.5 px-3 font-semibold text-right w-24">Rate (₹)</th>
@@ -1445,20 +1445,20 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                       return (
                         <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
                           <td className="py-2.5 px-3 text-center text-slate-400">{idx + 1}</td>
-                          <td className="py-2.5 px-3 font-sans font-medium text-slate-900">
-                            {it.itemName}
+                          <td className="py-2.5 px-3 text-left font-sans font-medium text-slate-900">
+                            <div>{it.itemName}</div>
                             {it.isTaxInclusive && (
-                              <span className="ml-1 text-[9px] px-1.5 py-0.2 bg-amber-50 text-amber-800 rounded font-normal">
+                              <span className="inline-block mt-0.5 text-[9px] px-1.5 py-0.2 bg-amber-50 text-amber-800 rounded font-normal">
                                 Incl
                               </span>
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-center text-slate-600">{it.hsnCode || '—'}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-700">{c.qty} {it.unit}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-700">₹{c.rate.toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-700">₹{c.taxable.toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-700">{c.gstRate}%</td>
-                          <td className="py-2.5 px-3 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right tabular-nums text-slate-700">{c.qty} {it.unit || 'PCS'}</td>
+                          <td className="py-2.5 px-3 text-right tabular-nums text-slate-700">₹{c.rate.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right tabular-nums text-slate-700">₹{c.taxable.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right tabular-nums text-slate-700">{c.gstRate}%</td>
+                          <td className="py-2.5 px-3 text-right tabular-nums font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
                         </tr>
                       );
                     })
@@ -1754,13 +1754,13 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b-2 border-slate-200 text-slate-400 text-[10px] uppercase tracking-wider">
-                    <th className="pb-2">Item Details</th>
-                    <th className="pb-2 text-center">HSN</th>
-                    <th className="pb-2 text-right">Qty</th>
-                    <th className="pb-2 text-right">Rate</th>
-                    <th className="pb-2 text-right">Taxable</th>
-                    <th className="pb-2 text-right">GST</th>
-                    <th className="pb-2 text-right">Amount</th>
+                    <th className="pb-2 text-left">Item Details</th>
+                    <th className="pb-2 text-center w-20">HSN</th>
+                    <th className="pb-2 text-right w-16">Qty</th>
+                    <th className="pb-2 text-right w-20">Rate</th>
+                    <th className="pb-2 text-right w-20">Taxable</th>
+                    <th className="pb-2 text-right w-16">GST</th>
+                    <th className="pb-2 text-right w-24">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
@@ -1769,15 +1769,20 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                       const c = computeItemRow(it);
                       return (
                         <tr key={idx} className="hover:bg-slate-50/80">
-                          <td className="py-3 font-sans font-medium text-slate-900">
-                            {it.itemName}
+                          <td className="py-3 text-left font-sans font-medium text-slate-900">
+                            <div>{it.itemName}</div>
+                            {it.isTaxInclusive && (
+                              <span className="inline-block mt-0.5 text-[8.5px] px-1.5 py-0.2 bg-amber-50 text-amber-800 rounded font-normal font-mono">
+                                Tax-Incl
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 text-center text-slate-500">{it.hsnCode || '—'}</td>
-                          <td className="py-3 text-right text-slate-700">{c.qty} {it.unit}</td>
-                          <td className="py-3 text-right text-slate-700">₹{c.rate.toFixed(2)}</td>
-                          <td className="py-3 text-right text-slate-700">₹{c.taxable.toFixed(2)}</td>
-                          <td className="py-3 text-right text-slate-700">{c.gstRate}%</td>
-                          <td className="py-3 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                          <td className="py-3 text-right tabular-nums text-slate-700">{c.qty} {it.unit || 'PCS'}</td>
+                          <td className="py-3 text-right tabular-nums text-slate-700">₹{c.rate.toFixed(2)}</td>
+                          <td className="py-3 text-right tabular-nums text-slate-700">₹{c.taxable.toFixed(2)}</td>
+                          <td className="py-3 text-right tabular-nums text-slate-700">{c.gstRate}%</td>
+                          <td className="py-3 text-right tabular-nums font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
                         </tr>
                       );
                     })
@@ -2036,13 +2041,13 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               <thead className="bg-slate-900 text-white uppercase text-[10px]">
                 <tr className="divide-x divide-slate-700">
                   <th className="p-2 text-center w-10">Sr</th>
-                  <th className="p-2 font-sans font-semibold">Description of Goods</th>
-                  <th className="p-2 text-center">HSN/SAC</th>
-                  <th className="p-2 text-right">Qty</th>
-                  <th className="p-2 text-right">Rate (₹)</th>
-                  <th className="p-2 text-right">Taxable (₹)</th>
-                  <th className="p-2 text-right">GST %</th>
-                  <th className="p-2 text-right">Total (₹)</th>
+                  <th className="p-2 text-left font-sans font-semibold">Description of Goods</th>
+                  <th className="p-2 text-center w-24">HSN/SAC</th>
+                  <th className="p-2 text-right w-20">Qty</th>
+                  <th className="p-2 text-right w-24">Rate (₹)</th>
+                  <th className="p-2 text-right w-24">Taxable (₹)</th>
+                  <th className="p-2 text-right w-20">GST %</th>
+                  <th className="p-2 text-right w-28">Total (₹)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-300 text-[11px]">
@@ -2052,13 +2057,20 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                     return (
                       <tr key={idx} className="divide-x divide-slate-200 hover:bg-slate-50">
                         <td className="p-2 text-center text-slate-500">{idx + 1}</td>
-                        <td className="p-2 font-sans font-medium text-slate-900">{it.itemName}</td>
+                        <td className="p-2 text-left font-sans font-medium text-slate-900">
+                          <div>{it.itemName}</div>
+                          {it.isTaxInclusive && (
+                            <span className="inline-block mt-0.5 text-[8.5px] px-1.5 py-0.2 bg-amber-50 text-amber-800 rounded font-normal font-mono">
+                              Tax-Incl
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2 text-center text-slate-600">{it.hsnCode || '—'}</td>
-                        <td className="p-2 text-right">{c.qty} {it.unit}</td>
-                        <td className="p-2 text-right">₹{c.rate.toFixed(2)}</td>
-                        <td className="p-2 text-right">₹{c.taxable.toFixed(2)}</td>
-                        <td className="p-2 text-right">{c.gstRate}%</td>
-                        <td className="p-2 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">{c.qty} {it.unit || 'PCS'}</td>
+                        <td className="p-2 text-right tabular-nums">₹{c.rate.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">₹{c.taxable.toFixed(2)}</td>
+                        <td className="p-2 text-right tabular-nums">{c.gstRate}%</td>
+                        <td className="p-2 text-right tabular-nums font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
                       </tr>
                     );
                   })
@@ -2214,16 +2226,16 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
             {/* Export Items Table with Currency Equivalent */}
             <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-left text-xs border-collapse">
-                <thead style={{ backgroundColor: color.hex }} className="text-white uppercase text-[10px]">
+                <thead style={{ backgroundColor: color.hex }} className="text-white uppercase text-[10px] tracking-wider">
                   <tr>
-                    <th className="p-2.5 text-center">#</th>
-                    <th className="p-2.5">Export Commodity Description</th>
-                    <th className="p-2.5 text-center">HSN/ITC-HS</th>
-                    <th className="p-2.5 text-right">Qty</th>
-                    <th className="p-2.5 text-right">Rate (INR)</th>
-                    <th className="p-2.5 text-right">Taxable (INR)</th>
-                    <th className="p-2.5 text-right">IGST %</th>
-                    <th className="p-2.5 text-right">Total (INR)</th>
+                    <th className="p-2.5 text-center w-8">#</th>
+                    <th className="p-2.5 text-left">Export Commodity Description</th>
+                    <th className="p-2.5 text-center w-24">HSN/ITC-HS</th>
+                    <th className="p-2.5 text-right w-20">Qty</th>
+                    <th className="p-2.5 text-right w-24">Rate (INR)</th>
+                    <th className="p-2.5 text-right w-24">Taxable (INR)</th>
+                    <th className="p-2.5 text-right w-20">IGST %</th>
+                    <th className="p-2.5 text-right w-28">Total (INR)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
@@ -2233,13 +2245,13 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                       return (
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="p-2.5 text-center text-slate-400">{idx + 1}</td>
-                          <td className="p-2.5 font-sans font-medium text-slate-900">{it.itemName}</td>
+                          <td className="p-2.5 text-left font-sans font-medium text-slate-900">{it.itemName}</td>
                           <td className="p-2.5 text-center text-slate-600">{it.hsnCode || '—'}</td>
-                          <td className="p-2.5 text-right">{c.qty} {it.unit}</td>
-                          <td className="p-2.5 text-right">₹{c.rate.toFixed(2)}</td>
-                          <td className="p-2.5 text-right">₹{c.taxable.toFixed(2)}</td>
-                          <td className="p-2.5 text-right">{invoice.saleType === 'export_with_tax' ? `${c.gstRate}%` : '0% (LUT)'}</td>
-                          <td className="p-2.5 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                          <td className="p-2.5 text-right tabular-nums">{c.qty} {it.unit || 'PCS'}</td>
+                          <td className="p-2.5 text-right tabular-nums">₹{c.rate.toFixed(2)}</td>
+                          <td className="p-2.5 text-right tabular-nums">₹{c.taxable.toFixed(2)}</td>
+                          <td className="p-2.5 text-right tabular-nums">{invoice.saleType === 'export_with_tax' ? `${c.gstRate}%` : '0% (LUT)'}</td>
+                          <td className="p-2.5 text-right tabular-nums font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
                         </tr>
                       );
                     })

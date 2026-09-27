@@ -1079,8 +1079,8 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
       {/* PRINTABLE VOUCHER SLIP MODAL */}
       {/* ======================================================== */}
       {selectedVoucherForPrint && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-800 overflow-hidden my-auto print:shadow-none print:m-0 print:w-full print:max-h-none">
+        <div className="printable-modal-backdrop fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto print:bg-white print:p-0 print:static print:overflow-visible print:inset-auto print:block print:w-full print:h-auto">
+          <div className="printable-invoice-container bg-white rounded-2xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-800 overflow-hidden my-auto print:shadow-none print:m-0 print:w-full print:max-h-none print:p-0 print:border-none print:rounded-none print:block">
             {/* Modal Controls Bar */}
             <div className="bg-slate-950 text-white px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 shrink-0 print:hidden">
               <div className="flex items-center gap-2">

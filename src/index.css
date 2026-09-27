@@ -73,7 +73,7 @@
 }
 
 /* ========================================================================= */
-/* A4 INVOICE PRINT COMPACTION & EXACT COLOR ACCURACY */
+/* A4 INVOICE PRINT COMPACTION & EXACT COLOR ACCURACY (PRINT ONLY INVOICE) */
 /* ========================================================================= */
 @media print {
   @page {
@@ -84,20 +84,67 @@
   *, *::before, *::after {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
   }
 
-  body {
+  html, body, #root {
+    background: #ffffff !important;
     background-color: #ffffff !important;
     color: #0f172a !important;
     font-size: 10px !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
   }
 
-  /* Hide app navigation chrome, sidebar, header buttons when printing */
-  nav, header, aside, .print\\:hidden, #create-sales-invoice-btn, #record-purchase-bill-btn {
+  /* Override dark layout backgrounds during print */
+  .min-h-screen, .bg-slate-950, .bg-slate-900, .bg-slate-800, .bg-black, [class*="bg-black"], [class*="bg-slate-950"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+  }
+
+  /* Hide app chrome: sidebar, top headers, action buttons, notifications */
+  nav, header, aside, .print\:hidden, [class*="print:hidden"], 
+  button, .no-print, #create-sales-invoice-btn, #record-purchase-bill-btn {
     display: none !important;
+  }
+
+  /* Target fixed modal backdrop: eliminate black overlay & frame */
+  .fixed.inset-0.z-50, .printable-modal-backdrop {
+    position: static !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  /* Modal content container: expand to 100% width cleanly */
+  .printable-invoice-container, .printable-invoice-modal {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
   }
 
   /* Compaction container */
@@ -110,6 +157,8 @@
     border-color: #0f172a !important;
     page-break-inside: avoid;
     break-inside: avoid;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
   }
 
   .avoid-page-break {

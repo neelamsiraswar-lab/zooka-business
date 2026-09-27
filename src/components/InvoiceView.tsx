@@ -1704,8 +1704,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
 
       {/* PRINTABLE INVOICE MODAL / VIEW */}
       {selectedInvoice && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
-          <div className="bg-white text-slate-900 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl relative my-auto print:shadow-none print:m-0 print:w-full print:max-h-none print:p-0">
+        <div className="printable-modal-backdrop fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto print:bg-white print:p-0 print:static print:overflow-visible print:inset-auto print:block print:w-full print:h-auto">
+          <div className="printable-invoice-container bg-white text-slate-900 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl relative my-auto print:shadow-none print:m-0 print:w-full print:max-h-none print:p-0 print:border-none print:rounded-none print:block print:space-y-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 print:hidden shrink-0">
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <div className="flex items-center gap-1.5">
