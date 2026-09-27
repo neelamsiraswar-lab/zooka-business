@@ -24,7 +24,6 @@ import {
   SESSION_CONFIG,
 } from '../lib/sessionSecurity';
 import { isSuperAdmin } from '../lib/permissions';
-import { SuperAdminForgotPasswordModal } from './SuperAdminForgotPasswordModal';
 
 interface SessionSecurityModalProps {
   isOpen: boolean;
@@ -50,7 +49,6 @@ export const SessionSecurityModal: React.FC<SessionSecurityModalProps> = ({
   const [masterPinInput, setMasterPinInput] = useState('');
   const [elevationError, setElevationError] = useState<string | null>(null);
   const [elevationSuccess, setElevationSuccess] = useState<string | null>(null);
-  const [showForgotModal, setShowForgotModal] = useState(false);
   const [isElevating, setIsElevating] = useState(false);
   const [remainingTimeText, setRemainingTimeText] = useState('');
   const [saStatus, setSaStatus] = useState(getSuperAdminBruteForceStatus());
@@ -307,16 +305,6 @@ export const SessionSecurityModal: React.FC<SessionSecurityModalProps> = ({
                     <span>Unlock Elevated Mode</span>
                   </button>
                 </form>
-                <div className="flex items-center justify-between text-[11px] text-slate-400">
-                  <span>Forgot or need to change Master PIN?</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotModal(true)}
-                    className="text-amber-400 hover:text-amber-300 font-semibold underline cursor-pointer"
-                  >
-                    Reset Super Admin Password / PIN
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -360,19 +348,6 @@ export const SessionSecurityModal: React.FC<SessionSecurityModalProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Super Admin Forgot Password Modal */}
-      <SuperAdminForgotPasswordModal
-        isOpen={showForgotModal}
-        onClose={() => setShowForgotModal(false)}
-        onResetSuccess={(newPass) => {
-          if (newPass) {
-            setMasterPinInput(newPass);
-          }
-          setShowForgotModal(false);
-          setElevationSuccess('Password / PIN reset successfully. Please click Unlock Elevated Mode.');
-        }}
-      />
     </div>
   );
 };

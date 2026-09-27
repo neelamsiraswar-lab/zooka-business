@@ -44,7 +44,6 @@ import {
 import { createWorkspace } from '../db/workspaces';
 import { INDIAN_STATES } from '../data/indianStates';
 import { SuperAdminSecurityGateModal } from './SuperAdminSecurityGateModal';
-import { SuperAdminForgotPasswordModal } from './SuperAdminForgotPasswordModal';
 import { RoleMatrixModal } from './RoleMatrixModal';
 import { GstQuickCalculatorWidget } from './GstQuickCalculatorWidget';
 import { getRememberedCredentials } from '../lib/sessionSecurity';
@@ -88,7 +87,6 @@ export const LoginView: React.FC = () => {
 
   // Modal States
   const [showSuperAdminModal, setShowSuperAdminModal] = useState(false);
-  const [showSuperAdminForgotModal, setShowSuperAdminForgotModal] = useState(false);
   const [showRoleMatrixModal, setShowRoleMatrixModal] = useState(false);
 
   // Dynamic Subscription Plans State (Synced with Super Admin Firestore Catalog)
@@ -421,14 +419,8 @@ export const LoginView: React.FC = () => {
     setLocalSuccess(null);
     const trimmedEmail = email.trim();
 
-    // If super admin email or requested
-    if (trimmedEmail.toLowerCase() === 'nawarkuldeep@gmail.com') {
-      setShowSuperAdminForgotModal(true);
-      return;
-    }
-
     if (!trimmedEmail) {
-      setShowSuperAdminForgotModal(true);
+      setLocalError('Please enter your account email address in the Email field to receive a password reset link.');
       return;
     }
 
@@ -438,12 +430,18 @@ export const LoginView: React.FC = () => {
         await sendPasswordResetEmail(auth, trimmedEmail);
         setLocalSuccess(`Password reset email sent to ${trimmedEmail}. Please check your inbox or spam folder.`);
       } else {
-        setLocalSuccess(`Password recovery requested for ${trimmedEmail}. If this is a Super Admin account, please use the Super Admin recovery tool.`);
+        setLocalError('Authentication service is currently unavailable. Please try again later.');
       }
     } catch (err: any) {
-      console.warn('Password reset request note:', err);
-      // If error or superadmin
-      setShowSuperAdminForgotModal(true);
+      console.warn('Password reset request error:', err);
+      const msg = err?.message || '';
+      if (msg.includes('auth/user-not-found')) {
+        setLocalError('No registered account was found with this email address.');
+      } else if (msg.includes('auth/invalid-email')) {
+        setLocalError('Please enter a valid email address.');
+      } else {
+        setLocalError('Failed to send password reset email. Please verify your email and try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -647,12 +645,6 @@ export const LoginView: React.FC = () => {
       <SuperAdminSecurityGateModal
         isOpen={showSuperAdminModal}
         onClose={() => setShowSuperAdminModal(false)}
-      />
-
-      {/* Super Admin Forgot Password Modal */}
-      <SuperAdminForgotPasswordModal
-        isOpen={showSuperAdminForgotModal}
-        onClose={() => setShowSuperAdminForgotModal(false)}
       />
 
       {/* Role Matrix Modal Dialog */}

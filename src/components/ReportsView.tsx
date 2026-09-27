@@ -15,6 +15,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Gstr2bReportView } from './Gstr2bReportView';
+import { Gstr1ReportView } from './Gstr1ReportView';
+import { Gstr3bReportView } from './Gstr3bReportView';
 import { ConsolidatedFinancialReportsView } from './ConsolidatedFinancialReportsView';
 
 interface ReportsViewProps {
@@ -252,58 +254,16 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
       )}
 
-      {/* 2. GSTR-1 REPORT */}
+      {/* 2. GSTR-1 REPORT GENERATOR */}
       {reportType === 'gstr1' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
-          <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-            <div>
-              <h3 className="font-bold text-white text-base">GSTR-1 Outward Supplies Schedule (Sales)</h3>
-              <p className="text-xs text-slate-400">Details of sales invoices issued to registered and unregistered persons</p>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950 text-slate-400 uppercase font-semibold">
-                <tr>
-                  <th className="p-3">Invoice #</th>
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Party Name</th>
-                  <th className="p-3">GSTIN</th>
-                  <th className="p-3">Supply State</th>
-                  <th className="p-3 text-right">Taxable Value</th>
-                  <th className="p-3 text-right">CGST</th>
-                  <th className="p-3 text-right">SGST</th>
-                  <th className="p-3 text-right">IGST</th>
-                  <th className="p-3 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {invoices
-                  .filter((i) => i.voucherType === 'sales')
-                  .map((i) => (
-                    <tr key={i.id} className="hover:bg-slate-800/30 font-mono">
-                      <td className="p-3 text-white font-semibold">{i.invoiceNumber}</td>
-                      <td className="p-3 font-sans text-slate-400">{i.invoiceDate}</td>
-                      <td className="p-3 font-sans text-slate-200">{i.partyName}</td>
-                      <td className="p-3 text-slate-400">{i.partyGstin || 'B2C / Unreg'}</td>
-                      <td className="p-3 font-sans">{i.placeOfSupply}</td>
-                      <td className="p-3 text-right">₹{parseFloat(i.subtotal).toFixed(2)}</td>
-                      <td className="p-3 text-right">₹{parseFloat(i.cgstTotal).toFixed(2)}</td>
-                      <td className="p-3 text-right">₹{parseFloat(i.sgstTotal).toFixed(2)}</td>
-                      <td className="p-3 text-right">₹{parseFloat(i.igstTotal).toFixed(2)}</td>
-                      <td className="p-3 text-right font-bold text-white">₹{parseFloat(i.grandTotal).toFixed(2)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="animate-fade-in">
+          <Gstr1ReportView invoices={invoices} company={company} />
         </div>
       )}
 
       {/* 3. GSTR-2B AUTO-DRAFTED ITC REPORT */}
       {reportType === 'gstr2b' && (
-        <div id="gstr2b-section">
+        <div id="gstr2b-section" className="animate-fade-in">
           <Gstr2bReportView
             summary={summary}
             invoices={invoices}
@@ -314,63 +274,16 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
       )}
 
-      {/* 4. GSTR-3B REPORT */}
+      {/* 4. GSTR-3B REPORT GENERATOR */}
       {reportType === 'gstr3b' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
-          <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
-            <div>
-              <h3 className="font-bold text-white text-base">GSTR-3B Monthly Return Summary</h3>
-              <p className="text-xs text-slate-400">Self-assessed summary of outward supplies, input tax credit, and tax dues</p>
-            </div>
-            <button
-              onClick={() => setReportType('gstr2b')}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer font-sans"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Verify with GSTR-2B Statement</span>
-            </button>
-          </div>
-
-          <div className="space-y-4 text-xs font-mono">
-            <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-              <div className="font-sans font-bold text-slate-200 text-sm">
-                Table 3.1: Details of Outward Supplies and Inward Supplies Liable to Reverse Charge
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-800 text-slate-400">
-                <span>(a) Outward taxable supplies (other than zero rated, nil rated and exempted):</span>
-                <span className="font-bold text-white font-mono">{formatINR(summary?.totalSales)}</span>
-              </div>
-              <div className="flex justify-between py-1 text-slate-400">
-                <span>Total Output Tax Liability (CGST + SGST + IGST):</span>
-                <span className="font-bold text-purple-400 font-mono">{formatINR(summary?.totalTaxCollected)}</span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-              <div className="flex justify-between items-center">
-                <div className="font-sans font-bold text-slate-200 text-sm">
-                  Table 4: Eligible Input Tax Credit (ITC)
-                </div>
-                <span className="text-[11px] font-sans px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  Auto-Drafted from GSTR-2B Table 4(A)(5)
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-800 text-slate-400">
-                <span>(A) ITC Available (whether in full or part) - All other ITC (Purchases & Overheads):</span>
-                <span className="font-bold text-teal-400 font-mono">{formatINR(summary?.totalTaxPaidOnExpenses)}</span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-              <div className="font-sans font-bold text-slate-200 text-sm">
-                Table 6.1: Payment of Tax (Net Tax Payable in Cash)
-              </div>
-              <div className="flex justify-between py-1 text-slate-200 font-bold text-sm">
-                <span>Net Tax to be paid through Electronic Cash Ledger:</span>
-                <span className="text-emerald-400 font-mono">{formatINR(summary?.netGstPayable)}</span>
-              </div>
-            </div>
-          </div>
+        <div className="animate-fade-in">
+          <Gstr3bReportView
+            invoices={invoices}
+            expenses={expenses}
+            parties={parties}
+            company={company}
+            onNavigateToGstr2b={() => setReportType('gstr2b')}
+          />
         </div>
       )}
 

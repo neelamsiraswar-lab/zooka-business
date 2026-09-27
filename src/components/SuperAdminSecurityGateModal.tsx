@@ -22,7 +22,6 @@ import {
   SESSION_CONFIG,
   getRememberedCredentials,
 } from '../lib/sessionSecurity';
-import { SuperAdminForgotPasswordModal } from './SuperAdminForgotPasswordModal';
 
 interface SuperAdminSecurityGateModalProps {
   isOpen: boolean;
@@ -43,7 +42,6 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
-  const [showForgotModal, setShowForgotModal] = useState(false);
   const [bfStatus, setBfStatus] = useState(getSuperAdminBruteForceStatus());
 
   useEffect(() => {
@@ -266,7 +264,7 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
               </div>
             </div>
 
-            {/* Remember Me & Forgot Password Option */}
+            {/* Remember Me Option */}
             <div className="flex items-center justify-between pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 text-xs">
                 <input
@@ -278,15 +276,6 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
                 />
                 <span>Remember session (30d)</span>
               </label>
-
-              <button
-                type="button"
-                id="btn-sa-forgot-password"
-                onClick={() => setShowForgotModal(true)}
-                className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold underline cursor-pointer"
-              >
-                Forgot Password / PIN?
-              </button>
             </div>
 
             <button
@@ -306,29 +295,12 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
             <Lock className="w-3 h-3 text-slate-400" />
             30-Min Elevated Window
           </span>
-          <button
-            type="button"
-            onClick={() => setShowForgotModal(true)}
-            className="text-[11px] text-slate-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
-          >
-            <KeyRound className="w-3 h-3 text-amber-400" />
-            <span>Root Password Recovery</span>
-          </button>
+          <span className="text-slate-500 text-[11px] flex items-center gap-1 font-mono">
+            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+            Secured Access Gate
+          </span>
         </div>
       </div>
-
-      {/* Super Admin Forgot Password Modal */}
-      <SuperAdminForgotPasswordModal
-        isOpen={showForgotModal}
-        onClose={() => setShowForgotModal(false)}
-        onResetSuccess={(newPass) => {
-          if (newPass) {
-            setMasterCredential(newPass);
-          }
-          setShowForgotModal(false);
-          setAuthSuccess('Password has been reset! Please click Verify or Authenticate to enter.');
-        }}
-      />
     </div>
   );
 };

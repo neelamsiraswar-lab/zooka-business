@@ -239,7 +239,7 @@ export async function computeSha256Hex(text: string): Promise<string> {
 }
 
 /**
- * Recognized master default presets and emergency root recovery keys
+ * Recognized master default presets
  */
 export const DEFAULT_SUPER_ADMIN_PASSWORDS = [
   'Zooka@2026',
@@ -250,13 +250,6 @@ export const DEFAULT_SUPER_ADMIN_PASSWORDS = [
   'admin',
   'zooka',
   '9820123456',
-];
-
-export const SYSTEM_ROOT_RECOVERY_KEYS = [
-  'ZOOKA-ROOT-2026',
-  'ZOOKA-RECOVERY-KEY',
-  'SUPERADMIN-ROOT-RESET',
-  'KULDEEP-SUPERADMIN-2026',
 ];
 
 /**
@@ -300,14 +293,14 @@ export async function verifySuperAdminMasterCredential(input?: string): Promise<
       }
     }
 
-    // 3. Match against default standard master presets or emergency recovery keys
-    if (DEFAULT_SUPER_ADMIN_PASSWORDS.includes(trimmed) || SYSTEM_ROOT_RECOVERY_KEYS.includes(trimmed)) {
+    // 3. Match against default standard master presets
+    if (DEFAULT_SUPER_ADMIN_PASSWORDS.includes(trimmed)) {
       return true;
     }
   } catch (err) {
     console.warn('Dynamic master credential verification warning:', err);
     // Fallback check on network or permission glitches
-    if (DEFAULT_SUPER_ADMIN_PASSWORDS.includes(trimmed) || SYSTEM_ROOT_RECOVERY_KEYS.includes(trimmed)) {
+    if (DEFAULT_SUPER_ADMIN_PASSWORDS.includes(trimmed)) {
       return true;
     }
   }
@@ -372,55 +365,6 @@ export async function updateSuperAdminMasterCredential(newCredentialText: string
     console.error('Failed to update Super Admin master credential in Firestore:', err);
     return false;
   }
-}
-
-/**
- * Emergency reset of Super Admin Password
- */
-export async function resetSuperAdminPassword(
-  recoveryKeyOrCode: string,
-  newPasswordText: string
-): Promise<{ success: boolean; message: string }> {
-  const trimmedCode = (recoveryKeyOrCode || '').trim();
-  const trimmedNewPass = (newPasswordText || '').trim();
-
-  if (!trimmedNewPass || trimmedNewPass.length < 4) {
-    return { success: false, message: 'New password/PIN must be at least 4 characters.' };
-  }
-
-  // Verify recovery authorization: matches recovery keys, owner email confirmation, or default keys
-  const isAuthorized =
-    SYSTEM_ROOT_RECOVERY_KEYS.includes(trimmedCode) ||
-    trimmedCode.toLowerCase() === 'nawarkuldeep@gmail.com' ||
-    DEFAULT_SUPER_ADMIN_PASSWORDS.includes(trimmedCode) ||
-    trimmedCode.toUpperCase() === 'ZOOKA-ROOT-2026' ||
-    trimmedCode.toUpperCase() === 'RESET';
-
-  if (!isAuthorized) {
-    return {
-      success: false,
-      message: 'Invalid Master Recovery Key or security verification code. Please enter a valid recovery key (e.g. ZOOKA-ROOT-2026 or root email).',
-    };
-  }
-
-  const updated = await updateSuperAdminMasterCredential(trimmedNewPass);
-  if (updated) {
-    resetSuperAdminAttempts();
-    await recordSecurityAuditLog(
-      'SUPER_ADMIN_PASSWORD_RESET',
-      'Super Admin master password was successfully reset using verified recovery authorization.',
-      'critical'
-    );
-    return {
-      success: true,
-      message: 'Super Admin master password has been successfully reset! You can now log in.',
-    };
-  }
-
-  return {
-    success: false,
-    message: 'Database update failed. Please check your cloud network connection and retry.',
-  };
 }
 
 /**
