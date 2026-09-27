@@ -310,6 +310,38 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
     };
   };
 
+  const renderItemDetails = (it: any) => {
+    const hasDesc = Boolean(it.description && it.description.trim());
+    const hasSerial = Boolean(it.serialNumber && it.serialNumber.trim());
+    const hasWarranty = Boolean(it.warranty && it.warranty.trim());
+
+    if (!hasDesc && !hasSerial && !hasWarranty) return null;
+
+    return (
+      <div className="mt-0.5 space-y-0.5 text-[9.5px] leading-snug">
+        {hasDesc && (
+          <div className="text-slate-600 font-sans font-normal whitespace-pre-line">{it.description}</div>
+        )}
+        {(hasSerial || hasWarranty) && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5 font-mono">
+            {hasSerial && (
+              <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-800 px-1.5 py-0.2 rounded border border-slate-300 text-[9px] font-semibold">
+                <span className="text-slate-500">Sr. No:</span>
+                <span className="font-bold">{it.serialNumber}</span>
+              </span>
+            )}
+            {hasWarranty && (
+              <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-300 text-[9px] font-semibold">
+                <span className="text-emerald-700">Warranty:</span>
+                <span className="font-bold">{it.warranty}</span>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Render Based on Template
   return (
     <div className={`bg-white text-slate-900 font-sans text-xs select-text shadow-sm ${className}`}>
@@ -465,6 +497,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                               Tax-Incl
                             </span>
                           )}
+                          {renderItemDetails(it)}
                         </td>
                         <td className="p-2.5 text-center font-mono text-slate-600">{it.hsnCode || '—'}</td>
                         <td className="p-2.5 text-right font-mono tabular-nums text-slate-700">
@@ -895,6 +928,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                                 Tax-Inclusive Rate
                               </span>
                             )}
+                            {renderItemDetails(it)}
                           </td>
                           <td className="border-r border-slate-900 p-1.5 text-center font-mono text-slate-700">{it.hsnCode || '—'}</td>
                           <td className="border-r border-slate-900 p-1.5 text-right font-mono tabular-nums text-slate-800">
@@ -1195,7 +1229,10 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                   return (
                     <tr key={i}>
                       <td className="p-1 text-center text-slate-500">{i + 1}</td>
-                      <td className="p-1 text-left font-semibold">{it.itemName}</td>
+                      <td className="p-1 text-left font-semibold">
+                        <div>{it.itemName}</div>
+                        {renderItemDetails(it)}
+                      </td>
                       <td className="p-1 text-center text-slate-600">{it.hsnCode || '—'}</td>
                       <td className="p-1 text-right tabular-nums">{c.qty} {it.unit || 'PCS'}</td>
                       <td className="p-1 text-right tabular-nums">₹{c.rate.toFixed(2)}</td>
@@ -1293,7 +1330,10 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                   const c = computeItemRow(it);
                   return (
                     <tr key={idx}>
-                      <td className="py-3 font-medium">{it.itemName}</td>
+                      <td className="py-3 font-medium">
+                        <div>{it.itemName}</div>
+                        {renderItemDetails(it)}
+                      </td>
                       <td className="py-3 text-center font-mono text-slate-500">{it.hsnCode || '—'}</td>
                       <td className="py-3 text-right font-mono">{c.qty} {it.unit}</td>
                       <td className="py-3 text-right font-mono">₹{c.rate.toFixed(2)}</td>
@@ -1452,6 +1492,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                                 Incl
                               </span>
                             )}
+                            {renderItemDetails(it)}
                           </td>
                           <td className="py-2.5 px-3 text-center text-slate-600">{it.hsnCode || '—'}</td>
                           <td className="py-2.5 px-3 text-right tabular-nums text-slate-700">{c.qty} {it.unit || 'PCS'}</td>
@@ -1776,6 +1817,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                                 Tax-Incl
                               </span>
                             )}
+                            {renderItemDetails(it)}
                           </td>
                           <td className="py-3 text-center text-slate-500">{it.hsnCode || '—'}</td>
                           <td className="py-3 text-right tabular-nums text-slate-700">{c.qty} {it.unit || 'PCS'}</td>
@@ -1898,8 +1940,15 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                     return (
                       <tr key={idx}>
                         <td className="py-1.5 font-bold text-slate-900">
-                          {it.itemName}
-                          <div className="text-[9px] text-slate-500 font-normal">HSN:{it.hsnCode || '—'} • GST:{c.gstRate}%</div>
+                          <div>{it.itemName}</div>
+                          {it.description && <div className="text-[9px] text-slate-600 font-normal whitespace-pre-line">{it.description}</div>}
+                          {(it.serialNumber || it.warranty) && (
+                            <div className="text-[8.5px] text-slate-700 font-normal flex flex-wrap gap-1 mt-0.5">
+                              {it.serialNumber && <span className="bg-slate-100 px-1 rounded">SN: {it.serialNumber}</span>}
+                              {it.warranty && <span className="bg-emerald-50 text-emerald-800 px-1 rounded">🛡️ {it.warranty}</span>}
+                            </div>
+                          )}
+                          <div className="text-[9px] text-slate-500 font-normal mt-0.5">HSN:{it.hsnCode || '—'} • GST:{c.gstRate}%</div>
                         </td>
                         <td className="py-1.5 text-center">{c.qty}</td>
                         <td className="py-1.5 text-right">₹{c.rate.toFixed(2)}</td>
@@ -2064,6 +2113,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                               Tax-Incl
                             </span>
                           )}
+                          {renderItemDetails(it)}
                         </td>
                         <td className="p-2 text-center text-slate-600">{it.hsnCode || '—'}</td>
                         <td className="p-2 text-right tabular-nums">{c.qty} {it.unit || 'PCS'}</td>
@@ -2245,7 +2295,10 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                       return (
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="p-2.5 text-center text-slate-400">{idx + 1}</td>
-                          <td className="p-2.5 text-left font-sans font-medium text-slate-900">{it.itemName}</td>
+                          <td className="p-2.5 text-left font-sans font-medium text-slate-900">
+                            <div>{it.itemName}</div>
+                            {renderItemDetails(it)}
+                          </td>
                           <td className="p-2.5 text-center text-slate-600">{it.hsnCode || '—'}</td>
                           <td className="p-2.5 text-right tabular-nums">{c.qty} {it.unit || 'PCS'}</td>
                           <td className="p-2.5 text-right tabular-nums">₹{c.rate.toFixed(2)}</td>

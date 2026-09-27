@@ -270,6 +270,8 @@ export interface InventoryItem {
   workspaceId?: string;
   name: string;
   sku?: string;
+  description?: string;
+  defaultWarranty?: string;
   hsnCode: string;
   unit: string;
   sellingPrice: string;
@@ -284,6 +286,9 @@ export interface InvoiceItem {
   id?: number;
   itemId?: number;
   itemName: string;
+  description?: string;
+  serialNumber?: string;
+  warranty?: string;
   hsnCode: string;
   quantity: string;
   unit: string;

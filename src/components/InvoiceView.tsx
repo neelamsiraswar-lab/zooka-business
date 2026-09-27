@@ -119,6 +119,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   const [items, setItems] = useState<Array<{
     itemId?: string;
     itemName: string;
+    description?: string;
+    serialNumber?: string;
+    warranty?: string;
     hsnCode: string;
     quantity: number;
     unit: string;
@@ -129,6 +132,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   }>>([
     {
       itemName: '',
+      description: '',
+      serialNumber: '',
+      warranty: '',
       hsnCode: '8536',
       quantity: 1,
       unit: 'PCS',
@@ -290,6 +296,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
         ...updated[index],
         itemId: selectedItemId,
         itemName: item.name,
+        description: item.description || updated[index].description || '',
+        warranty: item.defaultWarranty || updated[index].warranty || '',
         hsnCode: item.hsnCode,
         unit: item.unit,
         rate: voucherType === 'sales' ? parseFloat(item.sellingPrice) : parseFloat(item.purchasePrice),
@@ -316,6 +324,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       ...items,
       {
         itemName: '',
+        description: '',
+        serialNumber: '',
+        warranty: '',
         hsnCode: '8536',
         quantity: 1,
         unit: 'PCS',
@@ -438,6 +449,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
         inv.items.map((it) => ({
           itemId: it.itemId ? String(it.itemId) : undefined,
           itemName: it.itemName,
+          description: it.description || '',
+          serialNumber: it.serialNumber || '',
+          warranty: it.warranty || '',
           hsnCode: it.hsnCode || '8536',
           quantity: parseFloat(it.quantity) || 1,
           unit: it.unit || 'PCS',
@@ -451,6 +465,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       setItems([
         {
           itemName: 'Standard Supply / Goods',
+          description: '',
+          serialNumber: '',
+          warranty: '',
           hsnCode: '9983',
           quantity: 1,
           unit: 'LOT',
@@ -527,6 +544,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       return {
         itemId: it.itemId ? parseInt(it.itemId) : undefined,
         itemName: it.itemName,
+        description: it.description || '',
+        serialNumber: it.serialNumber || '',
+        warranty: it.warranty || '',
         hsnCode: it.hsnCode || '8536',
         quantity: String(it.quantity || 1),
         unit: it.unit || 'PCS',
@@ -1499,6 +1519,167 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                             >
                               <Trash2 className="w-4 h-4 ml-auto" />
                             </button>
+                          </div>
+                        </div>
+
+                        {/* Product Description, Sr. No. / IMEI & Pickable Warranty */}
+                        <div className="pt-2 border-t border-slate-900 space-y-2 bg-slate-900/40 p-2.5 rounded-lg border border-slate-800/60">
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                            {/* Detailed Description */}
+                            <div className="sm:col-span-6">
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+                                  <FileText className="w-3 h-3 text-emerald-400" />
+                                  <span>Product Specification / Sub-Description</span>
+                                </label>
+                                {(it.serialNumber || it.warranty) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...items];
+                                      const parts = [];
+                                      if (it.description?.trim()) parts.push(it.description.trim());
+                                      if (it.serialNumber?.trim() && !it.description?.includes(it.serialNumber.trim())) {
+                                        parts.push(`Sr: ${it.serialNumber.trim()}`);
+                                      }
+                                      if (it.warranty?.trim() && !it.description?.includes(it.warranty.trim())) {
+                                        parts.push(`[${it.warranty.trim()}]`);
+                                      }
+                                      updated[idx].description = parts.join(' • ');
+                                      setItems(updated);
+                                    }}
+                                    className="text-[9px] text-emerald-400 hover:text-emerald-300 font-medium cursor-pointer"
+                                    title="Append Sr. No. & Warranty into description line"
+                                  >
+                                    + Embed Sr & Warranty
+                                  </button>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="e.g. 15.6'' FHD, Core i5, 16GB RAM, 512GB SSD"
+                                value={it.description || ''}
+                                onChange={(e) => {
+                                  const updated = [...items];
+                                  updated[idx].description = e.target.value;
+                                  setItems(updated);
+                                }}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/60"
+                              />
+                            </div>
+
+                            {/* Serial Number / IMEI / Batch (Sr. No.) */}
+                            <div className="sm:col-span-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+                                  <Tag className="w-3 h-3 text-cyan-400" />
+                                  <span>Sr. No. / IMEI / Batch</span>
+                                </label>
+                                <div className="flex items-center gap-1">
+                                  {['S/N:', 'IMEI:', 'Batch:', 'MAC:'].map((prefix) => (
+                                    <button
+                                      key={prefix}
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...items];
+                                        const current = (updated[idx].serialNumber || '').trim();
+                                        if (!current.includes(prefix)) {
+                                          updated[idx].serialNumber = current ? `${prefix} ${current}` : `${prefix} `;
+                                          setItems(updated);
+                                        }
+                                      }}
+                                      className="text-[9px] text-cyan-400 hover:text-cyan-300 px-1 py-0.2 bg-slate-900 hover:bg-slate-800 rounded border border-slate-800 transition cursor-pointer"
+                                      title={`Quick add ${prefix} prefix`}
+                                    >
+                                      +{prefix.replace(':', '')}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="e.g. S/N: 8947192841"
+                                value={it.serialNumber || ''}
+                                onChange={(e) => {
+                                  const updated = [...items];
+                                  updated[idx].serialNumber = e.target.value;
+                                  setItems(updated);
+                                }}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500/60"
+                              />
+                            </div>
+
+                            {/* Warranty Input Field */}
+                            <div className="sm:col-span-3">
+                              <label className="text-[10px] font-medium text-slate-400 block mb-1 flex items-center gap-1">
+                                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                                <span>Warranty</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 1 Year Warranty"
+                                value={it.warranty || ''}
+                                onChange={(e) => {
+                                  const updated = [...items];
+                                  updated[idx].warranty = e.target.value;
+                                  setItems(updated);
+                                }}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/60"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Quick Pickable Warranty Chips */}
+                          <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                            <span className="text-[9.5px] text-slate-400 font-medium mr-1 flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                              Pick Warranty:
+                            </span>
+                            {[
+                              '1 Year Warranty',
+                              '2 Years Warranty',
+                              '3 Years Warranty',
+                              '6 Months Warranty',
+                              '3 Months Warranty',
+                              '18 Months Warranty',
+                              '5 Years Warranty',
+                              '1 Year On-site',
+                              'Lifetime Warranty',
+                              'No Warranty',
+                            ].map((wPreset) => {
+                              const isSelected = it.warranty === wPreset;
+                              return (
+                                <button
+                                  key={wPreset}
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...items];
+                                    updated[idx].warranty = isSelected ? '' : wPreset;
+                                    setItems(updated);
+                                  }}
+                                  className={`text-[9.5px] px-2 py-0.5 rounded-full font-medium transition cursor-pointer border ${
+                                    isSelected
+                                      ? 'bg-emerald-400 text-slate-950 font-bold border-emerald-300 shadow-sm'
+                                      : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700'
+                                  }`}
+                                >
+                                  {wPreset}
+                                </button>
+                              );
+                            })}
+                            {it.warranty && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...items];
+                                  updated[idx].warranty = '';
+                                  setItems(updated);
+                                }}
+                                className="text-[9px] text-slate-400 hover:text-rose-400 underline ml-1 cursor-pointer"
+                              >
+                                Clear
+                              </button>
+                            )}
                           </div>
                         </div>
 
