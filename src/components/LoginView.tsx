@@ -44,9 +44,12 @@ import {
 import { createWorkspace } from '../db/workspaces';
 import { INDIAN_STATES } from '../data/indianStates';
 import { SuperAdminSecurityGateModal } from './SuperAdminSecurityGateModal';
+import { SuperAdminForgotPasswordModal } from './SuperAdminForgotPasswordModal';
 import { RoleMatrixModal } from './RoleMatrixModal';
 import { GstQuickCalculatorWidget } from './GstQuickCalculatorWidget';
 import { getRememberedCredentials } from '../lib/sessionSecurity';
+import { auth } from '../lib/firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, formatINR } from '../data/subscriptionPlans';
 import { ArchitecturalPillar, CustomerReview, FeatureBadge } from '../types';
@@ -85,6 +88,7 @@ export const LoginView: React.FC = () => {
 
   // Modal States
   const [showSuperAdminModal, setShowSuperAdminModal] = useState(false);
+  const [showSuperAdminForgotModal, setShowSuperAdminForgotModal] = useState(false);
   const [showRoleMatrixModal, setShowRoleMatrixModal] = useState(false);
 
   // Dynamic Subscription Plans State (Synced with Super Admin Firestore Catalog)
@@ -400,12 +404,46 @@ export const LoginView: React.FC = () => {
     } catch (err: any) {
       const msg = err?.message || 'Authentication failed. Please check your credentials.';
       if (msg.includes('auth/invalid-credential') || msg.includes('auth/wrong-password') || msg.includes('auth/user-not-found')) {
-        setLocalError('Invalid email or password. Please verify your credentials or create a new account.');
+        setLocalError('Invalid email or password. Please verify your credentials or use Forgot Password.');
       } else if (msg.includes('auth/invalid-email')) {
         setLocalError('Please enter a valid email address.');
       } else {
         setLocalError(msg);
       }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle Forgot Password
+  const handleForgotPassword = async () => {
+    setLocalError(null);
+    setLocalSuccess(null);
+    const trimmedEmail = email.trim();
+
+    // If super admin email or requested
+    if (trimmedEmail.toLowerCase() === 'nawarkuldeep@gmail.com') {
+      setShowSuperAdminForgotModal(true);
+      return;
+    }
+
+    if (!trimmedEmail) {
+      setShowSuperAdminForgotModal(true);
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      if (auth) {
+        await sendPasswordResetEmail(auth, trimmedEmail);
+        setLocalSuccess(`Password reset email sent to ${trimmedEmail}. Please check your inbox or spam folder.`);
+      } else {
+        setLocalSuccess(`Password recovery requested for ${trimmedEmail}. If this is a Super Admin account, please use the Super Admin recovery tool.`);
+      }
+    } catch (err: any) {
+      console.warn('Password reset request note:', err);
+      // If error or superadmin
+      setShowSuperAdminForgotModal(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -611,6 +649,12 @@ export const LoginView: React.FC = () => {
         onClose={() => setShowSuperAdminModal(false)}
       />
 
+      {/* Super Admin Forgot Password Modal */}
+      <SuperAdminForgotPasswordModal
+        isOpen={showSuperAdminForgotModal}
+        onClose={() => setShowSuperAdminForgotModal(false)}
+      />
+
       {/* Role Matrix Modal Dialog */}
       <RoleMatrixModal
         isOpen={showRoleMatrixModal}
@@ -792,7 +836,17 @@ export const LoginView: React.FC = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block font-medium text-slate-300">Password *</label>
+                    <div className="flex items-center justify-between">
+                      <label className="block font-medium text-slate-300">Password *</label>
+                      <button
+                        type="button"
+                        id="btn-auth-forgot-password"
+                        onClick={handleForgotPassword}
+                        className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold underline cursor-pointer"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
                     <div className="relative">
                       <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
                       <input

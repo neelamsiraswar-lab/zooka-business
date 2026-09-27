@@ -22,6 +22,7 @@ import {
   SESSION_CONFIG,
   getRememberedCredentials,
 } from '../lib/sessionSecurity';
+import { SuperAdminForgotPasswordModal } from './SuperAdminForgotPasswordModal';
 
 interface SuperAdminSecurityGateModalProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [bfStatus, setBfStatus] = useState(getSuperAdminBruteForceStatus());
 
   useEffect(() => {
@@ -264,7 +266,7 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
               </div>
             </div>
 
-            {/* Remember Me Option */}
+            {/* Remember Me & Forgot Password Option */}
             <div className="flex items-center justify-between pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 text-xs">
                 <input
@@ -274,8 +276,17 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
                 />
-                <span>Remember Super Admin session (30 Days)</span>
+                <span>Remember session (30d)</span>
               </label>
+
+              <button
+                type="button"
+                id="btn-sa-forgot-password"
+                onClick={() => setShowForgotModal(true)}
+                className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold underline cursor-pointer"
+              >
+                Forgot Password / PIN?
+              </button>
             </div>
 
             <button
@@ -295,12 +306,29 @@ export const SuperAdminSecurityGateModal: React.FC<SuperAdminSecurityGateModalPr
             <Lock className="w-3 h-3 text-slate-400" />
             30-Min Elevated Window
           </span>
-          <span className="flex items-center gap-1">
-            <ShieldCheck className="w-3 h-3 text-slate-400" />
-            Audit Log Tracked
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowForgotModal(true)}
+            className="text-[11px] text-slate-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+          >
+            <KeyRound className="w-3 h-3 text-amber-400" />
+            <span>Root Password Recovery</span>
+          </button>
         </div>
       </div>
+
+      {/* Super Admin Forgot Password Modal */}
+      <SuperAdminForgotPasswordModal
+        isOpen={showForgotModal}
+        onClose={() => setShowForgotModal(false)}
+        onResetSuccess={(newPass) => {
+          if (newPass) {
+            setMasterCredential(newPass);
+          }
+          setShowForgotModal(false);
+          setAuthSuccess('Password has been reset! Please click Verify or Authenticate to enter.');
+        }}
+      />
     </div>
   );
 };

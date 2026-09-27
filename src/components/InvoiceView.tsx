@@ -516,6 +516,42 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       return;
     }
 
+    let computedDiscountTotal = 0;
+    const mappedItems = items.map((it, idx) => {
+      const comp = computedItems[idx];
+      const isItemTaxInclusive = it.isTaxInclusive !== undefined ? it.isTaxInclusive : taxMode === 'inclusive';
+      const gross = (it.quantity || 0) * (it.rate || 0);
+      const discAmt = gross * ((it.discountPercent || 0) / 100);
+      computedDiscountTotal += discAmt;
+
+      return {
+        itemId: it.itemId ? parseInt(it.itemId) : undefined,
+        itemName: it.itemName,
+        hsnCode: it.hsnCode || '8536',
+        quantity: String(it.quantity || 1),
+        unit: it.unit || 'PCS',
+        rate: String(it.rate || 0),
+        isTaxInclusive: isItemTaxInclusive,
+        discountPercent: String(it.discountPercent || 0),
+        discountAmount: discAmt.toFixed(2),
+        taxableValue: comp.lineTaxable.toFixed(2),
+        gstRate: String(comp.effectiveGstRate),
+        cgstAmount: comp.cgst.toFixed(2),
+        sgstAmount: comp.sgst.toFixed(2),
+        igstAmount: comp.igst.toFixed(2),
+        taxAmount: comp.lineTax.toFixed(2),
+        total: comp.lineTotal.toFixed(2),
+      };
+    });
+
+    const parsedPaid = parseFloat(paidAmount) || 0;
+    const paymentStatus: 'paid' | 'partial' | 'unpaid' =
+      parsedPaid >= grandTotal && grandTotal > 0
+        ? 'paid'
+        : parsedPaid > 0
+        ? 'partial'
+        : 'unpaid';
+
     const payload = {
       voucherType,
       saleType,
@@ -531,13 +567,18 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       invoiceNumber,
       invoiceDate,
       dueDate: dueDate || null,
-      paidAmount,
+      subtotal: subtotal.toFixed(2),
+      cgstTotal: cgstTotal.toFixed(2),
+      sgstTotal: sgstTotal.toFixed(2),
+      igstTotal: igstTotal.toFixed(2),
+      taxTotal: taxTotal.toFixed(2),
+      discountTotal: computedDiscountTotal.toFixed(2),
+      grandTotal: grandTotal.toFixed(2),
+      paidAmount: parsedPaid.toFixed(2),
+      paymentStatus,
       paymentMode,
       notes: notes || (saleType === 'rcm' ? 'Tax payable under Reverse Charge: YES' : 'Thank you for your business!'),
-      items: items.map((it) => ({
-        ...it,
-        isTaxInclusive: it.isTaxInclusive !== undefined ? it.isTaxInclusive : taxMode === 'inclusive',
-      })),
+      items: mappedItems,
     };
 
     await onSaveInvoice(payload, editingInvoiceId || undefined);
@@ -1138,14 +1179,18 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                   </label>
                   <PartyMatchSelector
                     parties={parties}
+                    partyType={voucherType === 'sales' ? 'customer' : 'vendor'}
                     partyTypeFilter={voucherType === 'sales' ? 'customer' : 'vendor'}
                     selectedPartyId={partyId ? parseInt(partyId) : undefined}
                     partyName={partyName}
-                    onSelectParty={(p) => {
+                    onSelectParty={(p, customName) => {
                       if (p) {
                         handlePartySelect(String(p.id));
                       } else {
                         setPartyId('');
+                        if (customName !== undefined) {
+                          setPartyName(customName);
+                        }
                       }
                     }}
                     onCustomNameChange={(name) => {

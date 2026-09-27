@@ -24,6 +24,7 @@ import {
   SESSION_CONFIG,
 } from '../lib/sessionSecurity';
 import { isSuperAdmin } from '../lib/permissions';
+import { SuperAdminForgotPasswordModal } from './SuperAdminForgotPasswordModal';
 
 interface SessionSecurityModalProps {
   isOpen: boolean;
@@ -49,6 +50,7 @@ export const SessionSecurityModal: React.FC<SessionSecurityModalProps> = ({
   const [masterPinInput, setMasterPinInput] = useState('');
   const [elevationError, setElevationError] = useState<string | null>(null);
   const [elevationSuccess, setElevationSuccess] = useState<string | null>(null);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [isElevating, setIsElevating] = useState(false);
   const [remainingTimeText, setRemainingTimeText] = useState('');
   const [saStatus, setSaStatus] = useState(getSuperAdminBruteForceStatus());
@@ -287,23 +289,35 @@ export const SessionSecurityModal: React.FC<SessionSecurityModalProps> = ({
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleElevateSubmit} className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
-                <input
-                  type="password"
-                  value={masterPinInput}
-                  onChange={(e) => setMasterPinInput(e.target.value)}
-                  placeholder="Enter Master Security PIN"
-                  className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
-                />
-                <button
-                  type="submit"
-                  disabled={isElevating || !masterPinInput.trim() || saStatus.isBruteForceLocked}
-                  className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5 shrink-0"
-                >
-                  {isElevating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Crown className="w-3.5 h-3.5" />}
-                  <span>Unlock Elevated Mode</span>
-                </button>
-              </form>
+              <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                <form onSubmit={handleElevateSubmit} className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={masterPinInput}
+                    onChange={(e) => setMasterPinInput(e.target.value)}
+                    placeholder="Enter Master Security PIN"
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isElevating || !masterPinInput.trim() || saStatus.isBruteForceLocked}
+                    className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer transition disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                  >
+                    {isElevating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Crown className="w-3.5 h-3.5" />}
+                    <span>Unlock Elevated Mode</span>
+                  </button>
+                </form>
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Forgot or need to change Master PIN?</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(true)}
+                    className="text-amber-400 hover:text-amber-300 font-semibold underline cursor-pointer"
+                  >
+                    Reset Super Admin Password / PIN
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -346,6 +360,19 @@ export const SessionSecurityModal: React.FC<SessionSecurityModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Super Admin Forgot Password Modal */}
+      <SuperAdminForgotPasswordModal
+        isOpen={showForgotModal}
+        onClose={() => setShowForgotModal(false)}
+        onResetSuccess={(newPass) => {
+          if (newPass) {
+            setMasterPinInput(newPass);
+          }
+          setShowForgotModal(false);
+          setElevationSuccess('Password / PIN reset successfully. Please click Unlock Elevated Mode.');
+        }}
+      />
     </div>
   );
 };

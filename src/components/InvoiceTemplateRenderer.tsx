@@ -269,6 +269,47 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
     return headerTitle;
   };
 
+  const isExemptVoucher =
+    (invoice.voucherType === 'sales' && (invoice.saleType === 'bill_of_supply' || invoice.saleType === 'export_without_tax')) ||
+    (invoice.voucherType === 'purchase' && invoice.saleType === 'exempt_nil');
+
+  const computeItemRow = (it: any) => {
+    const qty = parseFloat(String(it.quantity || 0)) || 0;
+    const rate = parseFloat(String(it.rate || 0)) || 0;
+    const disc = parseFloat(String(it.discountPercent || 0)) || 0;
+    const gstRate = isExemptVoucher ? 0 : (parseFloat(String(it.gstRate || 0)) || 0);
+    const isTaxIncl = Boolean(it.isTaxInclusive);
+
+    let taxable = 0;
+    let tax = 0;
+    let total = 0;
+
+    if (it.taxableValue !== undefined && parseFloat(String(it.taxableValue)) > 0 && it.total !== undefined && parseFloat(String(it.total)) > 0) {
+      taxable = parseFloat(String(it.taxableValue));
+      total = parseFloat(String(it.total));
+      tax = it.taxAmount !== undefined ? parseFloat(String(it.taxAmount)) : Math.max(0, total - taxable);
+    } else if (isTaxIncl && gstRate > 0) {
+      const gross = qty * rate * (1 - disc / 100);
+      taxable = gross / (1 + gstRate / 100);
+      tax = gross - taxable;
+      total = gross;
+    } else {
+      taxable = qty * rate * (1 - disc / 100);
+      tax = (taxable * gstRate) / 100;
+      total = taxable + tax;
+    }
+
+    return {
+      qty,
+      rate,
+      disc,
+      gstRate,
+      taxable,
+      tax,
+      total,
+    };
+  };
+
   // Render Based on Template
   return (
     <div className={`bg-white text-slate-900 font-sans text-xs select-text shadow-sm ${className}`}>
@@ -413,8 +454,7 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               <tbody className="divide-y divide-slate-200">
                 {invoice.items && invoice.items.length > 0 ? (
                   invoice.items.map((it, idx) => {
-                    const itemTaxable = parseFloat(it.taxableValue || '0');
-                    const itemTotal = parseFloat(it.total || '0');
+                    const c = computeItemRow(it);
                     return (
                       <tr key={idx} className="hover:bg-slate-50/80">
                         <td className="p-2.5 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
@@ -428,17 +468,17 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                         </td>
                         <td className="p-2.5 text-center font-mono text-slate-600">{it.hsnCode || '—'}</td>
                         <td className="p-2.5 text-right font-mono text-slate-700">
-                          {it.quantity} {it.unit}
+                          {c.qty} {it.unit}
                         </td>
                         <td className="p-2.5 text-right font-mono text-slate-700">
-                          ₹{parseFloat(it.rate || '0').toFixed(2)}
+                          ₹{c.rate.toFixed(2)}
                         </td>
                         <td className="p-2.5 text-right font-mono text-slate-700">
-                          ₹{itemTaxable.toFixed(2)}
+                          ₹{c.taxable.toFixed(2)}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-slate-700">{it.gstRate}%</td>
+                        <td className="p-2.5 text-right font-mono text-slate-700">{c.gstRate}%</td>
                         <td className="p-2.5 text-right font-mono font-bold text-slate-900">
-                          ₹{itemTotal.toFixed(2)}
+                          ₹{c.total.toFixed(2)}
                         </td>
                       </tr>
                     );
@@ -722,18 +762,21 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
             </thead>
             <tbody className="divide-y border-slate-800">
               {invoice.items && invoice.items.length > 0 ? (
-                invoice.items.map((it, idx) => (
-                  <tr key={idx}>
-                    <td className="border-r border-slate-800 p-2 text-center font-mono">{idx + 1}</td>
-                    <td className="border-r border-slate-800 p-2 font-medium">{it.itemName}</td>
-                    <td className="border-r border-slate-800 p-2 text-center font-mono">{it.hsnCode}</td>
-                    <td className="border-r border-slate-800 p-2 text-right font-mono">{it.quantity} {it.unit}</td>
-                    <td className="border-r border-slate-800 p-2 text-right font-mono">₹{parseFloat(it.rate || '0').toFixed(2)}</td>
-                    <td className="border-r border-slate-800 p-2 text-right font-mono">₹{parseFloat(it.taxableValue || '0').toFixed(2)}</td>
-                    <td className="border-r border-slate-800 p-2 text-right font-mono">{it.gstRate}%</td>
-                    <td className="p-2 text-right font-mono font-bold">₹{parseFloat(it.total || '0').toFixed(2)}</td>
-                  </tr>
-                ))
+                invoice.items.map((it, idx) => {
+                  const c = computeItemRow(it);
+                  return (
+                    <tr key={idx}>
+                      <td className="border-r border-slate-800 p-2 text-center font-mono">{idx + 1}</td>
+                      <td className="border-r border-slate-800 p-2 font-medium">{it.itemName}</td>
+                      <td className="border-r border-slate-800 p-2 text-center font-mono">{it.hsnCode || '—'}</td>
+                      <td className="border-r border-slate-800 p-2 text-right font-mono">{c.qty} {it.unit}</td>
+                      <td className="border-r border-slate-800 p-2 text-right font-mono">₹{c.rate.toFixed(2)}</td>
+                      <td className="border-r border-slate-800 p-2 text-right font-mono">₹{c.taxable.toFixed(2)}</td>
+                      <td className="border-r border-slate-800 p-2 text-right font-mono">{c.gstRate}%</td>
+                      <td className="p-2 text-right font-mono font-bold">₹{c.total.toFixed(2)}</td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={8} className="p-3 text-center text-slate-400">No items</td>
@@ -863,18 +906,21 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-200">
               {invoice.items &&
-                invoice.items.map((it, i) => (
-                  <tr key={i}>
-                    <td className="p-1">{i + 1}</td>
-                    <td className="p-1 font-semibold">{it.itemName}</td>
-                    <td className="p-1 text-center">{it.hsnCode}</td>
-                    <td className="p-1 text-right">{it.quantity} {it.unit}</td>
-                    <td className="p-1 text-right">{it.rate}</td>
-                    <td className="p-1 text-right">{it.taxableValue}</td>
-                    <td className="p-1 text-right">{it.gstRate}%</td>
-                    <td className="p-1 text-right font-bold">{it.total}</td>
-                  </tr>
-                ))}
+                invoice.items.map((it, i) => {
+                  const c = computeItemRow(it);
+                  return (
+                    <tr key={i}>
+                      <td className="p-1">{i + 1}</td>
+                      <td className="p-1 font-semibold">{it.itemName}</td>
+                      <td className="p-1 text-center">{it.hsnCode || '—'}</td>
+                      <td className="p-1 text-right">{c.qty} {it.unit}</td>
+                      <td className="p-1 text-right">₹{c.rate.toFixed(2)}</td>
+                      <td className="p-1 text-right">₹{c.taxable.toFixed(2)}</td>
+                      <td className="p-1 text-right">{c.gstRate}%</td>
+                      <td className="p-1 text-right font-bold">₹{c.total.toFixed(2)}</td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
 
@@ -959,15 +1005,18 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {invoice.items &&
-                invoice.items.map((it, idx) => (
-                  <tr key={idx}>
-                    <td className="py-3 font-medium">{it.itemName}</td>
-                    <td className="py-3 text-center font-mono text-slate-500">{it.hsnCode}</td>
-                    <td className="py-3 text-right font-mono">{it.quantity} {it.unit}</td>
-                    <td className="py-3 text-right font-mono">₹{parseFloat(it.rate || '0').toFixed(2)}</td>
-                    <td className="py-3 text-right font-mono font-semibold">₹{parseFloat(it.total || '0').toFixed(2)}</td>
-                  </tr>
-                ))}
+                invoice.items.map((it, idx) => {
+                  const c = computeItemRow(it);
+                  return (
+                    <tr key={idx}>
+                      <td className="py-3 font-medium">{it.itemName}</td>
+                      <td className="py-3 text-center font-mono text-slate-500">{it.hsnCode || '—'}</td>
+                      <td className="py-3 text-right font-mono">{c.qty} {it.unit}</td>
+                      <td className="py-3 text-right font-mono">₹{c.rate.toFixed(2)}</td>
+                      <td className="py-3 text-right font-mono font-semibold">₹{c.total.toFixed(2)}</td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
 
@@ -1107,25 +1156,28 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
                   {invoice.items && invoice.items.length > 0 ? (
-                    invoice.items.map((it, idx) => (
-                      <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
-                        <td className="py-2.5 px-3 text-center text-slate-400">{idx + 1}</td>
-                        <td className="py-2.5 px-3 font-sans font-medium text-slate-900">
-                          {it.itemName}
-                          {it.isTaxInclusive && (
-                            <span className="ml-1 text-[9px] px-1.5 py-0.2 bg-amber-50 text-amber-800 rounded font-normal">
-                              Incl
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-center text-slate-600">{it.hsnCode || '—'}</td>
-                        <td className="py-2.5 px-3 text-right text-slate-700">{it.quantity} {it.unit}</td>
-                        <td className="py-2.5 px-3 text-right text-slate-700">₹{parseFloat(it.rate || '0').toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-right text-slate-700">₹{parseFloat(it.taxableValue || '0').toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-right text-slate-700">{it.gstRate}%</td>
-                        <td className="py-2.5 px-3 text-right font-bold text-slate-900">₹{parseFloat(it.total || '0').toFixed(2)}</td>
-                      </tr>
-                    ))
+                    invoice.items.map((it, idx) => {
+                      const c = computeItemRow(it);
+                      return (
+                        <tr key={idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
+                          <td className="py-2.5 px-3 text-center text-slate-400">{idx + 1}</td>
+                          <td className="py-2.5 px-3 font-sans font-medium text-slate-900">
+                            {it.itemName}
+                            {it.isTaxInclusive && (
+                              <span className="ml-1 text-[9px] px-1.5 py-0.2 bg-amber-50 text-amber-800 rounded font-normal">
+                                Incl
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center text-slate-600">{it.hsnCode || '—'}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-700">{c.qty} {it.unit}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-700">₹{c.rate.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-700">₹{c.taxable.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-700">{c.gstRate}%</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td colSpan={8} className="py-6 text-center text-slate-400 font-sans">No items available.</td>
@@ -1429,19 +1481,22 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
                   {invoice.items && invoice.items.length > 0 ? (
-                    invoice.items.map((it, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/80">
-                        <td className="py-3 font-sans font-medium text-slate-900">
-                          {it.itemName}
-                        </td>
-                        <td className="py-3 text-center text-slate-500">{it.hsnCode || '—'}</td>
-                        <td className="py-3 text-right text-slate-700">{it.quantity} {it.unit}</td>
-                        <td className="py-3 text-right text-slate-700">₹{parseFloat(it.rate || '0').toFixed(2)}</td>
-                        <td className="py-3 text-right text-slate-700">₹{parseFloat(it.taxableValue || '0').toFixed(2)}</td>
-                        <td className="py-3 text-right text-slate-700">{it.gstRate}%</td>
-                        <td className="py-3 text-right font-bold text-slate-900">₹{parseFloat(it.total || '0').toFixed(2)}</td>
-                      </tr>
-                    ))
+                    invoice.items.map((it, idx) => {
+                      const c = computeItemRow(it);
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50/80">
+                          <td className="py-3 font-sans font-medium text-slate-900">
+                            {it.itemName}
+                          </td>
+                          <td className="py-3 text-center text-slate-500">{it.hsnCode || '—'}</td>
+                          <td className="py-3 text-right text-slate-700">{c.qty} {it.unit}</td>
+                          <td className="py-3 text-right text-slate-700">₹{c.rate.toFixed(2)}</td>
+                          <td className="py-3 text-right text-slate-700">₹{c.taxable.toFixed(2)}</td>
+                          <td className="py-3 text-right text-slate-700">{c.gstRate}%</td>
+                          <td className="py-3 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td colSpan={7} className="py-4 text-center text-slate-400 font-sans">No items entered.</td>
@@ -1549,17 +1604,20 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               </thead>
               <tbody className="divide-y divide-dashed divide-slate-200">
                 {invoice.items && invoice.items.length > 0 ? (
-                  invoice.items.map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="py-1.5 font-bold text-slate-900">
-                        {it.itemName}
-                        <div className="text-[9px] text-slate-500 font-normal">HSN:{it.hsnCode || '—'} • GST:{it.gstRate}%</div>
-                      </td>
-                      <td className="py-1.5 text-center">{it.quantity}</td>
-                      <td className="py-1.5 text-right">₹{parseFloat(it.rate || '0').toFixed(2)}</td>
-                      <td className="py-1.5 text-right font-bold text-slate-900">₹{parseFloat(it.total || '0').toFixed(2)}</td>
-                    </tr>
-                  ))
+                  invoice.items.map((it, idx) => {
+                    const c = computeItemRow(it);
+                    return (
+                      <tr key={idx}>
+                        <td className="py-1.5 font-bold text-slate-900">
+                          {it.itemName}
+                          <div className="text-[9px] text-slate-500 font-normal">HSN:{it.hsnCode || '—'} • GST:{c.gstRate}%</div>
+                        </td>
+                        <td className="py-1.5 text-center">{c.qty}</td>
+                        <td className="py-1.5 text-right">₹{c.rate.toFixed(2)}</td>
+                        <td className="py-1.5 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={4} className="py-2 text-center text-slate-400">No items</td>
@@ -1705,18 +1763,21 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-300 text-[11px]">
                 {invoice.items && invoice.items.length > 0 ? (
-                  invoice.items.map((it, idx) => (
-                    <tr key={idx} className="divide-x divide-slate-200 hover:bg-slate-50">
-                      <td className="p-2 text-center text-slate-500">{idx + 1}</td>
-                      <td className="p-2 font-sans font-medium text-slate-900">{it.itemName}</td>
-                      <td className="p-2 text-center text-slate-600">{it.hsnCode || '—'}</td>
-                      <td className="p-2 text-right">{it.quantity} {it.unit}</td>
-                      <td className="p-2 text-right">₹{parseFloat(it.rate || '0').toFixed(2)}</td>
-                      <td className="p-2 text-right">₹{parseFloat(it.taxableValue || '0').toFixed(2)}</td>
-                      <td className="p-2 text-right">{it.gstRate}%</td>
-                      <td className="p-2 text-right font-bold text-slate-900">₹{parseFloat(it.total || '0').toFixed(2)}</td>
-                    </tr>
-                  ))
+                  invoice.items.map((it, idx) => {
+                    const c = computeItemRow(it);
+                    return (
+                      <tr key={idx} className="divide-x divide-slate-200 hover:bg-slate-50">
+                        <td className="p-2 text-center text-slate-500">{idx + 1}</td>
+                        <td className="p-2 font-sans font-medium text-slate-900">{it.itemName}</td>
+                        <td className="p-2 text-center text-slate-600">{it.hsnCode || '—'}</td>
+                        <td className="p-2 text-right">{c.qty} {it.unit}</td>
+                        <td className="p-2 text-right">₹{c.rate.toFixed(2)}</td>
+                        <td className="p-2 text-right">₹{c.taxable.toFixed(2)}</td>
+                        <td className="p-2 text-right">{c.gstRate}%</td>
+                        <td className="p-2 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={8} className="p-4 text-center text-slate-400 font-sans">No items available.</td>
@@ -1883,18 +1944,21 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
                   {invoice.items && invoice.items.length > 0 ? (
-                    invoice.items.map((it, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-2.5 text-center text-slate-400">{idx + 1}</td>
-                        <td className="p-2.5 font-sans font-medium text-slate-900">{it.itemName}</td>
-                        <td className="p-2.5 text-center text-slate-600">{it.hsnCode || '—'}</td>
-                        <td className="p-2.5 text-right">{it.quantity} {it.unit}</td>
-                        <td className="p-2.5 text-right">₹{parseFloat(it.rate || '0').toFixed(2)}</td>
-                        <td className="p-2.5 text-right">₹{parseFloat(it.taxableValue || '0').toFixed(2)}</td>
-                        <td className="p-2.5 text-right">{invoice.saleType === 'export_with_tax' ? `${it.gstRate}%` : '0% (LUT)'}</td>
-                        <td className="p-2.5 text-right font-bold text-slate-900">₹{parseFloat(it.total || '0').toFixed(2)}</td>
-                      </tr>
-                    ))
+                    invoice.items.map((it, idx) => {
+                      const c = computeItemRow(it);
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-2.5 text-center text-slate-400">{idx + 1}</td>
+                          <td className="p-2.5 font-sans font-medium text-slate-900">{it.itemName}</td>
+                          <td className="p-2.5 text-center text-slate-600">{it.hsnCode || '—'}</td>
+                          <td className="p-2.5 text-right">{c.qty} {it.unit}</td>
+                          <td className="p-2.5 text-right">₹{c.rate.toFixed(2)}</td>
+                          <td className="p-2.5 text-right">₹{c.taxable.toFixed(2)}</td>
+                          <td className="p-2.5 text-right">{invoice.saleType === 'export_with_tax' ? `${c.gstRate}%` : '0% (LUT)'}</td>
+                          <td className="p-2.5 text-right font-bold text-slate-900">₹{c.total.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
                       <td colSpan={8} className="p-4 text-center text-slate-400 font-sans">No export items available.</td>

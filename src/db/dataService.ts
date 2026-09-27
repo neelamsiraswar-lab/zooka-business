@@ -592,6 +592,102 @@ export async function createInvoiceWithItems(userId: number, invoiceData: any, i
   }
   const invoiceId = await getNextSequenceId('invoice_id');
   const rawItems = itemsInput || invoiceData.items || [];
+
+  const isTaxExempt =
+    (invoiceData.voucherType === 'sales' && (invoiceData.saleType === 'bill_of_supply' || invoiceData.saleType === 'export_without_tax')) ||
+    (invoiceData.voucherType === 'purchase' && invoiceData.saleType === 'exempt_nil');
+  const isInterstate = !!invoiceData.isInterstate;
+
+  let calcSubtotal = 0;
+  let calcTaxTotal = 0;
+  let calcCgstTotal = 0;
+  let calcSgstTotal = 0;
+  let calcIgstTotal = 0;
+  let calcDiscountTotal = 0;
+
+  const processedItems = rawItems.map((it: any, idx: number) => {
+    const qty = parseFloat(String(it.quantity || 0)) || 0;
+    const rate = parseFloat(String(it.rate || 0)) || 0;
+    const disc = parseFloat(String(it.discountPercent || 0)) || 0;
+    const isTaxIncl = Boolean(it.isTaxInclusive);
+    const rawGstRate = isTaxExempt ? 0 : (parseFloat(String(it.gstRate || 0)) || 0);
+
+    let lineTaxable = 0;
+    let lineTax = 0;
+    let lineTotal = 0;
+    let lineDiscount = 0;
+
+    if (isTaxIncl && rawGstRate > 0) {
+      const gross = qty * rate;
+      lineDiscount = gross * (disc / 100);
+      const netGross = gross - lineDiscount;
+      lineTaxable = netGross / (1 + rawGstRate / 100);
+      lineTax = netGross - lineTaxable;
+      lineTotal = netGross;
+    } else {
+      const gross = qty * rate;
+      lineDiscount = gross * (disc / 100);
+      lineTaxable = gross - lineDiscount;
+      lineTax = (lineTaxable * rawGstRate) / 100;
+      lineTotal = lineTaxable + lineTax;
+    }
+
+    let cgst = 0;
+    let sgst = 0;
+    let igst = 0;
+    if (lineTax > 0) {
+      if (isInterstate) {
+        igst = lineTax;
+      } else {
+        cgst = lineTax / 2;
+        sgst = lineTax / 2;
+      }
+    }
+
+    calcSubtotal += lineTaxable;
+    calcTaxTotal += lineTax;
+    calcCgstTotal += cgst;
+    calcSgstTotal += sgst;
+    calcIgstTotal += igst;
+    calcDiscountTotal += lineDiscount;
+
+    return {
+      ...it,
+      id: it.id || idx + 1,
+      invoiceId,
+      quantity: String(qty),
+      rate: String(rate),
+      discountPercent: String(disc),
+      discountAmount: it.discountAmount !== undefined ? String(it.discountAmount) : lineDiscount.toFixed(2),
+      taxableValue: it.taxableValue !== undefined ? String(it.taxableValue) : lineTaxable.toFixed(2),
+      gstRate: String(rawGstRate),
+      taxAmount: it.taxAmount !== undefined ? String(it.taxAmount) : lineTax.toFixed(2),
+      cgstAmount: it.cgstAmount !== undefined ? String(it.cgstAmount) : cgst.toFixed(2),
+      sgstAmount: it.sgstAmount !== undefined ? String(it.sgstAmount) : sgst.toFixed(2),
+      igstAmount: it.igstAmount !== undefined ? String(it.igstAmount) : igst.toFixed(2),
+      total: it.total !== undefined ? String(it.total) : lineTotal.toFixed(2),
+      isTaxInclusive: isTaxIncl,
+    };
+  });
+
+  const finalSubtotal = invoiceData.subtotal !== undefined && parseFloat(String(invoiceData.subtotal)) > 0
+    ? String(invoiceData.subtotal)
+    : calcSubtotal.toFixed(2);
+  const finalTaxTotal = invoiceData.taxTotal !== undefined && parseFloat(String(invoiceData.taxTotal)) >= 0
+    ? String(invoiceData.taxTotal)
+    : calcTaxTotal.toFixed(2);
+  const finalGrandTotal = invoiceData.grandTotal !== undefined && parseFloat(String(invoiceData.grandTotal)) > 0
+    ? String(invoiceData.grandTotal)
+    : (parseFloat(finalSubtotal) + parseFloat(finalTaxTotal)).toFixed(2);
+  const finalCgst = invoiceData.cgstTotal !== undefined ? String(invoiceData.cgstTotal) : calcCgstTotal.toFixed(2);
+  const finalSgst = invoiceData.sgstTotal !== undefined ? String(invoiceData.sgstTotal) : calcSgstTotal.toFixed(2);
+  const finalIgst = invoiceData.igstTotal !== undefined ? String(invoiceData.igstTotal) : calcIgstTotal.toFixed(2);
+  const finalDiscount = invoiceData.discountTotal !== undefined ? String(invoiceData.discountTotal) : calcDiscountTotal.toFixed(2);
+  const finalPaid = String(invoiceData.paidAmount || '0.00');
+  const paidVal = parseFloat(finalPaid) || 0;
+  const grandVal = parseFloat(finalGrandTotal) || 0;
+  const finalPaymentStatus = invoiceData.paymentStatus || (paidVal >= grandVal && grandVal > 0 ? 'paid' : paidVal > 0 ? 'partial' : 'unpaid');
+
   const invoiceDoc = {
     id: invoiceId,
     userId,
@@ -607,27 +703,53 @@ export async function createInvoiceWithItems(userId: number, invoiceData: any, i
     partyGstin: invoiceData.partyGstin || null,
     placeOfSupply: invoiceData.placeOfSupply || '08',
     isInterstate: !!invoiceData.isInterstate,
-    subtotal: String(invoiceData.subtotal || '0.00'),
-    cgstTotal: String(invoiceData.cgstTotal || '0.00'),
-    sgstTotal: String(invoiceData.sgstTotal || '0.00'),
-    igstTotal: String(invoiceData.igstTotal || '0.00'),
-    taxTotal: String(invoiceData.taxTotal || '0.00'),
-    discountTotal: String(invoiceData.discountTotal || '0.00'),
-    grandTotal: String(invoiceData.grandTotal || '0.00'),
-    paidAmount: String(invoiceData.paidAmount || '0.00'),
-    paymentStatus: invoiceData.paymentStatus || 'unpaid',
+    subtotal: finalSubtotal,
+    cgstTotal: finalCgst,
+    sgstTotal: finalSgst,
+    igstTotal: finalIgst,
+    taxTotal: finalTaxTotal,
+    discountTotal: finalDiscount,
+    grandTotal: finalGrandTotal,
+    paidAmount: finalPaid,
+    paymentStatus: finalPaymentStatus,
     paymentMode: invoiceData.paymentMode || 'cash',
     notes: invoiceData.notes || null,
     termsAndConditions: invoiceData.termsAndConditions || null,
     ewayBillNumber: invoiceData.ewayBillNumber || null,
     status: invoiceData.status || 'active',
     createdAt: new Date().toISOString(),
-    items: rawItems.map((it: any, idx: number) => ({
-      ...it,
-      id: idx + 1,
-      invoiceId,
-    })),
+    items: processedItems,
   };
+
+  // Auto-link or auto-create Party Ledger if custom name is entered
+  if (!invoiceDoc.partyId && invoiceDoc.partyName && invoiceDoc.partyName.trim()) {
+    try {
+      const partiesSnap = await db.collection(COLLECTIONS.PARTIES).where('workspaceId', '==', wsId).get();
+      const existingParty = partiesSnap.docs
+        .map((d: any) => d.data())
+        .find((p: any) => p.name && p.name.trim().toLowerCase() === invoiceDoc.partyName.trim().toLowerCase());
+
+      if (existingParty) {
+        invoiceDoc.partyId = existingParty.id;
+      } else {
+        const newParty = await createParty({
+          name: invoiceDoc.partyName.trim(),
+          partyType: invoiceDoc.voucherType === 'sales' ? 'customer' : 'vendor',
+          gstin: invoiceDoc.partyGstin || null,
+          phone: invoiceData.partyPhone || null,
+          email: invoiceData.partyEmail || null,
+          address: invoiceData.partyAddress || null,
+          stateCode: invoiceDoc.placeOfSupply || '08',
+          workspaceId: wsId,
+        }, userId, undefined, wsId);
+        if (newParty?.id) {
+          invoiceDoc.partyId = newParty.id;
+        }
+      }
+    } catch (partyErr) {
+      console.warn('[createInvoiceWithItems] Auto party sync warning:', partyErr);
+    }
+  }
 
   await db.collection(COLLECTIONS.INVOICES).doc(String(invoiceId)).set(invoiceDoc);
   try {
@@ -681,17 +803,118 @@ export async function editInvoiceWithItems(invoiceId: number, userId: number, in
 
   const targetWsId = prevInvoice.workspaceId || wsId;
   const rawItems = itemsInput || invoiceData.items || prevInvoice.items || [];
+  const mergedData = { ...prevInvoice, ...invoiceData };
+
+  const isTaxExempt =
+    (mergedData.voucherType === 'sales' && (mergedData.saleType === 'bill_of_supply' || mergedData.saleType === 'export_without_tax')) ||
+    (mergedData.voucherType === 'purchase' && mergedData.saleType === 'exempt_nil');
+  const isInterstate = !!mergedData.isInterstate;
+
+  let calcSubtotal = 0;
+  let calcTaxTotal = 0;
+  let calcCgstTotal = 0;
+  let calcSgstTotal = 0;
+  let calcIgstTotal = 0;
+  let calcDiscountTotal = 0;
+
+  const processedItems = rawItems.map((it: any, idx: number) => {
+    const qty = parseFloat(String(it.quantity || 0)) || 0;
+    const rate = parseFloat(String(it.rate || 0)) || 0;
+    const disc = parseFloat(String(it.discountPercent || 0)) || 0;
+    const isTaxIncl = Boolean(it.isTaxInclusive);
+    const rawGstRate = isTaxExempt ? 0 : (parseFloat(String(it.gstRate || 0)) || 0);
+
+    let lineTaxable = 0;
+    let lineTax = 0;
+    let lineTotal = 0;
+    let lineDiscount = 0;
+
+    if (isTaxIncl && rawGstRate > 0) {
+      const gross = qty * rate;
+      lineDiscount = gross * (disc / 100);
+      const netGross = gross - lineDiscount;
+      lineTaxable = netGross / (1 + rawGstRate / 100);
+      lineTax = netGross - lineTaxable;
+      lineTotal = netGross;
+    } else {
+      const gross = qty * rate;
+      lineDiscount = gross * (disc / 100);
+      lineTaxable = gross - lineDiscount;
+      lineTax = (lineTaxable * rawGstRate) / 100;
+      lineTotal = lineTaxable + lineTax;
+    }
+
+    let cgst = 0;
+    let sgst = 0;
+    let igst = 0;
+    if (lineTax > 0) {
+      if (isInterstate) {
+        igst = lineTax;
+      } else {
+        cgst = lineTax / 2;
+        sgst = lineTax / 2;
+      }
+    }
+
+    calcSubtotal += lineTaxable;
+    calcTaxTotal += lineTax;
+    calcCgstTotal += cgst;
+    calcSgstTotal += sgst;
+    calcIgstTotal += igst;
+    calcDiscountTotal += lineDiscount;
+
+    return {
+      ...it,
+      id: it.id || idx + 1,
+      invoiceId,
+      quantity: String(qty),
+      rate: String(rate),
+      discountPercent: String(disc),
+      discountAmount: it.discountAmount !== undefined ? String(it.discountAmount) : lineDiscount.toFixed(2),
+      taxableValue: it.taxableValue !== undefined ? String(it.taxableValue) : lineTaxable.toFixed(2),
+      gstRate: String(rawGstRate),
+      taxAmount: it.taxAmount !== undefined ? String(it.taxAmount) : lineTax.toFixed(2),
+      cgstAmount: it.cgstAmount !== undefined ? String(it.cgstAmount) : cgst.toFixed(2),
+      sgstAmount: it.sgstAmount !== undefined ? String(it.sgstAmount) : sgst.toFixed(2),
+      igstAmount: it.igstAmount !== undefined ? String(it.igstAmount) : igst.toFixed(2),
+      total: it.total !== undefined ? String(it.total) : lineTotal.toFixed(2),
+      isTaxInclusive: isTaxIncl,
+    };
+  });
+
+  const finalSubtotal = invoiceData.subtotal !== undefined && parseFloat(String(invoiceData.subtotal)) > 0
+    ? String(invoiceData.subtotal)
+    : calcSubtotal.toFixed(2);
+  const finalTaxTotal = invoiceData.taxTotal !== undefined && parseFloat(String(invoiceData.taxTotal)) >= 0
+    ? String(invoiceData.taxTotal)
+    : calcTaxTotal.toFixed(2);
+  const finalGrandTotal = invoiceData.grandTotal !== undefined && parseFloat(String(invoiceData.grandTotal)) > 0
+    ? String(invoiceData.grandTotal)
+    : (parseFloat(finalSubtotal) + parseFloat(finalTaxTotal)).toFixed(2);
+  const finalCgst = invoiceData.cgstTotal !== undefined ? String(invoiceData.cgstTotal) : calcCgstTotal.toFixed(2);
+  const finalSgst = invoiceData.sgstTotal !== undefined ? String(invoiceData.sgstTotal) : calcSgstTotal.toFixed(2);
+  const finalIgst = invoiceData.igstTotal !== undefined ? String(invoiceData.igstTotal) : calcIgstTotal.toFixed(2);
+  const finalDiscount = invoiceData.discountTotal !== undefined ? String(invoiceData.discountTotal) : calcDiscountTotal.toFixed(2);
+  const finalPaid = String(invoiceData.paidAmount !== undefined ? invoiceData.paidAmount : (prevInvoice.paidAmount || '0.00'));
+  const paidVal = parseFloat(finalPaid) || 0;
+  const grandVal = parseFloat(finalGrandTotal) || 0;
+  const finalPaymentStatus = invoiceData.paymentStatus || (paidVal >= grandVal && grandVal > 0 ? 'paid' : paidVal > 0 ? 'partial' : 'unpaid');
 
   const updatedInvoice = {
     ...prevInvoice,
     ...invoiceData,
     id: invoiceId,
     workspaceId: targetWsId,
-    items: rawItems.map((it: any, idx: number) => ({
-      ...it,
-      id: idx + 1,
-      invoiceId,
-    })),
+    subtotal: finalSubtotal,
+    cgstTotal: finalCgst,
+    sgstTotal: finalSgst,
+    igstTotal: finalIgst,
+    taxTotal: finalTaxTotal,
+    discountTotal: finalDiscount,
+    grandTotal: finalGrandTotal,
+    paidAmount: finalPaid,
+    paymentStatus: finalPaymentStatus,
+    items: processedItems,
     updatedAt: new Date().toISOString(),
   };
 

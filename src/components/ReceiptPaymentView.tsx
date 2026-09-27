@@ -845,15 +845,19 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
                 </label>
                 <PartyMatchSelector
                   parties={parties}
+                  partyType={modalType === 'receipt' ? 'customer' : 'vendor'}
                   partyTypeFilter={modalType === 'receipt' ? 'customer' : 'vendor'}
                   selectedPartyId={selectedPartyId ? parseInt(selectedPartyId) : undefined}
                   partyName={partyName}
-                  onSelectParty={(party) => {
+                  onSelectParty={(party, customName) => {
                     if (party) {
                       setSelectedPartyId(String(party.id));
                       setPartyName(party.name);
                     } else {
                       setSelectedPartyId('');
+                      if (customName !== undefined) {
+                        setPartyName(customName);
+                      }
                     }
                   }}
                   onCustomNameChange={(name) => {
