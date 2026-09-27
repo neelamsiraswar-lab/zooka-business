@@ -532,7 +532,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const [nextPaymentNumber, setNextPaymentNumber] = useState<number>(1);
 
   // Tab: Sale Invoice Design & Styling
-  const [invoiceDesignTemplate, setInvoiceDesignTemplate] = useState<NonNullable<CompanyProfile['invoiceDesignTemplate']>>('modern');
+  const [invoiceDesignTemplate, setInvoiceDesignTemplate] = useState<NonNullable<CompanyProfile['invoiceDesignTemplate']>>('classic');
   const [invoiceColorTheme, setInvoiceColorTheme] = useState<NonNullable<CompanyProfile['invoiceColorTheme']>>('emerald');
   const [invoiceHeaderTitle, setInvoiceHeaderTitle] = useState('TAX INVOICE');
   const [invoiceSubtitle, setInvoiceSubtitle] = useState('ORIGINAL FOR RECIPIENT');

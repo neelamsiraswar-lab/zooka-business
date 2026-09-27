@@ -306,7 +306,7 @@ export async function createWorkspace(
       nextPurchaseNumber: 1,
       receiptPrefix: newWorkspace.receiptPrefix,
       nextReceiptNumber: 1,
-      invoiceDesignTemplate: 'modern',
+      invoiceDesignTemplate: 'classic',
       invoiceColorTheme: 'emerald',
       updatedAt: now,
     };

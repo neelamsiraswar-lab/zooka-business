@@ -71,3 +71,59 @@
   animation: shimmer 1.8s infinite;
   content: '';
 }
+
+/* ========================================================================= */
+/* A4 INVOICE PRINT COMPACTION & EXACT COLOR ACCURACY */
+/* ========================================================================= */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 5mm 6mm 5mm 6mm;
+  }
+
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 10px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Hide app navigation chrome, sidebar, header buttons when printing */
+  nav, header, aside, .print\\:hidden, #create-sales-invoice-btn, #record-purchase-bill-btn {
+    display: none !important;
+  }
+
+  /* Compaction container */
+  .a4-compact-invoice {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border-color: #0f172a !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .avoid-page-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  table {
+    page-break-inside: auto;
+    width: 100% !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto;
+  }
+}

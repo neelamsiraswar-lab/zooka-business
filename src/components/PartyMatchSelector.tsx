@@ -345,17 +345,26 @@ export const PartyMatchSelector: React.FC<PartyMatchSelectorProps> = ({
 
             <div className="flex items-center gap-1.5 shrink-0">
               {(selectedParty || partyName) && !disabled && (
-                <button
-                  type="button"
+                <span
+                  role="button"
+                  tabIndex={0}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleClear(e);
                   }}
-                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      handleClear();
+                    }
+                  }}
+                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition cursor-pointer inline-flex items-center justify-center"
                   title="Clear party"
+                  aria-label="Clear party"
                 >
                   <X className="w-3.5 h-3.5" />
-                </button>
+                </span>
               )}
               <ChevronDown
                 className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${

@@ -1716,15 +1716,15 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                   <LayoutTemplate className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span className="text-[11px] font-medium text-slate-500">Design:</span>
                   <select
-                    value={previewTemplate || company?.invoiceDesignTemplate || 'modern'}
+                    value={previewTemplate || company?.invoiceDesignTemplate || 'classic'}
                     onChange={(e) => setPreviewTemplate(e.target.value as any)}
                     className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:ring-0 py-0.5 cursor-pointer"
                   >
+                    <option value="classic">Classic GST (Standard Rule 46 - A4 Compact)</option>
                     <option value="modern">Modern Pro</option>
-                    <option value="classic">Classic GST</option>
                     <option value="corporate">Corporate Executive</option>
-                    <option value="stylish">Sidebar Prestige</option>
                     <option value="compact">Compact Ledger</option>
+                    <option value="stylish">Sidebar Prestige</option>
                     <option value="thermal">POS Retail Slip (80mm)</option>
                     <option value="industrial">Heavy Industry</option>
                     <option value="export">Global Export / LUT</option>
