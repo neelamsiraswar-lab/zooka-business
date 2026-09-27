@@ -153,10 +153,10 @@ export default function App() {
   });
 
   const [platformFooterCompliance, setPlatformFooterCompliance] = useState(() => localStorage.getItem('platform_footer_compliance') || 'GST Act 2017 & ITC Section 16 Compliant');
-  const [platformFooterSupport, setPlatformFooterSupport] = useState(() => localStorage.getItem('platform_footer_support') || 'Support: support@apextally.com | +91 9876543210');
+  const [platformFooterSupport, setPlatformFooterSupport] = useState(() => localStorage.getItem('platform_footer_support') || 'Support: support@zookabusiness.in | +91 98201 23456');
   
   // Master Business Details linked to Footer Place of Supply
-  const [masterBusinessName, setMasterBusinessName] = useState(() => localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+  const [masterBusinessName, setMasterBusinessName] = useState(() => localStorage.getItem('platform_invoice_name') || 'Zooka Business Technologies');
   const [masterBusinessStateCode, setMasterBusinessStateCode] = useState(() => localStorage.getItem('platform_invoice_state_code') || '27');
   const [masterBusinessStateName, setMasterBusinessStateName] = useState(() => localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
   const [masterBusinessGstin, setMasterBusinessGstin] = useState(() => localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
@@ -192,8 +192,8 @@ export default function App() {
 
     const handleBrandingUpdate = () => {
       setPlatformFooterCompliance(localStorage.getItem('platform_footer_compliance') || 'GST Act 2017 & ITC Section 16 Compliant');
-      setPlatformFooterSupport(localStorage.getItem('platform_footer_support') || 'Support: support@apextally.com | +91 9876543210');
-      setMasterBusinessName(localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+      setPlatformFooterSupport(localStorage.getItem('platform_footer_support') || 'Support: support@zookabusiness.in | +91 98201 23456');
+      setMasterBusinessName(localStorage.getItem('platform_invoice_name') || 'Zooka Business Technologies');
       setMasterBusinessStateCode(localStorage.getItem('platform_invoice_state_code') || '27');
       setMasterBusinessStateName(localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
       setMasterBusinessGstin(localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');

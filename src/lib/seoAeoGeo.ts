@@ -25,11 +25,12 @@ export interface SeoAeoGeoConfig {
 
 export const DEFAULT_SEO_CONFIG: SeoAeoGeoConfig = {
   siteUrl: 'https://zookabusiness.in',
-  appName: 'Apex TallyGST Cloud',
-  appShortName: 'TallyGST',
+  appName: 'Zooka ERP',
+  appShortName: 'Zooka ERP',
   tagline: 'Enterprise GST Billing, Banking Reconciliation & Cloud Accounting Platform',
   description: 'Small business and enterprise accounting, GST invoicing, billing, banking reconciliation, and tax compliance software with multi-user synchronization and real-time financial reporting.',
   keywords: [
+    'Zooka ERP',
     'GST billing software',
     'cloud accounting India',
     'Tally alternative',
@@ -197,12 +198,12 @@ export function generateStructuredSchemaGraph(
   // 4. FAQPage Schema (AEO / Answer Engine Rich Snippets)
   const activeFaqs = (faqs.length > 0 ? faqs : [
     {
-      question: 'How does Apex TallyGST handle CGST, SGST, and IGST automatically?',
+      question: 'How does Zooka ERP handle CGST, SGST, and IGST automatically?',
       answer: 'The platform compares the supplier state code with the customer Place of Supply (POS). If both match, it automatically levies Intra-State GST split 50/50 between CGST and SGST. If they differ, it levies Inter-State IGST seamlessly.',
     },
     {
       question: 'Is this software compliant with Indian GSTN e-invoicing standards?',
-      answer: 'Yes, Apex TallyGST Cloud adheres to the official GSTN e-invoice schema v1.1, generating validated JSON payload structures ready for Instant IRP portal upload and QR code generation.',
+      answer: 'Yes, Zooka ERP adheres to the official GSTN e-invoice schema v1.1, generating validated JSON payload structures ready for Instant IRP portal upload and QR code generation.',
     },
     {
       question: 'Can accountants and auditors access client data securely with role permissions?',

@@ -845,7 +845,7 @@ export const CustomerReviewManager: React.FC<CustomerReviewManagerProps> = ({
                       rows={4}
                       value={reviewText}
                       onChange={(e) => setReviewText(e.target.value)}
-                      placeholder="Detail how Apex TallyGST improved accounting, simplified GSTR filing, or automated bank reconciliation..."
+                      placeholder="Detail how Zooka ERP improved accounting, simplified GSTR filing, or automated bank reconciliation..."
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-amber-500 leading-relaxed"
                     />
                     <div className="flex justify-between text-[11px] text-slate-500 mt-1">

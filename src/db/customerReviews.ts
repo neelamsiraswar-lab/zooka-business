@@ -12,7 +12,7 @@ export const DEFAULT_CUSTOMER_REVIEWS: CustomerReview[] = [
     companyName: 'Sharma & Associates LLP',
     location: 'Mumbai, Maharashtra',
     rating: 5,
-    reviewText: 'Apex TallyGST cut our month-end statutory closing time from 4 days to 4 hours. Automated 2B reconciliation and one-click GSTR-1 JSON export make it the most reliable accounting system for Indian practitioners.',
+    reviewText: 'Zooka ERP cut our month-end statutory closing time from 4 days to 4 hours. Automated 2B reconciliation and one-click GSTR-1 JSON export make it the most reliable accounting system for Indian practitioners.',
     badge: 'Verified CA',
     avatarBgColor: 'indigo',
     order: 1,

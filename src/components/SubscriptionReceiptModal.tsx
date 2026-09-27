@@ -19,7 +19,7 @@ export const SubscriptionReceiptModal: React.FC<SubscriptionReceiptModalProps> =
 
   if (!invoice) return null;
 
-  const invName = localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies';
+  const invName = localStorage.getItem('platform_invoice_name') || 'Zooka Business Technologies';
   const invGstin = localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR';
   const invPan = localStorage.getItem('platform_invoice_pan') || 'AAECB9382M';
   const invSac = localStorage.getItem('platform_invoice_sac') || '998315';

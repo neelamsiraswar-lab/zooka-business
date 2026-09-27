@@ -18,7 +18,7 @@ export const DEFAULT_HOMEPAGE_FAQS: HomepageFaq[] = [
   },
   {
     id: 'faq-gst-splits-hsn',
-    question: 'Does Apex TallyGST support automated HSN codes and GST splits?',
+    question: 'Does Zooka ERP support automated HSN codes and GST splits?',
     answer: 'Yes. The system automatically computes Intra-State (CGST + SGST) vs Inter-State (IGST) calculations based on Place of Supply rules, generates compliant e-invoice formats, day books, and prepares real-time GSTR-1, GSTR-3B, and GSTR-2B reconciliations.',
     category: 'GST & Compliance',
     order: 2,

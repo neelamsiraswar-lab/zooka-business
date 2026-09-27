@@ -275,7 +275,7 @@ export const HomepageHeaderManager: React.FC<HomepageHeaderManagerProps> = ({
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-base tracking-tight text-white truncate max-w-[200px]">
-                    {appName || 'Apex TallyGST Cloud'}
+                    {appName || 'Zooka ERP'}
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider font-semibold whitespace-nowrap">
                     {headerBadgeText || 'Enterprise Cloud'}
@@ -358,7 +358,7 @@ export const HomepageHeaderManager: React.FC<HomepageHeaderManagerProps> = ({
                 type="text"
                 value={appName}
                 onChange={(e) => setAppName(e.target.value)}
-                placeholder="Apex TallyGST Cloud"
+                placeholder="Zooka ERP"
                 required
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-bold"
               />

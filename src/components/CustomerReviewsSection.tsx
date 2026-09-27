@@ -66,7 +66,7 @@ export const CustomerReviewsSection: React.FC<CustomerReviewsSectionProps> = ({
         </h2>
 
         <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-          See why accounting firms, CFOs, and business owners choose Apex TallyGST for bulletproof GST statutory compliance, multi-branch bookkeeping, and real-time bank reconciliation.
+          See why accounting firms, CFOs, and business owners choose Zooka ERP for bulletproof GST statutory compliance, multi-branch bookkeeping, and real-time bank reconciliation.
         </p>
 
         {/* Rating Summary Bar */}

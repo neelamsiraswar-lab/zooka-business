@@ -152,7 +152,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         >
           <Menu className="w-4 h-4 text-emerald-400" />
           <span className="font-semibold text-xs text-slate-100 truncate max-w-[160px] sm:max-w-xs">
-            {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'TallyGST ERP')}
+            {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'Zooka ERP')}
           </span>
         </button>
 
@@ -169,7 +169,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               <PanelLeftOpen className="w-4 h-4" />
             </button>
             <span className="font-semibold text-[13px] tracking-tight text-slate-100 truncate">
-              {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'TallyGST ERP')}
+              {activeTab === 'super_admin' ? 'Super Admin Console' : (company?.businessName || 'Zooka ERP')}
             </span>
             {activeTab === 'super_admin' ? (
               <span className="text-[10px] font-mono font-medium text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">

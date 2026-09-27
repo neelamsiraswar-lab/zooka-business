@@ -132,12 +132,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [reviewsCount, setReviewsCount] = useState<number>(6);
   const [activeWsId, setActiveWsId] = useState<string>(getActiveWorkspaceId());
 
-  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'TallyGST ERP');
+  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Zooka ERP');
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
 
   useEffect(() => {
     const handleBrandingUpdate = () => {
-      setPlatformAppName(localStorage.getItem('platform_app_name') || 'TallyGST ERP');
+      setPlatformAppName(localStorage.getItem('platform_app_name') || 'Zooka ERP');
       setPlatformAppLogo(localStorage.getItem('platform_app_logo') || '');
     };
     window.addEventListener('platform_branding_updated', handleBrandingUpdate);
@@ -746,7 +746,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
                 <div className="min-w-0">
                   <span className="block font-semibold text-xs text-white truncate">
-                    {company?.businessName || 'TallyGST ERP'}
+                    {company?.businessName || 'Zooka ERP'}
                   </span>
                   <span className="block text-[10px] text-slate-400 font-mono truncate">
                     {company?.gstin || '27AAECB9382M1ZR'}
@@ -883,7 +883,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     <div className="min-w-0">
                       <span className="block font-semibold text-xs text-white tracking-tight truncate">
-                        {company?.businessName || platformAppName || 'TallyGST ERP'}
+                        {company?.businessName || platformAppName || 'Zooka ERP'}
                       </span>
                       <div className="text-[10px] text-slate-400 font-mono truncate">
                         {company?.gstin || localStorage.getItem('platform_app_tagline') || 'Cloud Accounting'}

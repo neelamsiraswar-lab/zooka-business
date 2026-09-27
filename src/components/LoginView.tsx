@@ -117,10 +117,10 @@ export const LoginView: React.FC = () => {
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   // Platform White-Label Branding & Master Business Details
-  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Apex TallyGST Cloud');
+  const [platformAppName, setPlatformAppName] = useState(() => localStorage.getItem('platform_app_name') || 'Zooka ERP');
   const [platformAppTagline, setPlatformAppTagline] = useState(() => localStorage.getItem('platform_app_tagline') || 'Enterprise GST Billing, Banking Reconciliation & Cloud Accounting Platform');
   const [platformAppLogo, setPlatformAppLogo] = useState(() => localStorage.getItem('platform_app_logo') || '');
-  const [platformBusinessName, setPlatformBusinessName] = useState(() => localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+  const [platformBusinessName, setPlatformBusinessName] = useState(() => localStorage.getItem('platform_invoice_name') || 'Zooka Business Technologies');
   const [platformGstin, setPlatformGstin] = useState(() => localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
   const [platformStateName, setPlatformStateName] = useState(() => localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
   const [platformStateCode, setPlatformStateCode] = useState(() => localStorage.getItem('platform_invoice_state_code') || '27');
@@ -129,7 +129,7 @@ export const LoginView: React.FC = () => {
   const [platformHeaderBadge, setPlatformHeaderBadge] = useState(() => localStorage.getItem('platform_header_badge') || 'Enterprise Cloud');
   const [headerShowContact, setHeaderShowContact] = useState(() => localStorage.getItem('platform_header_show_contact') !== 'false');
   const [headerShowGstin, setHeaderShowGstin] = useState(() => localStorage.getItem('platform_header_show_gstin') !== 'false');
-  const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
+  const [platformFooterCopyright, setPlatformFooterCopyright] = useState(() => localStorage.getItem('platform_footer_copyright') || '© 2026 Zooka ERP Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
 
   // Load live subscription plans from Super Admin Firestore Catalog
   const loadPlans = async () => {
@@ -334,10 +334,10 @@ export const LoginView: React.FC = () => {
         if (customDetail.headerShowGstin !== undefined) setHeaderShowGstin(customDetail.headerShowGstin);
         return;
       }
-      setPlatformAppName(localStorage.getItem('platform_app_name') || 'Apex TallyGST Cloud');
+      setPlatformAppName(localStorage.getItem('platform_app_name') || 'Zooka ERP');
       setPlatformAppTagline(localStorage.getItem('platform_app_tagline') || 'Enterprise GST Billing, Banking Reconciliation & Cloud Accounting Platform');
       setPlatformAppLogo(localStorage.getItem('platform_app_logo') || '');
-      setPlatformBusinessName(localStorage.getItem('platform_invoice_name') || 'Apex Cloud Technologies');
+      setPlatformBusinessName(localStorage.getItem('platform_invoice_name') || 'Zooka Business Technologies');
       setPlatformGstin(localStorage.getItem('platform_invoice_gstin') || '27AAECB9382M1ZR');
       setPlatformStateName(localStorage.getItem('platform_invoice_state_name') || 'Maharashtra');
       setPlatformStateCode(localStorage.getItem('platform_invoice_state_code') || '27');
@@ -346,7 +346,7 @@ export const LoginView: React.FC = () => {
       setPlatformHeaderBadge(localStorage.getItem('platform_header_badge') || 'Enterprise Cloud');
       setHeaderShowContact(localStorage.getItem('platform_header_show_contact') !== 'false');
       setHeaderShowGstin(localStorage.getItem('platform_header_show_gstin') !== 'false');
-      setPlatformFooterCopyright(localStorage.getItem('platform_footer_copyright') || '© 2026 Apex TallyGST Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
+      setPlatformFooterCopyright(localStorage.getItem('platform_footer_copyright') || '© 2026 Zooka ERP Accounting Platform. Multi-tenant cloud synchronization, verified role-based access & automated tax compliance.');
     };
 
     window.addEventListener('platform_branding_updated', handleBrandingUpdate);

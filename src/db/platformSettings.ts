@@ -45,20 +45,20 @@ export interface PlatformSettings {
 }
 
 export const FALLBACK_PLATFORM_SETTINGS: PlatformSettings = {
-  appName: 'Apex TallyGST Cloud',
-  appShortName: 'TallyGST',
+  appName: 'Zooka ERP',
+  appShortName: 'Zooka ERP',
   tagline: 'Enterprise GST Billing, Banking Reconciliation & Cloud Accounting Platform',
   appLogoUrl: '',
   supportEmail: 'nawarkuldeep@gmail.com',
   supportPhone: '+91 98201 23456',
   supportHours: 'Mon - Sat: 9:00 AM - 7:00 PM IST',
-  copyrightText: '© 2026 Apex TallyGST Cloud Technologies. All rights reserved. Made in India.',
+  copyrightText: '© 2026 Zooka ERP Technologies. All rights reserved. Made in India.',
   primaryColor: '#10b981',
   defaultStateCode: '27',
   defaultStateName: 'Maharashtra',
   gstPortalUrl: 'https://services.gst.gov.in',
   eWayPortalUrl: 'https://ewaybillgst.gov.in',
-  invoiceBusinessName: 'Apex Cloud Technologies',
+  invoiceBusinessName: 'Zooka Business Technologies',
   invoiceGstin: '27AAECB9382M1ZR',
   invoiceStateCode: '27',
   invoiceStateName: 'Maharashtra',
@@ -73,7 +73,7 @@ export const FALLBACK_PLATFORM_SETTINGS: PlatformSettings = {
   headerShowContact: true,
   headerShowGstin: true,
   headerBadgeText: 'Enterprise Cloud',
-  footerCopyright: '© 2026 Apex TallyGST Accounting Platform. All rights reserved.',
+  footerCopyright: '© 2026 Zooka ERP Accounting Platform. All rights reserved.',
   footerCompliance: 'GST Act 2017 & ITC Section 16 Compliant',
   footerSupport: 'Support: nawarkuldeep@gmail.com | +91 98201 23456',
 };

@@ -45,12 +45,12 @@ export const ProfileSettingsView: React.FC = () => {
   const [phone, setPhone] = useState(profile?.phone || '+91 9876543210');
 
   // App Branding & White-Labeling state
-  const [appName, setAppName] = useState('Apex TallyGST Cloud');
+  const [appName, setAppName] = useState('Zooka ERP');
   const [appTagline, setAppTagline] = useState('Enterprise GST Billing & Cloud Accounting');
   const [appLogoUrl, setAppLogoUrl] = useState('');
 
   // Master Business Details for Subscription Invoices
-  const [invoiceBusinessName, setInvoiceBusinessName] = useState('Apex Cloud Technologies');
+  const [invoiceBusinessName, setInvoiceBusinessName] = useState('Zooka Business Technologies');
   const [invoiceGstin, setInvoiceGstin] = useState('27AAECB9382M1ZR');
   const [invoiceStateCode, setInvoiceStateCode] = useState('27');
   const [invoiceStateName, setInvoiceStateName] = useState('Maharashtra');
@@ -107,7 +107,7 @@ export const ProfileSettingsView: React.FC = () => {
   const [subInvoicePadding, setSubInvoicePadding] = useState('4');
 
   // Footer Customization state
-  const [footerCopyright, setFooterCopyright] = useState('© 2026 Apex TallyGST Accounting Platform. All rights reserved.');
+  const [footerCopyright, setFooterCopyright] = useState('© 2026 Zooka ERP Accounting Platform. All rights reserved.');
   const [footerCompliance, setFooterCompliance] = useState('GST Act 2017 & ITC Section 16 Compliant');
   const [footerSupport, setFooterSupport] = useState('Support: nawarkuldeep@gmail.com | +91 98201 23456');
 
@@ -499,7 +499,7 @@ export const ProfileSettingsView: React.FC = () => {
                     type="text"
                     value={appName}
                     onChange={(e) => setAppName(e.target.value)}
-                    placeholder="TallyGST ERP"
+                    placeholder="Zooka ERP"
                     required
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 font-bold"
                   />
@@ -833,7 +833,7 @@ export const ProfileSettingsView: React.FC = () => {
                         type="text"
                         value={footerCopyright}
                         onChange={(e) => setFooterCopyright(e.target.value)}
-                        placeholder="© 2026 Apex TallyGST Accounting Platform. All rights reserved."
+                        placeholder="© 2026 Zooka ERP Accounting Platform. All rights reserved."
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
                       />
                     </div>
