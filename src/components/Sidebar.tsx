@@ -913,18 +913,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Bottom Section: Database Sync & User Profile */}
         <div className="border-t border-slate-800/80 bg-slate-950/40 p-2.5 space-y-2">
-          {/* Cloud Firestore Synced Badge */}
+          {/* Cloud Database Dual Engine Synced Badge */}
           <div
             className={`flex items-center rounded-lg bg-slate-900/60 border border-slate-800/80 transition-all ${
               isCollapsed ? 'justify-center p-1.5' : 'justify-between px-2.5 py-1'
             }`}
-            title="Google Cloud Firestore Synced & ITC Section 16 Compliant"
+            title="Google Cloud Firestore & Cloud SQL PostgreSQL (us-west1) Synchronized"
           >
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
               {!isCollapsed && (
-                <span className="text-[10px] font-medium text-slate-400 truncate">
-                  Cloud Synced
+                <span className="text-[10px] font-medium text-slate-300 truncate">
+                  Cloud SQL &amp; Firestore Synced
                 </span>
               )}
             </div>

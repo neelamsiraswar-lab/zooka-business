@@ -37,6 +37,7 @@ interface ProratedUpgradeModalProps {
   isOpen: boolean;
   onClose: () => void;
   workspace: Workspace | null;
+  targetPlan?: SubscriptionPlanTier;
   availablePlans?: PlanTierConfig[];
   onUpgradeSuccess: (updatedWorkspace: Workspace, invoice: SubscriptionInvoice) => void;
 }
@@ -45,32 +46,38 @@ export const ProratedUpgradeModal: React.FC<ProratedUpgradeModalProps> = ({
   isOpen,
   onClose,
   workspace,
+  targetPlan,
   availablePlans = DEFAULT_BUILTIN_PLANS,
   onUpgradeSuccess,
 }) => {
-  if (!isOpen || !workspace) return null;
-
-  const currentPlanTier = (workspace.plan || 'starter') as SubscriptionPlanTier;
-  const currentCycle = (workspace.billingCycle || 'annual') as SubscriptionBillingCycle;
+  const currentPlanTier = (workspace?.plan || 'starter') as SubscriptionPlanTier;
+  const currentCycle = (workspace?.billingCycle || 'annual') as SubscriptionBillingCycle;
 
   // Selected target tier & cycle
-  const [targetTier, setTargetTier] = useState<SubscriptionPlanTier>(
-    currentPlanTier === 'enterprise' ? 'enterprise' : 'professional'
-  );
+  const [targetTier, setTargetTier] = useState<SubscriptionPlanTier>(() => {
+    if (targetPlan) return targetPlan;
+    if (currentPlanTier === 'starter') return 'professional';
+    if (currentPlanTier === 'professional') return 'enterprise';
+    return 'enterprise';
+  });
   const [targetCycle, setTargetCycle] = useState<SubscriptionBillingCycle>(currentCycle);
   const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Bank Transfer' | 'Razorpay' | 'Card'>('UPI');
   const [utrNumber, setUtrNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-select higher tier if on starter
+  // Sync targetTier whenever targetPlan, workspace, or modal state changes
   useEffect(() => {
-    if (workspace.plan === 'starter') {
+    if (targetPlan) {
+      setTargetTier(targetPlan);
+    } else if (workspace?.plan === 'starter') {
       setTargetTier('professional');
-    } else if (workspace.plan === 'professional') {
+    } else if (workspace?.plan === 'professional') {
       setTargetTier('enterprise');
     }
-  }, [workspace.plan]);
+  }, [workspace?.plan, targetPlan, isOpen]);
+
+  if (!isOpen || !workspace) return null;
 
   const proration = calculateProratedSubscription(
     workspace,
@@ -116,6 +123,8 @@ export const ProratedUpgradeModal: React.FC<ProratedUpgradeModalProps> = ({
         billingCycle: targetCycle,
         subscriptionStatus: 'active',
         status: 'active',
+        currentPeriodStart: generatedInvoice.periodStart || workspace.currentPeriodStart,
+        currentPeriodEnd: generatedInvoice.periodEnd || workspace.currentPeriodEnd,
         maxUsers: selectedPlanConfig.maxUsers,
         maxInvoicesPerMonth: selectedPlanConfig.maxInvoicesPerMonth,
       };

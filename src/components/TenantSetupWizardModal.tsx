@@ -38,59 +38,57 @@ export const TenantSetupWizardModal: React.FC<TenantSetupWizardModalProps> = ({
   companyProfile,
   onCompleted,
 }) => {
-  if (!isOpen || !workspace) return null;
-
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Step 1: Business & GST
   const [businessName, setBusinessName] = useState(
-    companyProfile?.businessName || workspace.businessName || ''
+    companyProfile?.businessName || workspace?.businessName || ''
   );
   const [tradeName, setTradeName] = useState(
-    companyProfile?.tradeName || workspace.tradeName || ''
+    companyProfile?.tradeName || workspace?.tradeName || ''
   );
-  const [gstin, setGstin] = useState(companyProfile?.gstin || workspace.gstin || '');
+  const [gstin, setGstin] = useState(companyProfile?.gstin || workspace?.gstin || '');
   const [stateCode, setStateCode] = useState(
-    companyProfile?.stateCode || workspace.stateCode || '27'
+    companyProfile?.stateCode || workspace?.stateCode || '27'
   );
   const [filingFrequency, setFilingFrequency] = useState<'monthly' | 'quarterly'>(
-    workspace.filingFrequency || companyProfile?.filingFrequency || 'monthly'
+    workspace?.filingFrequency || companyProfile?.filingFrequency || 'monthly'
   );
   const [financialYearStart, setFinancialYearStart] = useState(
-    workspace.financialYearStart || companyProfile?.financialYearStart || '2026-04-01'
+    workspace?.financialYearStart || companyProfile?.financialYearStart || '2026-04-01'
   );
   const [address, setAddress] = useState(
-    companyProfile?.address || workspace.address || ''
+    companyProfile?.address || workspace?.address || ''
   );
 
   // Step 2: Bank & UPI
   const [bankName, setBankName] = useState(
-    companyProfile?.bankName || workspace.bankName || 'HDFC Bank Ltd'
+    companyProfile?.bankName || workspace?.bankName || 'HDFC Bank Ltd'
   );
   const [accountNumber, setAccountNumber] = useState(
-    companyProfile?.accountNumber || workspace.accountNumber || ''
+    companyProfile?.accountNumber || workspace?.accountNumber || ''
   );
   const [ifscCode, setIfscCode] = useState(
-    companyProfile?.ifscCode || workspace.ifscCode || 'HDFC0000240'
+    companyProfile?.ifscCode || workspace?.ifscCode || 'HDFC0000240'
   );
   const [upiId, setUpiId] = useState(
-    companyProfile?.upiId || workspace.upiId || ''
+    companyProfile?.upiId || workspace?.upiId || ''
   );
 
   // Step 3: Document Series & Prefixes
   const [invoicePrefix, setInvoicePrefix] = useState(
-    companyProfile?.invoicePrefix || workspace.invoicePrefix || 'INV/2026-27/'
+    companyProfile?.invoicePrefix || workspace?.invoicePrefix || 'INV/2026-27/'
   );
   const [nextInvoiceNumber, setNextInvoiceNumber] = useState(
     companyProfile?.nextInvoiceNumber || 1
   );
   const [purchasePrefix, setPurchasePrefix] = useState(
-    companyProfile?.purchasePrefix || workspace.purchasePrefix || 'PUR/2026-27/'
+    companyProfile?.purchasePrefix || workspace?.purchasePrefix || 'PUR/2026-27/'
   );
   const [receiptPrefix, setReceiptPrefix] = useState(
-    companyProfile?.receiptPrefix || workspace.receiptPrefix || 'REC/2026-27/'
+    companyProfile?.receiptPrefix || workspace?.receiptPrefix || 'REC/2026-27/'
   );
 
   // Auto derive state from GSTIN
@@ -103,6 +101,8 @@ export const TenantSetupWizardModal: React.FC<TenantSetupWizardModalProps> = ({
       }
     }
   }, [gstin]);
+
+  if (!isOpen || !workspace) return null;
 
   const selectedState = ALL_INDIAN_STATES.find((s) => s.code === stateCode);
 

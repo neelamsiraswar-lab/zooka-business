@@ -3,6 +3,8 @@ import { InventoryItem } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole } from '../lib/permissions';
 import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
+import { HsnAutoSuggestSelector } from './HsnAutoSuggestSelector';
+import { inferCategoryFromItem, PRODUCT_CATEGORIES } from '../data/hsnCategories';
 import {
   Boxes,
   Plus,
@@ -62,6 +64,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
   // Inventory Form State (New or Edit)
   const [itemName, setItemName] = useState('');
+  const [category, setCategory] = useState<string>('Electronics & Electricals');
   const [sku, setSku] = useState('');
   const [description, setDescription] = useState('');
   const [defaultWarranty, setDefaultWarranty] = useState('');
@@ -102,6 +105,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const openCreateModal = () => {
     setEditingItem(null);
     setItemName('');
+    setCategory('Electronics & Electricals');
     setSku('');
     setDescription('');
     setDefaultWarranty('');
@@ -118,6 +122,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const openEditModal = (item: InventoryItem) => {
     setEditingItem(item);
     setItemName(item.name);
+    setCategory(item.category || inferCategoryFromItem(item.name, item.description, item.hsnCode));
     setSku(item.sku || '');
     setDescription(item.description || '');
     setDefaultWarranty(item.defaultWarranty || '');
@@ -137,6 +142,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     if (editingItem && onEditItem) {
       await onEditItem(editingItem.id, {
         name: itemName,
+        category,
         sku,
         description,
         defaultWarranty,
@@ -151,6 +157,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     } else {
       await onAddItem({
         name: itemName,
+        category,
         sku,
         description,
         defaultWarranty,
@@ -588,7 +595,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-400 mb-1">Product Category</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-teal-400 cursor-pointer"
+                  >
+                    {PRODUCT_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat} className="bg-slate-900 text-white">
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block font-medium text-slate-400 mb-1">SKU / Item Code</label>
                   <input
@@ -596,41 +618,28 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                     placeholder="e.g. REL-3P-415V"
                     value={sku}
                     onChange={(e) => setSku(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-teal-400"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-teal-400"
                   />
                 </div>
 
                 <div>
                   <label className="block font-medium text-slate-400 mb-1">HSN / SAC Code</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 8536"
+                  <HsnAutoSuggestSelector
                     value={hsnCode}
-                    onChange={(e) => setHsnCode(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-teal-400"
+                    onChange={(newCode, suggestedRate) => {
+                      setHsnCode(newCode);
+                      if (suggestedRate !== undefined) {
+                        setGstRate(String(suggestedRate));
+                      }
+                    }}
+                    itemName={itemName}
+                    itemDescription={description}
+                    category={category}
+                    onCategoryChange={(newCat) => setCategory(newCat)}
+                    inventory={inventory}
+                    placeholder="e.g. 8536"
                   />
                 </div>
-              </div>
-
-              {/* Quick Presets for HSN Codes */}
-              <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400">
-                <span className="text-slate-500">Popular HSN:</span>
-                {[
-                  { label: '8536 (Electrical)', code: '8536' },
-                  { label: '8471 (Computers)', code: '8471' },
-                  { label: '9983 (IT Services)', code: '9983' },
-                  { label: '3004 (Pharma)', code: '3004' },
-                ].map((p) => (
-                  <button
-                    key={p.code}
-                    type="button"
-                    onClick={() => setHsnCode(p.code)}
-                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-teal-300 font-mono cursor-pointer"
-                  >
-                    {p.label}
-                  </button>
-                ))}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

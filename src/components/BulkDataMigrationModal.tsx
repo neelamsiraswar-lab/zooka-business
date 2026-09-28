@@ -56,8 +56,6 @@ export const BulkDataMigrationModal: React.FC<BulkDataMigrationModalProps> = ({
   workspace,
   onMigrationComplete,
 }) => {
-  if (!isOpen || !workspace) return null;
-
   const [activeTab, setActiveTab] = useState<'upload' | 'parties' | 'ledgers' | 'inventory'>('upload');
   const [dragOver, setDragOver] = useState(false);
   const [parsing, setParsing] = useState(false);
@@ -68,6 +66,8 @@ export const BulkDataMigrationModal: React.FC<BulkDataMigrationModalProps> = ({
   // Parsed Collections
   const [parsedLedgers, setParsedLedgers] = useState<ParsedLedger[]>([]);
   const [parsedItems, setParsedItems] = useState<ParsedItem[]>([]);
+
+  if (!isOpen || !workspace) return null;
 
   // Sample Tally XML snippet for instant 1-click test
   const sampleTallyXml = `<?xml version="1.0" encoding="UTF-8"?>

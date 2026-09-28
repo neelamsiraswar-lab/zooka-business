@@ -28,7 +28,9 @@ import {
   ArrowDownRight,
   Wallet,
   Coins,
+  Scale,
 } from 'lucide-react';
+import { GstrPreviousMonthComparisonView } from './GstrPreviousMonthComparisonView';
 
 interface Gstr3bReportViewProps {
   invoices: Invoice[];
@@ -45,7 +47,7 @@ export const Gstr3bReportView: React.FC<Gstr3bReportViewProps> = ({
   company,
   onNavigateToGstr2b,
 }) => {
-  const [activeTab, setActiveTab] = useState<'offset' | 'table31' | 'table32' | 'table4' | 'inward'>('offset');
+  const [activeTab, setActiveTab] = useState<'offset' | 'table31' | 'table32' | 'table4' | 'inward' | 'comparison'>('offset');
   const [periodPreset, setPeriodPreset] = useState<'all' | 'this_month' | 'prev_month' | 'q2' | 'fy'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -548,6 +550,18 @@ TOTAL NET ITC: ${formatINR(reportData.table4.netItcAvailable.total)}
         >
           <Layers className="w-3.5 h-3.5" />
           <span>Inward Purchases & Expenses Ledger ({reportData.inwardSupplies.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('comparison')}
+          className={`px-4 py-2 rounded-xl font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'comparison'
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold shadow-md shadow-emerald-500/25'
+              : 'text-emerald-400 hover:text-emerald-300 bg-slate-900 border border-emerald-500/30'
+          }`}
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>MoM Comparison (Previous Month)</span>
         </button>
       </div>
 
@@ -1195,6 +1209,19 @@ TOTAL NET ITC: ${formatINR(reportData.table4.netItcAvailable.total)}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* TAB 6: PREVIOUS MONTH COMPARISON VIEW */}
+      {activeTab === 'comparison' && (
+        <div className="animate-fade-in">
+          <GstrPreviousMonthComparisonView
+            invoices={invoices}
+            expenses={expenses}
+            parties={parties}
+            company={company}
+            onNavigateToGstr3b={() => setActiveTab('offset')}
+          />
         </div>
       )}
     </div>

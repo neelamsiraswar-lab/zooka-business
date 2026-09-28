@@ -5,6 +5,8 @@ import { InvoiceTemplateRenderer } from './InvoiceTemplateRenderer';
 import { PartyMatchSelector } from './PartyMatchSelector';
 import { AppSelect } from './AppSelect';
 import { SkeletonInvoiceView } from './SkeletonLoaders';
+import { HsnAutoSuggestSelector } from './HsnAutoSuggestSelector';
+import { inferCategoryFromItem } from '../data/hsnCategories';
 import {
   FileText,
   Plus,
@@ -119,6 +121,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   const [items, setItems] = useState<Array<{
     itemId?: string;
     itemName: string;
+    category?: string;
     description?: string;
     serialNumber?: string;
     warranty?: string;
@@ -132,6 +135,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   }>>([
     {
       itemName: '',
+      category: 'Electronics & Electricals',
       description: '',
       serialNumber: '',
       warranty: '',
@@ -292,10 +296,12 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
     const item = inventory.find((i) => String(i.id) === selectedItemId);
     const updated = [...items];
     if (item) {
+      const itemCategory = item.category || inferCategoryFromItem(item.name, item.description, item.hsnCode);
       updated[index] = {
         ...updated[index],
         itemId: selectedItemId,
         itemName: item.name,
+        category: itemCategory,
         description: item.description || updated[index].description || '',
         warranty: item.defaultWarranty || updated[index].warranty || '',
         hsnCode: item.hsnCode,
@@ -324,6 +330,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       ...items,
       {
         itemName: '',
+        category: 'Electronics & Electricals',
         description: '',
         serialNumber: '',
         warranty: '',
@@ -405,6 +412,10 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
     setItems([
       {
         itemName: '',
+        category: 'Electronics & Electricals',
+        description: '',
+        serialNumber: '',
+        warranty: '',
         hsnCode: '8536',
         quantity: 1,
         unit: 'PCS',
@@ -449,6 +460,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
         inv.items.map((it) => ({
           itemId: it.itemId ? String(it.itemId) : undefined,
           itemName: it.itemName,
+          category: it.category || inferCategoryFromItem(it.itemName, it.description, it.hsnCode),
           description: it.description || '',
           serialNumber: it.serialNumber || '',
           warranty: it.warranty || '',
@@ -465,6 +477,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       setItems([
         {
           itemName: 'Standard Supply / Goods',
+          category: 'IT & Software Services (SAC)',
           description: '',
           serialNumber: '',
           warranty: '',
@@ -544,6 +557,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       return {
         itemId: it.itemId ? parseInt(it.itemId) : undefined,
         itemName: it.itemName,
+        category: it.category || inferCategoryFromItem(it.itemName, it.description, it.hsnCode),
         description: it.description || '',
         serialNumber: it.serialNumber || '',
         warranty: it.warranty || '',
@@ -1376,7 +1390,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
 
               {/* Items Table */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Layers className="w-3.5 h-3.5 text-emerald-400" />
@@ -1385,11 +1399,15 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                     <span className="text-[11px] text-slate-500">
                       ({items.length} {items.length === 1 ? 'item' : 'items'})
                     </span>
+                    <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                      <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                      <span>HSN Auto-Suggestions Active</span>
+                    </span>
                   </div>
                   <button
                     type="button"
                     onClick={addItemRow}
-                    className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2.5 py-1 rounded-lg transition"
+                    className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2.5 py-1 rounded-lg transition self-start sm:self-auto"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add Item</span>
@@ -1435,24 +1453,50 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                             />
                           </div>
 
-                          {/* HSN/SAC */}
-                          <div className="col-span-4 sm:col-span-2">
-                            <label className="text-[10px] text-slate-500 block mb-1">HSN/SAC</label>
-                            <input
-                              type="text"
+                          {/* HSN/SAC with Auto-Suggestions based on product category */}
+                          <div className="col-span-6 sm:col-span-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                                <Hash className="w-3 h-3 text-emerald-400" />
+                                <span>HSN/SAC</span>
+                              </label>
+                              {it.category && (
+                                <span
+                                  className="text-[9px] text-emerald-400 font-semibold truncate max-w-[85px] px-1 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20"
+                                  title={`Category: ${it.category}`}
+                                >
+                                  {it.category.split('&')[0].trim()}
+                                </span>
+                              )}
+                            </div>
+                            <HsnAutoSuggestSelector
                               value={it.hsnCode}
-                              onChange={(e) => {
+                              onChange={(newCode, suggestedRate) => {
                                 const updated = [...items];
-                                updated[idx].hsnCode = e.target.value;
+                                updated[idx].hsnCode = newCode;
+                                if (suggestedRate !== undefined && !isTaxExemptSupply) {
+                                  if (updated[idx].gstRate === 18 || updated[idx].gstRate === 0) {
+                                    updated[idx].gstRate = suggestedRate;
+                                  }
+                                }
                                 setItems(updated);
                               }}
+                              itemName={it.itemName}
+                              itemDescription={it.description}
+                              category={it.category}
+                              onCategoryChange={(newCat) => {
+                                const updated = [...items];
+                                updated[idx].category = newCat;
+                                setItems(updated);
+                              }}
+                              invoices={invoices}
+                              inventory={inventory}
                               placeholder="8536"
-                              className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white font-mono"
                             />
                           </div>
 
                           {/* Qty & Unit */}
-                          <div className="col-span-4 sm:col-span-1">
+                          <div className="col-span-6 sm:col-span-1">
                             <label className="text-[10px] text-slate-500 block mb-1">Qty</label>
                             <input
                               type="number"

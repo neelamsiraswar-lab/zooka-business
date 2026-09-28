@@ -1,6 +1,6 @@
-export type SubscriptionPlanTier = 'starter' | 'professional' | 'enterprise' | string;
+export type SubscriptionPlanTier = 'free' | 'starter' | 'professional' | 'enterprise' | string;
 export type SubscriptionBillingCycle = 'monthly' | 'annual';
-export type SubscriptionStatus = 'active' | 'trial' | 'past_due' | 'suspended' | 'cancelled' | 'expired';
+export type SubscriptionStatus = 'active' | 'trial' | 'past_due' | 'suspended' | 'cancelled' | 'canceled' | 'expired';
 
 export interface ArchitecturalPillar {
   id: string;
@@ -96,6 +96,17 @@ export interface SubscriptionInvoice {
   pdfUrl?: string;
 }
 
+export interface RenewalReminderLog {
+  id: string;
+  date: string;
+  daysRemaining: number;
+  channel: 'in_app' | 'email' | 'whatsapp';
+  message: string;
+  plan: SubscriptionPlanTier;
+  billingCycle: SubscriptionBillingCycle;
+  amount: number;
+}
+
 export interface Workspace {
   id: string;
   numericId?: number;
@@ -145,6 +156,11 @@ export interface Workspace {
   currentPeriodEnd?: string;
   cancelAtPeriodEnd?: boolean;
   autoRenew?: boolean;
+  autoRenewReminderEnabled?: boolean;
+  renewalReminderEmail?: string;
+  renewalReminderDays?: number[];
+  lastRenewalReminderSentAt?: string;
+  renewalReminderLogs?: RenewalReminderLog[];
   maxUsers?: number;
   maxInvoicesPerMonth?: number;
   subscriptionInvoices?: SubscriptionInvoice[];
@@ -269,6 +285,7 @@ export interface InventoryItem {
   userId: number;
   workspaceId?: string;
   name: string;
+  category?: string;
   sku?: string;
   description?: string;
   defaultWarranty?: string;
@@ -286,6 +303,7 @@ export interface InvoiceItem {
   id?: number;
   itemId?: number;
   itemName: string;
+  category?: string;
   description?: string;
   serialNumber?: string;
   warranty?: string;
@@ -542,7 +560,8 @@ export type SettingsTab =
   | 'roles'
   | 'subscription'
   | 'whitelabel'
-  | 'migration';
+  | 'migration'
+  | 'cloudsql';
 
 export type HomepageSectionKey =
   | 'hero'

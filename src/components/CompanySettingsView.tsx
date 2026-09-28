@@ -59,6 +59,7 @@ import { LocalImageUploader } from './LocalImageUploader.tsx';
 import { WorkspaceSubscriptionView } from './WorkspaceSubscriptionView.tsx';
 import { TenantWhiteLabelSettings } from './TenantWhiteLabelSettings.tsx';
 import { BulkDataMigrationModal } from './BulkDataMigrationModal.tsx';
+import { CloudSqlSyncTab } from './CloudSqlSyncTab.tsx';
 import {
   hasPermission,
   isReadOnlyRole,
@@ -78,6 +79,7 @@ import {
   checkInvoiceNumberDuplicate,
   logActivity,
 } from '../db/dataService';
+import { canPerformTransactionalAction, getRenewalReminderEvaluation } from '../lib/subscriptionEnforcement';
 
 interface CompanySettingsViewProps {
   company: CompanyProfile | null;
@@ -87,6 +89,7 @@ interface CompanySettingsViewProps {
   initialSettingsTab?: SettingsTab;
   onSettingsTabChange?: (tab: SettingsTab) => void;
   workspace?: any;
+  onWorkspaceUpdated?: (ws: any) => void;
 }
 
 export const ALL_INDIAN_STATES = [
@@ -138,6 +141,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   initialSettingsTab,
   onSettingsTabChange,
   workspace,
+  onWorkspaceUpdated,
 }) => {
   const { getToken, profile, refreshProfile, signInAsUser } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialSettingsTab || 'general');
@@ -230,6 +234,13 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
   const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim() || !inviteName.trim()) return;
+
+    const seatCheck = canPerformTransactionalAction(workspace, 'invite_member', { membersCount: teamMembers.length });
+    if (!seatCheck.allowed) {
+      alert(seatCheck.message || 'Seat limit reached under the current subscription plan. Upgrade in Subscription & Plan tab.');
+      return;
+    }
+
     try {
       setInviting(true);
       const member = await createTeamMember({
@@ -992,6 +1003,12 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       badge: 'IMPORT',
     },
     {
+      id: 'cloudsql',
+      label: 'Cloud SQL PostgreSQL Sync',
+      icon: Server,
+      badge: 'PG-18',
+    },
+    {
       id: 'roles',
       label: 'Team & Security Roles',
       icon: Shield,
@@ -1001,7 +1018,7 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
       id: 'subscription',
       label: 'Subscription & Plan',
       icon: Sparkles,
-      badge: 'PRO',
+      badge: getRenewalReminderEvaluation(workspace).shouldShowReminder ? 'RENEW' : (workspace?.plan ? workspace.plan.toUpperCase() : 'PRO'),
     },
   ];
 
@@ -1145,11 +1162,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
             </div>
           </div>
         </div>
+      ) : activeTab === 'cloudsql' ? (
+        <CloudSqlSyncTab
+          company={company}
+          workspace={workspace}
+        />
       ) : activeTab === 'subscription' ? (
         <div className="animate-fade-in">
           <WorkspaceSubscriptionView
             workspace={workspace}
-            onSelectPlan={() => {}}
+            onWorkspaceUpdated={onWorkspaceUpdated}
           />
         </div>
       ) : activeTab !== 'roles' ? (
@@ -2990,11 +3012,6 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
               </div>
             )}
           </div>
-        )}
-
-        {/* Tab 7: Subscription & Billing */}
-        {activeTab === 'subscription' && (
-          <WorkspaceSubscriptionView />
         )}
 
       {/* Invite Modal */}

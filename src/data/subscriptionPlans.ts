@@ -139,8 +139,8 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     status: 'active',
     order: 2,
     monthlyPrice: 999,
-    annualPrice: 11988,
-    monthlyEquivalentAnnual: 999,
+    annualPrice: 9990,
+    monthlyEquivalentAnnual: 833,
     maxUsers: 2,
     maxInvoicesPerMonth: 150,
     maxLedgers: 250,
@@ -166,8 +166,8 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     status: 'active',
     order: 3,
     monthlyPrice: 2499,
-    annualPrice: 29988,
-    monthlyEquivalentAnnual: 2499,
+    annualPrice: 24990,
+    monthlyEquivalentAnnual: 2083,
     maxUsers: 10,
     maxInvoicesPerMonth: -1, // Unlimited
     maxLedgers: 5000,
@@ -193,8 +193,8 @@ export const SUBSCRIPTION_PLANS: Record<string, PlanTierConfig> = {
     status: 'active',
     order: 4,
     monthlyPrice: 5999,
-    annualPrice: 71988,
-    monthlyEquivalentAnnual: 5999,
+    annualPrice: 59990,
+    monthlyEquivalentAnnual: 4999,
     maxUsers: -1, // Unlimited
     maxInvoicesPerMonth: -1, // Unlimited
     maxLedgers: -1,

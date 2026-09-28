@@ -26,11 +26,13 @@ import {
   Zap,
   Building2,
   CheckCircle2,
+  BellRing,
 } from 'lucide-react';
 import { QuotaGaugesWidget } from './QuotaGaugesWidget';
 import { TenantSetupWizardModal } from './TenantSetupWizardModal';
 import { BulkDataMigrationModal } from './BulkDataMigrationModal';
 import { ProratedUpgradeModal } from './ProratedUpgradeModal';
+import { getRenewalReminderEvaluation } from '../lib/subscriptionEnforcement';
 
 interface DashboardViewProps {
   summary: FinancialSummary | null;
@@ -50,6 +52,7 @@ interface DashboardViewProps {
   onNavigateToInvoices?: () => void;
   onNavigateToPurchases?: () => void;
   onNavigateToCheques?: () => void;
+  onNavigateToSubscription?: () => void;
   onRefresh: () => void;
   loading: boolean;
 }
@@ -72,6 +75,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToInvoices,
   onNavigateToPurchases,
   onNavigateToCheques,
+  onNavigateToSubscription,
   onRefresh,
   loading,
 }) => {
@@ -206,6 +210,87 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       )}
+
+      {/* Workspace Subscription Auto-Renewal Reminder Notice */}
+      {(() => {
+        const reminder = getRenewalReminderEvaluation(workspace);
+        if (!reminder.shouldShowReminder) return null;
+
+        const isDanger = reminder.urgency === 'critical';
+        const isUrgent = reminder.urgency === 'urgent';
+        const isYearly = reminder.isYearly;
+
+        return (
+          <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg animate-fade-in ${
+            isDanger
+              ? 'bg-rose-950/80 border-rose-500/40 text-rose-200 shadow-rose-950/20'
+              : isUrgent
+              ? 'bg-amber-950/80 border-amber-500/40 text-amber-200 shadow-amber-950/20'
+              : 'bg-gradient-to-r from-slate-950 via-indigo-950/70 to-slate-900 border-indigo-500/40 text-indigo-200 shadow-indigo-950/20'
+          }`}>
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
+                <BellRing className={`w-5 h-5 ${isDanger ? 'text-rose-400' : isUrgent ? 'text-amber-400' : 'text-indigo-400'} animate-pulse`} />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-sm text-white">{reminder.title}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-black/40 text-slate-300 font-mono">
+                    {isYearly ? 'Annual Subscription' : 'Monthly Subscription'}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    reminder.daysRemaining <= 3
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}>
+                    {reminder.daysRemaining} days left
+                  </span>
+                  {isYearly && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Auto-Reminded
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  {reminder.message}
+                </p>
+                <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-0.5">
+                  <span>Scheduled Expiry / Rollover: <strong className="text-white">{reminder.renewalDateStr}</strong></span>
+                  <span>•</span>
+                  <span>Renewal Cost: <strong className="text-emerald-400 font-mono">{formatINR(reminder.renewalAmount)}</strong></span>
+                  {reminder.annualSavings > 0 && (
+                    <>
+                      <span>•</span>
+                      <span className="text-emerald-300">Savings: <strong>{formatINR(reminder.annualSavings)}/yr</strong></span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onNavigateToSubscription) {
+                    onNavigateToSubscription();
+                  } else {
+                    setIsUpgradeModalOpen(true);
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg cursor-pointer ${
+                  isDanger
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/30'
+                }`}
+              >
+                <span>Renew {isYearly ? 'Yearly' : 'Monthly'} Plan ({formatINR(reminder.renewalAmount)})</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Real-Time Quota Gauges & Resource Utilization Meters */}
       {workspace && (
@@ -720,9 +805,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         isOpen={isUpgradeModalOpen}
         onClose={() => setIsUpgradeModalOpen(false)}
         workspace={workspace || null}
-        onUpgradeSuccess={(newPlan) => {
-          if (workspace && onWorkspaceUpdated) {
-            onWorkspaceUpdated({ ...workspace, plan: newPlan, subscriptionStatus: 'active' });
+        onUpgradeSuccess={(updatedWs) => {
+          if (onWorkspaceUpdated) {
+            onWorkspaceUpdated(updatedWs);
           }
           onRefresh();
         }}

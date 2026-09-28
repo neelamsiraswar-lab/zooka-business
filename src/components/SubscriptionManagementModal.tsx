@@ -180,6 +180,8 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
         billingCycle: recordCycle,
         subscriptionStatus: 'active',
         status: 'active',
+        currentPeriodStart: newInvoice.periodStart || currentWs.currentPeriodStart,
+        currentPeriodEnd: newInvoice.periodEnd || currentWs.currentPeriodEnd,
         subscriptionInvoices: updatedInvoices,
       };
       setCurrentWs(updatedWs);

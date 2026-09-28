@@ -13,10 +13,16 @@ import {
   ShieldCheck,
   Building2,
   Sparkles,
+  Scale,
+  Coins,
+  CalendarCheck2,
+  Clock,
 } from 'lucide-react';
 import { Gstr2bReportView } from './Gstr2bReportView';
 import { Gstr1ReportView } from './Gstr1ReportView';
 import { Gstr3bReportView } from './Gstr3bReportView';
+import { GstrPreviousMonthComparisonView } from './GstrPreviousMonthComparisonView';
+import { GstrFilingDeadlineTracker } from './GstrFilingDeadlineTracker';
 import { ConsolidatedFinancialReportsView } from './ConsolidatedFinancialReportsView';
 
 interface ReportsViewProps {
@@ -34,7 +40,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   parties = [],
   company,
 }) => {
-  const [reportType, setReportType] = useState<'pnl' | 'gstr1' | 'gstr2b' | 'gstr3b' | 'balanceSheet' | 'consolidated'>('pnl');
+  const [reportType, setReportType] = useState<
+    'pnl' | 'gstr1' | 'gstr2b' | 'gstr3b' | 'gstrCompare' | 'deadlines' | 'balanceSheet' | 'consolidated'
+  >('pnl');
 
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
@@ -99,6 +107,22 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>GSTR-2B Active Statement</span>
             </button>
+          ) : reportType === 'gstrCompare' ? (
+            <button
+              onClick={() => setReportType('gstr3b')}
+              className="px-3.5 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span>Go to GSTR-3B Return</span>
+            </button>
+          ) : reportType === 'deadlines' ? (
+            <button
+              onClick={() => setReportType('gstr1')}
+              className="px-3.5 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Go to GSTR-1</span>
+            </button>
           ) : (
             <button
               onClick={handleExportGstr1}
@@ -122,6 +146,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           }`}
         >
           Trading & Profit & Loss
+        </button>
+
+        <button
+          onClick={() => setReportType('deadlines')}
+          className={`px-4 py-2 rounded-xl font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            reportType === 'deadlines'
+              ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+              : 'text-amber-400 hover:text-white bg-slate-900 border border-amber-500/30'
+          }`}
+        >
+          <CalendarCheck2 className="w-3.5 h-3.5" />
+          <span>Filing Deadlines</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+            Tracker
+          </span>
         </button>
 
         <button
@@ -158,6 +197,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </button>
 
         <button
+          onClick={() => setReportType('gstrCompare')}
+          className={`px-4 py-2 rounded-xl font-semibold transition cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+            reportType === 'gstrCompare'
+              ? 'bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-bold shadow-md shadow-emerald-500/20'
+              : 'text-emerald-400 hover:text-white bg-slate-900 border border-emerald-500/30'
+          }`}
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>GSTR MoM Comparison</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+            Trends
+          </span>
+        </button>
+
+        <button
           onClick={() => setReportType('balanceSheet')}
           className={`px-4 py-2 rounded-xl font-semibold transition cursor-pointer whitespace-nowrap ${
             reportType === 'balanceSheet'
@@ -184,7 +238,27 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </button>
       </div>
 
-      {/* 1. TRADING & PROFIT & LOSS VIEW */}
+      {/* GST Filing Deadline Tracker Ambient Spotlight on GSTR Reports */}
+      {['gstr1', 'gstr2b', 'gstr3b', 'gstrCompare'].includes(reportType) && (
+        <GstrFilingDeadlineTracker
+          company={company}
+          onNavigateToTab={(tab) => setReportType(tab)}
+          defaultExpanded={false}
+        />
+      )}
+
+      {/* 1. DEDICATED GST FILING DEADLINES & STATUTORY CALENDAR VIEW */}
+      {reportType === 'deadlines' && (
+        <div className="animate-fade-in space-y-4">
+          <GstrFilingDeadlineTracker
+            company={company}
+            onNavigateToTab={(tab) => setReportType(tab)}
+            defaultExpanded={true}
+          />
+        </div>
+      )}
+
+      {/* 2. TRADING & PROFIT & LOSS VIEW */}
       {reportType === 'pnl' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
           <div className="border-b border-slate-800 pb-4 flex justify-between items-center">
@@ -257,7 +331,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       {/* 2. GSTR-1 REPORT GENERATOR */}
       {reportType === 'gstr1' && (
         <div className="animate-fade-in">
-          <Gstr1ReportView invoices={invoices} company={company} />
+          <Gstr1ReportView
+            invoices={invoices}
+            company={company}
+            onNavigateToComparison={() => setReportType('gstrCompare')}
+          />
         </div>
       )}
 
@@ -287,7 +365,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
       )}
 
-      {/* 5. BALANCE SHEET REPORT */}
+      {/* 5. GSTR PREVIOUS MONTH COMPARISON VIEW */}
+      {reportType === 'gstrCompare' && (
+        <div className="animate-fade-in">
+          <GstrPreviousMonthComparisonView
+            invoices={invoices}
+            expenses={expenses}
+            parties={parties}
+            company={company}
+            onNavigateToGstr3b={() => setReportType('gstr3b')}
+            onNavigateToGstr1={() => setReportType('gstr1')}
+          />
+        </div>
+      )}
+
+      {/* 6. BALANCE SHEET REPORT */}
       {reportType === 'balanceSheet' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
           <div className="border-b border-slate-800 pb-3">

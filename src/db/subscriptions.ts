@@ -6,6 +6,7 @@ import {
   SubscriptionBillingCycle,
   SubscriptionStatus,
   SubscriptionInvoice,
+  RenewalReminderLog,
 } from '../types';
 import { logActivity } from './dataService';
 import { getPlanConfig, calculateSubscriptionCost } from '../data/subscriptionPlans';
@@ -201,8 +202,22 @@ export async function recordSubscriptionInvoice(params: {
   const currentSeqNum = baseNum + (seq - 1);
   const invoiceNumber = `${prefix}/${suffix}/${String(currentSeqNum).padStart(padding, '0')}`;
 
-  const periodStart = now.toISOString();
-  const periodEnd = new Date(now);
+  // Fetch workspace to determine intelligent date extension
+  const wsRef = db.collection(COLLECTIONS.WORKSPACES).doc(workspaceId);
+  const snap = await wsRef.get();
+  const existingWs = snap.exists ? (snap.data() as Workspace) : null;
+
+  let baseDate = now;
+  // If renewing current active plan before expiry, extend from existing currentPeriodEnd!
+  if (existingWs?.currentPeriodEnd && (existingWs.plan === plan || !existingWs.plan)) {
+    const existingEndMs = new Date(existingWs.currentPeriodEnd).getTime();
+    if (existingEndMs > now.getTime()) {
+      baseDate = new Date(existingEndMs);
+    }
+  }
+
+  const periodStart = baseDate === now ? now.toISOString() : (existingWs?.currentPeriodStart || now.toISOString());
+  const periodEnd = new Date(baseDate);
   if (billingCycle === 'annual') {
     periodEnd.setFullYear(periodEnd.getFullYear() + 1);
   } else {
@@ -229,20 +244,18 @@ export async function recordSubscriptionInvoice(params: {
     transactionReference,
     periodStart,
     periodEnd: periodEnd.toISOString(),
-    notes: notes || `Subscription renewal for ${getPlanConfig(plan).name} (${billingCycle})`,
+    notes: notes || `Subscription payment for ${getPlanConfig(plan).name} (${billingCycle === 'annual' ? 'Yearly' : 'Monthly'})`,
   };
 
   // Persist to subscription_invoices collection
   await db.collection('subscription_invoices').doc(newInvoice.id).set(newInvoice);
 
   // Update workspace subscription dates and push to local invoice list
-  const wsRef = db.collection(COLLECTIONS.WORKSPACES).doc(workspaceId);
-  const snap = await wsRef.get();
-  if (snap.exists) {
-    const ws = snap.data() as Workspace;
-    const currentInvoices = ws.subscriptionInvoices || [];
+  if (existingWs) {
+    const currentInvoices = existingWs.subscriptionInvoices || [];
     const updatedInvoices = [newInvoice, ...currentInvoices].slice(0, 50);
 
+    const planConfig = getPlanConfig(plan);
     await wsRef.update({
       plan,
       billingCycle,
@@ -250,7 +263,10 @@ export async function recordSubscriptionInvoice(params: {
       status: 'active',
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd.toISOString(),
+      maxUsers: planConfig.maxUsers,
+      maxInvoicesPerMonth: planConfig.maxInvoicesPerMonth,
       subscriptionInvoices: updatedInvoices,
+      autoRenewReminderEnabled: existingWs.autoRenewReminderEnabled ?? true,
       updatedAt: now.toISOString(),
     });
   }
@@ -261,10 +277,111 @@ export async function recordSubscriptionInvoice(params: {
     'RECORD_SUBSCRIPTION_INVOICE',
     'subscription_invoice',
     newInvoice.id,
-    `Generated Subscription Tax Invoice #${invoiceNumber} for ₹${cost.totalAmount.toLocaleString('en-IN')} (Plan: ${plan.toUpperCase()})`
+    `Generated Subscription Tax Invoice #${invoiceNumber} for ₹${cost.totalAmount.toLocaleString('en-IN')} (${plan.toUpperCase()} - ${billingCycle.toUpperCase()})`
   );
 
   return newInvoice;
+}
+
+/**
+ * Dispatch an auto-renewal reminder to the workspace
+ */
+export async function sendWorkspaceRenewalReminder(
+  workspaceId: string,
+  channel: 'in_app' | 'email' | 'whatsapp' = 'email',
+  senderEmail: string = 'nawarkuldeep@gmail.com'
+): Promise<{ success: boolean; log: RenewalReminderLog; updatedWorkspace: Workspace }> {
+  const wsRef = db.collection(COLLECTIONS.WORKSPACES).doc(workspaceId);
+  const snap = await wsRef.get();
+  if (!snap.exists) throw new Error(`Workspace ${workspaceId} not found`);
+
+  const ws = snap.data() as Workspace;
+  const planConfig = getPlanConfig(ws.plan || 'professional');
+  const cost = calculateSubscriptionCost(ws.plan || 'professional', ws.billingCycle || 'annual');
+  const now = new Date();
+
+  let daysRemaining = 30;
+  if (ws.currentPeriodEnd) {
+    const diff = new Date(ws.currentPeriodEnd).getTime() - now.getTime();
+    daysRemaining = Math.max(0, Math.ceil(diff / 86400000));
+  }
+
+  const destination = ws.renewalReminderEmail || ws.ownerEmail || ws.email || 'workspace team';
+  const cycleLabel = ws.billingCycle === 'annual' ? 'Annual (Yearly)' : 'Monthly';
+
+  const log: RenewalReminderLog = {
+    id: `rem-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+    date: now.toISOString(),
+    daysRemaining,
+    channel,
+    plan: ws.plan || 'professional',
+    billingCycle: ws.billingCycle || 'annual',
+    amount: cost.totalAmount,
+    message: `Auto-Renewal Reminder: Your ${cycleLabel} ${planConfig.name} plan renews in ${daysRemaining} day(s) for ₹${cost.totalAmount.toLocaleString('en-IN')}. Sent to ${destination}.`,
+  };
+
+  const updatedLogs = [log, ...(ws.renewalReminderLogs || [])].slice(0, 20);
+  const updatedFields: Partial<Workspace> = {
+    lastRenewalReminderSentAt: now.toISOString(),
+    renewalReminderLogs: updatedLogs,
+    updatedAt: now.toISOString(),
+  };
+
+  await wsRef.update(updatedFields);
+  await logActivity(
+    1,
+    senderEmail,
+    'SEND_SUBSCRIPTION_RENEWAL_REMINDER',
+    'workspace',
+    workspaceId,
+    `Dispatched ${cycleLabel} renewal reminder for "${ws.businessName || ws.name}" (${daysRemaining}d remaining, ₹${cost.totalAmount.toLocaleString('en-IN')}) via ${channel}`
+  );
+
+  const updatedWorkspace: Workspace = {
+    ...ws,
+    ...updatedFields,
+  };
+
+  return { success: true, log, updatedWorkspace };
+}
+
+/**
+ * Update auto-renewal and reminder preferences for a workspace
+ */
+export async function updateWorkspaceRenewalPreferences(
+  workspaceId: string,
+  preferences: {
+    autoRenew?: boolean;
+    autoRenewReminderEnabled?: boolean;
+    renewalReminderEmail?: string;
+    renewalReminderDays?: number[];
+  },
+  updaterEmail: string = 'nawarkuldeep@gmail.com'
+): Promise<Workspace> {
+  const wsRef = db.collection(COLLECTIONS.WORKSPACES).doc(workspaceId);
+  const snap = await wsRef.get();
+  if (!snap.exists) throw new Error(`Workspace ${workspaceId} not found`);
+
+  const ws = snap.data() as Workspace;
+  const updatedFields: Partial<Workspace> = {
+    ...preferences,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await wsRef.update(updatedFields);
+  await logActivity(
+    1,
+    updaterEmail,
+    'UPDATE_RENEWAL_PREFERENCES',
+    'workspace',
+    workspaceId,
+    `Updated subscription auto-renewal and reminder preferences for "${ws.name}"`
+  );
+
+  return {
+    ...ws,
+    ...updatedFields,
+  };
 }
 
 /**

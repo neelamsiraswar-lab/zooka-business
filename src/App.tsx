@@ -31,6 +31,7 @@ import {
   ChequeBook,
   BankStatement,
   Workspace,
+  SettingsTab,
 } from './types';
 import { RefreshCw, AlertCircle, Menu, ShieldAlert, Eye } from 'lucide-react';
 import { SubscriptionBanner } from './components/SubscriptionBanner';
@@ -229,7 +230,7 @@ export default function App() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
-  const [initialSettingsSubTab, setInitialSettingsSubTab] = useState<'general' | 'numbering' | 'design' | 'banking' | 'terms' | 'roles' | 'subscription'>('general');
+  const [initialSettingsSubTab, setInitialSettingsSubTab] = useState<SettingsTab>('general');
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -317,7 +318,7 @@ export default function App() {
     } else {
       isFetchingDataRef.current = false;
       await loadData(false);
-      dialog.toast.success('Double-Entry books & accounts synchronized with Cloud database');
+      dialog.toast.success('Double-Entry books & accounts synchronized with Cloud Firestore & Cloud SQL PostgreSQL');
     }
   };
 
@@ -348,7 +349,7 @@ export default function App() {
   const handleSaveInvoice = async (invoicePayload: any, invoiceId?: number) => {
     // Subscription enforcement check for new voucher creation
     if (!invoiceId) {
-      const check = canPerformTransactionalAction(activeWorkspace, 'create_invoice');
+      const check = canPerformTransactionalAction(activeWorkspace, 'create_invoice', { invoicesCount: invoices.length });
       if (!check.allowed) {
         dialog.alert({
           title: 'Subscription Locked',
@@ -1051,6 +1052,10 @@ export default function App() {
               onNavigateToInvoices={() => setActiveTab('sales')}
               onNavigateToPurchases={() => setActiveTab('purchases')}
               onNavigateToCheques={() => setActiveTab('cheques')}
+              onNavigateToSubscription={() => {
+                setInitialSettingsSubTab('subscription');
+                setActiveTab('settings');
+              }}
               onRefresh={handleManualSync}
               loading={dataLoading}
             />
@@ -1240,6 +1245,9 @@ export default function App() {
               onClearMasterLedger={handleClearMasterLedger}
               loading={dataLoading}
               initialSettingsTab={initialSettingsSubTab}
+              onWorkspaceUpdated={(updatedWs) => {
+                setActiveWorkspace(updatedWs);
+              }}
             />
           )}
         </main>
@@ -1248,9 +1256,9 @@ export default function App() {
         <footer className="bg-slate-900/80 border-t border-slate-800/80 text-[11px] text-slate-400 px-4 sm:px-6 py-2 mt-auto transition-colors">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-3">
-              <span className="font-mono text-emerald-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                Cloud Synced
+              <span className="font-mono text-emerald-400 flex items-center gap-1.5" title="Google Cloud Firestore & Cloud SQL PostgreSQL (us-west1) Synchronized">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Cloud SQL &amp; Firestore Synced
               </span>
               <span className="text-slate-700">|</span>
               <button

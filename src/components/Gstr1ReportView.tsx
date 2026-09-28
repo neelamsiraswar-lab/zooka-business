@@ -24,14 +24,16 @@ import {
   AlertCircle,
   HelpCircle,
   FileText,
+  Scale,
 } from 'lucide-react';
 
 interface Gstr1ReportViewProps {
   invoices: Invoice[];
   company?: CompanyProfile | null;
+  onNavigateToComparison?: () => void;
 }
 
-export const Gstr1ReportView: React.FC<Gstr1ReportViewProps> = ({ invoices, company }) => {
+export const Gstr1ReportView: React.FC<Gstr1ReportViewProps> = ({ invoices, company, onNavigateToComparison }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'b2b' | 'b2c' | 'exports' | 'hsn' | 'pos'>('all');
   const [periodPreset, setPeriodPreset] = useState<'all' | 'this_month' | 'prev_month' | 'q2' | 'fy'>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -316,6 +318,16 @@ Table Breakdown:
               <Download className="w-3.5 h-3.5" />
               <span>Portal JSON</span>
             </button>
+            {onNavigateToComparison && (
+              <button
+                onClick={onNavigateToComparison}
+                className="px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                title="Compare with Previous Month Tax Liabilities"
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>Compare MoM</span>
+              </button>
+            )}
             <button
               onClick={handleExportCsv}
               className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"

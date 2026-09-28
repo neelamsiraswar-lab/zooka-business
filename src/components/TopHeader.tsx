@@ -270,7 +270,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           type="button"
           id="header-refresh-sync-btn"
           onClick={onRefresh}
-          title={`Sync books now with Cloud Firestore | Status: ${!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Online & Synchronized'}`}
+          title={`Sync books now with Cloud Firestore & Cloud SQL PostgreSQL (us-west1) | Status: ${!isOnline ? 'Offline' : dataLoading ? 'Syncing...' : 'Online & Synchronized'}`}
           className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin text-amber-400' : 'text-slate-400 hover:text-emerald-400'}`} />
