@@ -41,10 +41,10 @@ export const SubscriptionReceiptModal: React.FC<SubscriptionReceiptModalProps> =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8 max-h-[90vh]">
+    <div className="printable-modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto print:bg-white print:p-0 print:static print:overflow-visible print:inset-auto print:block print:w-full print:h-auto">
+      <div className="printable-invoice-container relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8 max-h-[90vh] print:bg-white print:text-slate-950 print:border-none print:shadow-none print:m-0 print:w-full print:max-h-none print:p-0 print:rounded-none print:block">
         {/* Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60 print:hidden">
           <div className="flex items-center gap-2 text-indigo-400 font-semibold text-sm">
             <ShieldCheck className="w-4 h-4 text-indigo-400" />
             <span>Tax Invoice / Subscription Receipt</span>
@@ -67,7 +67,7 @@ export const SubscriptionReceiptModal: React.FC<SubscriptionReceiptModalProps> =
         </div>
 
         {/* Printable Receipt Body */}
-        <div ref={printableRef} className="p-6 sm:p-8 overflow-y-auto space-y-6 text-slate-200 text-xs bg-slate-900">
+        <div ref={printableRef} className="p-6 sm:p-8 overflow-y-auto space-y-6 text-slate-200 text-xs bg-slate-900 print:bg-white print:text-slate-900 print:p-0 print:overflow-visible print:space-y-4 print-only-target">
           {/* Top Brand & Invoice Title */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-800">
             <div>

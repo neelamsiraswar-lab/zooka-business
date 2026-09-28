@@ -941,6 +941,19 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                           <Eye className="w-3.5 h-3.5 text-slate-400" />
                           <span className="hidden md:inline">View</span>
                         </button>
+                        <button
+                          onClick={() => {
+                            setSelectedInvoice(inv);
+                            setTimeout(() => {
+                              window.print();
+                            }, 50);
+                          }}
+                          title="Direct Print Tax Invoice"
+                          className="px-2 py-1 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg text-xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="hidden lg:inline">Print</span>
+                        </button>
                         {canEdit && (
                           <button
                             onClick={() => openEditModal(inv)}
@@ -1999,7 +2012,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
             </div>
 
             {/* Printable Tax Invoice Layout configured with Sale Invoice Design */}
-            <div className="overflow-x-auto flex-1 overflow-y-auto pr-1">
+            <div className="overflow-x-auto flex-1 overflow-y-auto pr-1 print:overflow-visible print:p-0 print-only-target">
               <InvoiceTemplateRenderer
                 invoice={selectedInvoice}
                 company={previewTemplate ? { ...(company || {}), invoiceDesignTemplate: previewTemplate } as any : company}

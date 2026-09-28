@@ -283,12 +283,50 @@ export const COMPARISON_FEATURES: PlanFeature[] = [
   },
 ];
 
+// In-memory and localStorage plan registry cache for live SuperAdmin configuration
+let _cachedCustomPlans: PlanTierConfig[] | null = null;
+
+export function setCachedSubscriptionPlans(plans: PlanTierConfig[]): void {
+  if (Array.isArray(plans) && plans.length > 0) {
+    _cachedCustomPlans = plans;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('cached_subscription_plans', JSON.stringify(plans));
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+}
+
+export function getCachedSubscriptionPlans(): PlanTierConfig[] {
+  if (_cachedCustomPlans && _cachedCustomPlans.length > 0) {
+    return _cachedCustomPlans;
+  }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem('cached_subscription_plans');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          _cachedCustomPlans = parsed;
+          return parsed;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_BUILTIN_PLANS;
+}
+
 export function getPlanConfig(tier: string, customPlans?: PlanTierConfig[]): PlanTierConfig {
-  if (customPlans && customPlans.length > 0) {
-    const found = customPlans.find((p) => p.id === tier);
+  const list = customPlans && customPlans.length > 0 ? customPlans : getCachedSubscriptionPlans();
+  if (list && list.length > 0) {
+    const found = list.find((p) => p.id === tier);
     if (found) return found;
   }
-  return SUBSCRIPTION_PLANS[tier] || SUBSCRIPTION_PLANS.professional;
+  return SUBSCRIPTION_PLANS[tier] || SUBSCRIPTION_PLANS.professional || DEFAULT_BUILTIN_PLANS[0];
 }
 
 export function calculateSubscriptionCost(
@@ -305,12 +343,14 @@ export function calculateSubscriptionCost(
 } {
   const plan = getPlanConfig(planTier, customPlans);
   const isAnnual = cycle === 'annual';
-  const baseAmount = isAnnual ? plan.annualPrice : plan.monthlyPrice;
-  const gstRate = 18; // 18% standard GST for B2B SaaS
+  const rawMonthly = Number(plan.monthlyPrice) || 0;
+  const rawAnnual = Number(plan.annualPrice) || (rawMonthly * 12);
+  const baseAmount = isAnnual ? rawAnnual : rawMonthly;
+  const gstRate = 18; // 18% standard GST for B2B SaaS (SAC 998315)
   const gstAmount = Math.round((baseAmount * gstRate) / 100);
   const totalAmount = baseAmount + gstAmount;
-  const monthlyEquivalent = isAnnual ? Math.round(plan.annualPrice / 12) : plan.monthlyPrice;
-  const annualSavings = isAnnual ? (plan.monthlyPrice * 12) - plan.annualPrice : 0;
+  const monthlyEquivalent = isAnnual ? Math.round(rawAnnual / 12) : rawMonthly;
+  const annualSavings = isAnnual ? Math.max(0, (rawMonthly * 12) - rawAnnual) : 0;
 
   return {
     baseAmount,

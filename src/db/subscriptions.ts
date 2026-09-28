@@ -9,7 +9,27 @@ import {
   RenewalReminderLog,
 } from '../types';
 import { logActivity } from './dataService';
-import { getPlanConfig, calculateSubscriptionCost } from '../data/subscriptionPlans';
+import {
+  PlanTierConfig,
+  getPlanConfig,
+  calculateSubscriptionCost,
+  getCachedSubscriptionPlans,
+} from '../data/subscriptionPlans';
+import { getAllSubscriptionPlans } from './subscriptionPlans';
+
+/**
+ * Helper to get available plans asynchronously with fallback
+ */
+async function getEffectivePlans(passedPlans?: PlanTierConfig[]): Promise<PlanTierConfig[]> {
+  if (passedPlans && passedPlans.length > 0) return passedPlans;
+  try {
+    const fetched = await getAllSubscriptionPlans();
+    if (fetched && fetched.length > 0) return fetched;
+  } catch {
+    // fallback
+  }
+  return getCachedSubscriptionPlans();
+}
 
 /**
  * Update the subscription tier and billing cycle for a workspace
@@ -18,7 +38,8 @@ export async function updateSubscriptionPlan(
   workspaceId: string,
   plan: SubscriptionPlanTier,
   billingCycle: SubscriptionBillingCycle,
-  updaterEmail: string = 'nawarkuldeep@gmail.com'
+  updaterEmail: string = 'nawarkuldeep@gmail.com',
+  availablePlans?: PlanTierConfig[]
 ): Promise<Workspace> {
   const wsRef = db.collection(COLLECTIONS.WORKSPACES).doc(workspaceId);
   const snap = await wsRef.get();
@@ -28,7 +49,8 @@ export async function updateSubscriptionPlan(
   }
 
   const existing = snap.data() as Workspace;
-  const planConfig = getPlanConfig(plan);
+  const plans = await getEffectivePlans(availablePlans);
+  const planConfig = getPlanConfig(plan, plans);
   const now = new Date();
   
   // Calculate new period end based on cycle
@@ -175,6 +197,7 @@ export async function recordSubscriptionInvoice(params: {
   baseAmountOverride?: number;
   taxAmountOverride?: number;
   totalAmountOverride?: number;
+  availablePlans?: PlanTierConfig[];
 }): Promise<SubscriptionInvoice> {
   const {
     workspaceId,
@@ -187,9 +210,12 @@ export async function recordSubscriptionInvoice(params: {
     baseAmountOverride,
     taxAmountOverride,
     totalAmountOverride,
+    availablePlans,
   } = params;
 
-  const cost = calculateSubscriptionCost(plan, billingCycle);
+  const plans = await getEffectivePlans(availablePlans);
+  const cost = calculateSubscriptionCost(plan, billingCycle, plans);
+  const planConfig = getPlanConfig(plan, plans);
   const seq = await getNextSequenceId('sub_invoice_seq');
   const now = new Date();
   
@@ -244,7 +270,7 @@ export async function recordSubscriptionInvoice(params: {
     transactionReference,
     periodStart,
     periodEnd: periodEnd.toISOString(),
-    notes: notes || `Subscription payment for ${getPlanConfig(plan).name} (${billingCycle === 'annual' ? 'Yearly' : 'Monthly'})`,
+    notes: notes || `Subscription payment for ${planConfig.name} (${billingCycle === 'annual' ? 'Yearly' : 'Monthly'})`,
   };
 
   // Persist to subscription_invoices collection
@@ -255,7 +281,6 @@ export async function recordSubscriptionInvoice(params: {
     const currentInvoices = existingWs.subscriptionInvoices || [];
     const updatedInvoices = [newInvoice, ...currentInvoices].slice(0, 50);
 
-    const planConfig = getPlanConfig(plan);
     await wsRef.update({
       plan,
       billingCycle,
@@ -277,7 +302,7 @@ export async function recordSubscriptionInvoice(params: {
     'RECORD_SUBSCRIPTION_INVOICE',
     'subscription_invoice',
     newInvoice.id,
-    `Generated Subscription Tax Invoice #${invoiceNumber} for ₹${cost.totalAmount.toLocaleString('en-IN')} (${plan.toUpperCase()} - ${billingCycle.toUpperCase()})`
+    `Generated Subscription Tax Invoice #${invoiceNumber} for ₹${finalTotalAmount.toLocaleString('en-IN')} (${plan.toUpperCase()} - ${billingCycle.toUpperCase()})`
   );
 
   return newInvoice;
@@ -289,15 +314,17 @@ export async function recordSubscriptionInvoice(params: {
 export async function sendWorkspaceRenewalReminder(
   workspaceId: string,
   channel: 'in_app' | 'email' | 'whatsapp' = 'email',
-  senderEmail: string = 'nawarkuldeep@gmail.com'
+  senderEmail: string = 'nawarkuldeep@gmail.com',
+  availablePlans?: PlanTierConfig[]
 ): Promise<{ success: boolean; log: RenewalReminderLog; updatedWorkspace: Workspace }> {
   const wsRef = db.collection(COLLECTIONS.WORKSPACES).doc(workspaceId);
   const snap = await wsRef.get();
   if (!snap.exists) throw new Error(`Workspace ${workspaceId} not found`);
 
   const ws = snap.data() as Workspace;
-  const planConfig = getPlanConfig(ws.plan || 'professional');
-  const cost = calculateSubscriptionCost(ws.plan || 'professional', ws.billingCycle || 'annual');
+  const plans = await getEffectivePlans(availablePlans);
+  const planConfig = getPlanConfig(ws.plan || 'professional', plans);
+  const cost = calculateSubscriptionCost(ws.plan || 'professional', ws.billingCycle || 'annual', plans);
   const now = new Date();
 
   let daysRemaining = 30;

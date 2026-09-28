@@ -933,7 +933,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+      <div id="main-content-wrapper" className="flex-1 flex flex-col min-w-0 min-h-screen">
         {/* Top Header Bar */}
         <TopHeader
           isCollapsed={sidebarCollapsed}

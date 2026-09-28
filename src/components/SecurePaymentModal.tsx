@@ -36,8 +36,10 @@ import {
   DEFAULT_BUILTIN_PLANS,
   getPlanConfig,
   calculateSubscriptionCost,
+  getCachedSubscriptionPlans,
 } from '../data/subscriptionPlans';
 import { recordSubscriptionInvoice } from '../db/subscriptions';
+import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { logActivity } from '../db/dataService';
 
 interface SecurePaymentModalProps {
@@ -56,9 +58,44 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
   workspace,
   initialPlan,
   initialCycle,
-  availablePlans = DEFAULT_BUILTIN_PLANS,
+  availablePlans,
   onPaymentSuccess,
 }) => {
+  // Live Plans List State
+  const [plansList, setPlansList] = useState<PlanTierConfig[]>(
+    availablePlans && availablePlans.length > 0 ? availablePlans : getCachedSubscriptionPlans()
+  );
+
+  // Sync and fetch plans from Firestore dynamically
+  useEffect(() => {
+    if (availablePlans && availablePlans.length > 0) {
+      setPlansList(availablePlans);
+    } else {
+      getAllSubscriptionPlans()
+        .then((res) => {
+          if (res && res.length > 0) setPlansList(res);
+        })
+        .catch(console.warn);
+    }
+
+    const handlePlansUpdated = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail) && e.detail.length > 0) {
+        setPlansList(e.detail);
+      } else {
+        getAllSubscriptionPlans()
+          .then((res) => {
+            if (res && res.length > 0) setPlansList(res);
+          })
+          .catch(console.warn);
+      }
+    };
+
+    window.addEventListener('subscription_plans_updated', handlePlansUpdated);
+    return () => {
+      window.removeEventListener('subscription_plans_updated', handlePlansUpdated);
+    };
+  }, [availablePlans, isOpen]);
+
   // Selected Plan & Billing Cycle (Monthly or Yearly)
   const [selectedPlanTier, setSelectedPlanTier] = useState<SubscriptionPlanTier>(
     initialPlan || (workspace?.plan as SubscriptionPlanTier) || 'professional'
@@ -98,8 +135,8 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
   if (!isOpen || !workspace) return null;
 
   // Pricing & Checkout Summary calculation
-  const planConfig = getPlanConfig(selectedPlanTier, availablePlans);
-  const cost = calculateSubscriptionCost(selectedPlanTier, billingCycle, availablePlans);
+  const planConfig = getPlanConfig(selectedPlanTier, plansList);
+  const cost = calculateSubscriptionCost(selectedPlanTier, billingCycle, plansList);
 
   // Calculate projected validity dates
   const now = new Date();
@@ -172,6 +209,7 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
         transactionReference: txnRef,
         notes: `Secure payment checkout for ${workspace.businessName || workspace.name} - ${planConfig.name} (${billingCycle === 'annual' ? 'Yearly' : 'Monthly'})`,
         creatorEmail: workspace.ownerEmail || 'nawarkuldeep@gmail.com',
+        availablePlans: plansList,
       });
 
       setProcessingStep('Activating workspace entitlements...');
@@ -397,7 +435,7 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {availablePlans
+              {plansList
                 .filter((p) => p.status !== 'archived')
                 .map((plan) => {
                   const isSelected = selectedPlanTier === plan.id;

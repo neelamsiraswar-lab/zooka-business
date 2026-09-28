@@ -1,8 +1,24 @@
 // src/db/subscriptionPlans.ts
 import { db, COLLECTIONS } from './index';
-import { PlanTierConfig, DEFAULT_BUILTIN_PLANS, PLAN_COLOR_PRESETS } from '../data/subscriptionPlans';
+import {
+  PlanTierConfig,
+  DEFAULT_BUILTIN_PLANS,
+  PLAN_COLOR_PRESETS,
+  setCachedSubscriptionPlans,
+} from '../data/subscriptionPlans';
 import { logActivity } from './dataService';
 import { auth } from '../lib/firebase';
+
+function dispatchPlansUpdated(plans: PlanTierConfig[]) {
+  setCachedSubscriptionPlans(plans);
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('subscription_plans_updated', { detail: plans }));
+    } catch {
+      // ignore
+    }
+  }
+}
 
 enum OperationType {
   CREATE = 'create',
@@ -114,6 +130,7 @@ export async function getAllSubscriptionPlans(): Promise<PlanTierConfig[]> {
       return (a.monthlyPrice || 0) - (b.monthlyPrice || 0);
     });
 
+    dispatchPlansUpdated(plans);
     return plans;
   } catch (err) {
     console.warn('getAllSubscriptionPlans encountered an error, using defaults:', err);
@@ -203,6 +220,9 @@ export async function createSubscriptionPlan(
     } catch (e) {
       console.warn('Failed to log activity:', e);
     }
+
+    // Refresh and broadcast all plans
+    getAllSubscriptionPlans().catch(console.warn);
 
     return newPlan;
   } catch (err) {
@@ -301,6 +321,9 @@ export async function updateSubscriptionPlan(
       console.warn('Failed to log activity:', e);
     }
 
+    // Refresh and broadcast all plans
+    getAllSubscriptionPlans().catch(console.warn);
+
     return cleanUpdates;
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
@@ -357,6 +380,9 @@ export async function deleteSubscriptionPlan(
     } catch (e) {
       console.warn('Failed to log activity:', e);
     }
+
+    // Refresh and broadcast all plans
+    getAllSubscriptionPlans().catch(console.warn);
 
     return true;
   } catch (err) {

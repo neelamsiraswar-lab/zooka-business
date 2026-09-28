@@ -27,9 +27,11 @@ import {
   formatINR,
   DEFAULT_BUILTIN_PLANS,
   getPlanConfig,
+  getCachedSubscriptionPlans,
 } from '../data/subscriptionPlans';
 import { calculateProratedSubscription } from '../lib/prorationCalculator';
 import { recordSubscriptionInvoice } from '../db/subscriptions';
+import { getAllSubscriptionPlans } from '../db/subscriptionPlans';
 import { updateWorkspace } from '../db/workspaces';
 import { logActivity } from '../db/dataService';
 
@@ -47,9 +49,42 @@ export const ProratedUpgradeModal: React.FC<ProratedUpgradeModalProps> = ({
   onClose,
   workspace,
   targetPlan,
-  availablePlans = DEFAULT_BUILTIN_PLANS,
+  availablePlans,
   onUpgradeSuccess,
 }) => {
+  const [plansList, setPlansList] = useState<PlanTierConfig[]>(
+    availablePlans && availablePlans.length > 0 ? availablePlans : getCachedSubscriptionPlans()
+  );
+
+  useEffect(() => {
+    if (availablePlans && availablePlans.length > 0) {
+      setPlansList(availablePlans);
+    } else {
+      getAllSubscriptionPlans()
+        .then((res) => {
+          if (res && res.length > 0) setPlansList(res);
+        })
+        .catch(console.warn);
+    }
+
+    const handlePlansUpdated = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail) && e.detail.length > 0) {
+        setPlansList(e.detail);
+      } else {
+        getAllSubscriptionPlans()
+          .then((res) => {
+            if (res && res.length > 0) setPlansList(res);
+          })
+          .catch(console.warn);
+      }
+    };
+
+    window.addEventListener('subscription_plans_updated', handlePlansUpdated);
+    return () => {
+      window.removeEventListener('subscription_plans_updated', handlePlansUpdated);
+    };
+  }, [availablePlans, isOpen]);
+
   const currentPlanTier = (workspace?.plan || 'starter') as SubscriptionPlanTier;
   const currentCycle = (workspace?.billingCycle || 'annual') as SubscriptionBillingCycle;
 
@@ -83,11 +118,10 @@ export const ProratedUpgradeModal: React.FC<ProratedUpgradeModalProps> = ({
     workspace,
     targetTier,
     targetCycle,
-    availablePlans
+    plansList
   );
 
-  const selectedPlanConfig =
-    availablePlans.find((p) => p.id === targetTier) || getPlanConfig(targetTier);
+  const selectedPlanConfig = getPlanConfig(targetTier, plansList);
 
   const handleConfirmSwitch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,6 +149,7 @@ export const ProratedUpgradeModal: React.FC<ProratedUpgradeModalProps> = ({
         baseAmountOverride: proration.netProratedBase,
         taxAmountOverride: proration.gstAmount,
         totalAmountOverride: proration.totalNetPayable,
+        availablePlans: plansList,
       });
 
       // 2. Update workspace limits and active plan

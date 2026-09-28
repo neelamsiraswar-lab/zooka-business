@@ -107,9 +107,26 @@
     background-color: #ffffff !important;
   }
 
-  /* Hide app chrome: sidebar, top headers, action buttons, notifications */
-  nav, header, aside, .print\:hidden, [class*="print:hidden"], 
+  /* Hide app chrome: sidebar, top headers, action buttons, notifications, footers, banners */
+  nav, header, aside, footer, .print\:hidden, [class*="print:hidden"], 
   button, .no-print, #create-sales-invoice-btn, #record-purchase-bill-btn {
+    display: none !important;
+  }
+
+  /* When an invoice or slip modal is active during print, completely hide the background dashboard / main views */
+  body:has(.printable-modal-backdrop) main,
+  body:has(.printable-modal-backdrop) #main-content-wrapper > *:not(.printable-modal-backdrop),
+  body:has(.printable-modal-backdrop) .space-y-6 > *:not(.printable-modal-backdrop) {
+    display: none !important;
+  }
+
+  /* Fallback: hide the underlying invoice tables & controls when modal is open in InvoiceView */
+  .printable-modal-backdrop ~ * {
+    display: none !important;
+  }
+
+  /* Hide table listings, headers and KPI metric cards when printing inside InvoiceView / ReceiptPaymentView */
+  .space-y-6:has(.printable-modal-backdrop) > *:not(.printable-modal-backdrop) {
     display: none !important;
   }
 
@@ -145,6 +162,20 @@
     max-height: none !important;
     overflow: visible !important;
     display: block !important;
+  }
+
+  /* Scrollable wrappers inside modal should not clip in print */
+  .overflow-x-auto, .overflow-y-auto {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  /* Dedicated print target support */
+  .print-only-target {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
   }
 
   /* Compaction container */
