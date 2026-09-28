@@ -108,30 +108,36 @@
   }
 
   /* Hide app chrome: sidebar, top headers, action buttons, notifications, footers, banners */
-  nav, header, aside, footer, .print\:hidden, [class*="print:hidden"], 
+  nav, header, aside, footer, #app-top-header, #desktop-collapsible-sidebar,
+  .print\:hidden, [class*="print:hidden"], 
   button, .no-print, #create-sales-invoice-btn, #record-purchase-bill-btn {
     display: none !important;
   }
 
-  /* When an invoice or slip modal is active during print, completely hide the background dashboard / main views */
-  body:has(.printable-modal-backdrop) main,
-  body:has(.printable-modal-backdrop) #main-content-wrapper > *:not(.printable-modal-backdrop),
-  body:has(.printable-modal-backdrop) .space-y-6 > *:not(.printable-modal-backdrop) {
+  /* Reset main content wrapper and main tag to full width without offsets, padding, or dark backgrounds */
+  #main-content-wrapper, main {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    display: block !important;
+  }
+
+  /* When an invoice or slip modal is active during print, hide sibling table listings, headers and KPI metric cards */
+  .has-active-invoice-modal > *:not(.printable-modal-backdrop) {
     display: none !important;
   }
 
-  /* Fallback: hide the underlying invoice tables & controls when modal is open in InvoiceView */
-  .printable-modal-backdrop ~ * {
+  *:has(> .printable-modal-backdrop) > *:not(.printable-modal-backdrop) {
     display: none !important;
   }
 
-  /* Hide table listings, headers and KPI metric cards when printing inside InvoiceView / ReceiptPaymentView */
-  .space-y-6:has(.printable-modal-backdrop) > *:not(.printable-modal-backdrop) {
-    display: none !important;
-  }
-
-  /* Target fixed modal backdrop: eliminate black overlay & frame */
-  .fixed.inset-0.z-50, .printable-modal-backdrop {
+  /* Target fixed modal backdrop: eliminate black overlay & frame so the invoice flows naturally */
+  .printable-modal-backdrop {
     position: static !important;
     background: transparent !important;
     background-color: transparent !important;

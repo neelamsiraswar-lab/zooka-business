@@ -206,6 +206,15 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
   designOverrides,
   className = '',
 }) => {
+  if (!invoice) {
+    return (
+      <div className="p-8 text-center text-slate-500 bg-white rounded-xl">
+        <p className="font-semibold text-sm text-slate-700">No voucher or invoice selected</p>
+        <p className="text-xs text-slate-400 mt-1">Please select an invoice from the list to preview or print.</p>
+      </div>
+    );
+  }
+
   // Merge company defaults with any real-time design overrides from settings
   const merged = {
     ...company,

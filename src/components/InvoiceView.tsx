@@ -632,7 +632,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   }
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${selectedInvoice ? 'has-active-invoice-modal' : ''}`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5">
         <div>
@@ -946,7 +946,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                             setSelectedInvoice(inv);
                             setTimeout(() => {
                               window.print();
-                            }, 50);
+                            }, 150);
                           }}
                           title="Direct Print Tax Invoice"
                           className="px-2 py-1 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg text-xs transition cursor-pointer flex items-center gap-1"

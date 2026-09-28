@@ -963,7 +963,7 @@ export default function App() {
 
         {/* Network / Sync Warning Banner if present (suppressed while on master super admin view) */}
         {syncError && currentTab !== 'super_admin' && (
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-4">
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-4 print:hidden">
             <div className="bg-amber-500/10 border border-amber-500/20 text-amber-300 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
@@ -981,7 +981,7 @@ export default function App() {
 
         {/* Auditor Read-Only Inspection Banner */}
         {isReadOnlyRole(userRole) && (
-          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-4">
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-4 print:hidden">
             <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-3 rounded-2xl text-xs flex items-center justify-between gap-3 shadow-lg shadow-amber-500/5">
               <div className="flex items-center gap-3">
                 <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
@@ -1003,13 +1003,15 @@ export default function App() {
 
         {/* Subscription Plan & Status Notification Banner */}
         {currentTab !== 'super_admin' && (
-          <SubscriptionBanner
-            workspace={activeWorkspace}
-            onNavigateToSubscription={() => {
-              setInitialSettingsSubTab('subscription');
-              setActiveTab('settings');
-            }}
-          />
+          <div className="print:hidden">
+            <SubscriptionBanner
+              workspace={activeWorkspace}
+              onNavigateToSubscription={() => {
+                setInitialSettingsSubTab('subscription');
+                setActiveTab('settings');
+              }}
+            />
+          </div>
         )}
 
         {/* Main Content Body */}
