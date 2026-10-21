@@ -19,16 +19,17 @@ import {
   getStateNameByCode,
 } from '../utils/partyAddressUtils';
 import {
+  buildUpiPaymentUri,
+  getUpiQrCodeImageUrl,
+  isValidUpiId,
+} from '../utils/upiQrUtils';
+import {
   FileText,
   Plus,
   Trash2,
   Printer,
-  Download,
   CheckCircle2,
   Calendar,
-  Building,
-  User,
-  IndianRupee,
   Receipt,
   X,
   Search,
@@ -54,6 +55,9 @@ import {
   Clock,
   Lock,
   Truck,
+  QrCode,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole } from '../lib/permissions';
@@ -107,6 +111,13 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<CompanyProfile['invoiceDesignTemplate'] | null>(null);
+
+  // Dynamic UPI QR Code state
+  const [qrModalInvoice, setQrModalInvoice] = useState<Invoice | null>(null);
+  const [qrAmountMode, setQrAmountMode] = useState<'balance' | 'total' | 'custom'>('balance');
+  const [qrCustomAmount, setQrCustomAmount] = useState<string>('');
+  const [upiIdOverride, setUpiIdOverride] = useState<string>('');
+  const [copiedUpiKey, setCopiedUpiKey] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'unpaid' | 'partial'>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
@@ -326,6 +337,84 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   });
 
   const grandTotal = subtotal + taxTotal;
+
+  // Memoized Party & Address Lookup (eliminates redundant inline party lookups)
+  const matchedParty = useMemo(
+    () =>
+      parties.find(
+        (p) =>
+          (partyId && String(p.id) === partyId) ||
+          (partyName.trim() && p.name.trim().toLowerCase() === partyName.trim().toLowerCase()) ||
+          (partyGstin.trim() && p.gstin && p.gstin.trim().toUpperCase() === partyGstin.trim().toUpperCase())
+      ),
+    [parties, partyId, partyName, partyGstin]
+  );
+
+  const savedPartyAddresses = useMemo(
+    () => (matchedParty ? normalizePartyAddresses(matchedParty) : []),
+    [matchedParty]
+  );
+
+  // Memoized Duplicate Invoice Number Lookup (eliminates redundant inline IIFEs)
+  const duplicateInvoice = useMemo(() => {
+    const cleanNum = invoiceNumber.trim().toLowerCase();
+    if (!cleanNum) return undefined;
+    return invoices.find(
+      (i) => i.invoiceNumber.trim().toLowerCase() === cleanNum && i.id !== editingInvoiceId
+    );
+  }, [invoices, invoiceNumber, editingInvoiceId]);
+
+  // Dynamic UPI QR Code values based on Company UPI ID and live/selected Invoice Total
+  const effectiveCompanyUpiId = (upiIdOverride.trim() || company?.upiId || 'company@upi').trim();
+  const effectiveBusinessName = company?.businessName || 'Merchant';
+  const parsedFormPaid = parseFloat(paidAmount) || 0;
+  const formPayableAmount =
+    parsedFormPaid > 0 && parsedFormPaid < grandTotal
+      ? Math.max(0, grandTotal - parsedFormPaid)
+      : grandTotal;
+
+  const formUpiUri = useMemo(
+    () =>
+      buildUpiPaymentUri({
+        upiId: effectiveCompanyUpiId,
+        payeeName: effectiveBusinessName,
+        amount: formPayableAmount,
+        invoiceNumber,
+      }),
+    [effectiveCompanyUpiId, effectiveBusinessName, formPayableAmount, invoiceNumber]
+  );
+
+  const formUpiQrUrl = useMemo(
+    () =>
+      getUpiQrCodeImageUrl(
+        {
+          upiId: effectiveCompanyUpiId,
+          payeeName: effectiveBusinessName,
+          amount: formPayableAmount,
+          invoiceNumber,
+        },
+        180
+      ),
+    [effectiveCompanyUpiId, effectiveBusinessName, formPayableAmount, invoiceNumber]
+  );
+
+  const openUpiQrModal = (inv: Invoice) => {
+    const total = parseFloat(inv.grandTotal || '0') || 0;
+    const paid = parseFloat(inv.paidAmount || '0') || 0;
+    const bal = Math.max(0, total - paid);
+    setQrModalInvoice(inv);
+    setQrAmountMode(bal > 0 && bal < total ? 'balance' : 'total');
+    setQrCustomAmount((bal > 0 ? bal : total).toFixed(2));
+    setUpiIdOverride(company?.upiId || '');
+  };
+
+  const handleCopyUpiText = (text: string, key: string) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+      setCopiedUpiKey(key);
+      setTimeout(() => setCopiedUpiKey(null), 2000);
+    }
+  };
 
   const handlePartySelect = (selectedId: string) => {
     setPartyId(selectedId);
@@ -715,16 +804,10 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
     }
 
     // Check for duplicity across active vouchers
-    const duplicateMatch = invoices.find(
-      (inv) =>
-        inv.invoiceNumber.trim().toLowerCase() === cleanInvoiceNumber.toLowerCase() &&
-        inv.id !== editingInvoiceId
-    );
-
-    if (duplicateMatch && company?.preventDuplicateInvoiceNo !== false) {
+    if (duplicateInvoice && company?.preventDuplicateInvoiceNo !== false) {
       dialog.alert({
         title: 'Duplicate Invoice Number Blocked',
-        message: `Voucher "${cleanInvoiceNumber}" is already in use by invoice #${duplicateMatch.id} (issued to ${duplicateMatch.partyName} on ${duplicateMatch.invoiceDate}). Under company GST duplicity prevention policy, duplicate numbers are not allowed.`,
+        message: `Voucher "${cleanInvoiceNumber}" is already in use by invoice #${duplicateInvoice.id} (issued to ${duplicateInvoice.partyName} on ${duplicateInvoice.invoiceDate}). Under company GST duplicity prevention policy, duplicate numbers are not allowed.`,
         variant: 'danger',
       });
       return;
@@ -1218,26 +1301,23 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                             )}
                           </button>
                         )}
+                        {isSales && (
+                          <button
+                            onClick={() => openUpiQrModal(inv)}
+                            title="Generate Dynamic UPI Payment QR Code"
+                            className="px-2 py-1 text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-lg text-xs transition cursor-pointer flex items-center gap-1 font-medium"
+                          >
+                            <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="hidden lg:inline">UPI QR</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => setSelectedInvoice(inv)}
-                          title="View / Print Voucher"
+                          title="Preview & Print Voucher"
                           className="px-2.5 py-1 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg text-xs transition cursor-pointer flex items-center gap-1"
                         >
                           <Eye className="w-3.5 h-3.5 text-slate-400" />
-                          <span className="hidden md:inline">View</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedInvoice(inv);
-                            setTimeout(() => {
-                              window.print();
-                            }, 150);
-                          }}
-                          title="Direct Print Tax Invoice"
-                          className="px-2 py-1 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg text-xs transition cursor-pointer flex items-center gap-1"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="hidden lg:inline">Print</span>
+                          <span className="hidden md:inline">View / Print</span>
                         </button>
                         {canEdit && (
                           <button
@@ -1410,52 +1490,36 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                       required
                       placeholder="e.g. INV/2026-27/001"
                       className={`w-full bg-slate-900 border rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none ${
-                        (() => {
-                          const dup = invoices.find(
-                            (i) =>
-                              i.invoiceNumber.trim().toLowerCase() === invoiceNumber.trim().toLowerCase() &&
-                              i.id !== editingInvoiceId
-                          );
-                          return dup
-                            ? 'border-rose-500 focus:border-rose-400'
-                            : 'border-slate-800 focus:border-emerald-500';
-                        })()
+                        duplicateInvoice
+                          ? 'border-rose-500 focus:border-rose-400'
+                          : 'border-slate-800 focus:border-emerald-500'
                       }`}
                     />
                     {/* Live Duplicity Warning Message */}
-                    {(() => {
-                      const cleanNum = invoiceNumber.trim();
-                      if (!cleanNum) return null;
-                      const dup = invoices.find(
-                        (i) =>
-                          i.invoiceNumber.trim().toLowerCase() === cleanNum.toLowerCase() &&
-                          i.id !== editingInvoiceId
-                      );
-                      if (!dup) return null;
-                      return (
-                        <div className="mt-1.5 p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 space-y-1">
-                          <div className="flex items-center gap-1.5 font-semibold text-rose-200">
-                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
-                            <span>Duplicate Number Detected</span>
-                          </div>
-                          <p className="text-[10px] text-rose-300/90 leading-tight">
-                            Voucher &quot;{cleanNum}&quot; already issued to <strong>{dup.partyName}</strong> on{' '}
-                            {dup.invoiceDate} (₹{dup.grandTotal}).
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const autoNum = generateNextNumber(voucherType);
-                              if (autoNum) setInvoiceNumber(autoNum);
-                            }}
-                            className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer pt-0.5"
-                          >
-                            <Sparkles className="w-3 h-3" />
-                            Switch to next available number ({generateNextNumber(voucherType)})
-                          </button>
+                    {duplicateInvoice && (
+                      <div className="mt-1.5 p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-300 space-y-1">
+                        <div className="flex items-center gap-1.5 font-semibold text-rose-200">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+                          <span>Duplicate Number Detected</span>
                         </div>
-                      );
-                    })()}
+                        <p className="text-[10px] text-rose-300/90 leading-tight">
+                          Voucher &quot;{invoiceNumber.trim()}&quot; already issued to{' '}
+                          <strong>{duplicateInvoice.partyName}</strong> on {duplicateInvoice.invoiceDate} (₹
+                          {duplicateInvoice.grandTotal}).
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const autoNum = generateNextNumber(voucherType);
+                            if (autoNum) setInvoiceNumber(autoNum);
+                          }}
+                          className="text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer pt-0.5"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          Switch to next available number ({generateNextNumber(voucherType)})
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -1589,107 +1653,106 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
 
                 {/* Auto-Sync to Ledger Status Banner + Tally Multiple Address Quick Bar */}
                 <div className="sm:col-span-3 space-y-2">
-                  {(() => {
-                    const matched = parties.find(
-                      (p) =>
-                        (partyId && String(p.id) === partyId) ||
-                        (partyName.trim() && p.name.trim().toLowerCase() === partyName.trim().toLowerCase()) ||
-                        (partyGstin.trim() && p.gstin && p.gstin.trim().toUpperCase() === partyGstin.trim().toUpperCase())
-                    );
-
-                    if (matched) {
-                      const curBal = matched.currentBalance ? parseFloat(matched.currentBalance) : 0;
-                      const partyAddrs = normalizePartyAddresses(matched);
-                      return (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                              <span>
-                                <strong>Linked to Ledger:</strong> {matched.name} ({matched.partyType === 'customer' ? 'Customer / Debtor' : 'Vendor / Creditor'})
-                                <span className="ml-1.5 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 font-mono font-semibold">
-                                  Current Bal: ₹{curBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {(matched.currentBalanceType || 'dr').toUpperCase()}
-                                </span>
-                              </span>
-                              {partyAddrs.length > 1 && (
-                                <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[10px] font-semibold flex items-center gap-1">
-                                  <MapPin className="w-3 h-3 text-cyan-400" />
-                                  {partyAddrs.length} Saved Addresses (Tally Multi-Address)
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[11px] text-emerald-400/80 font-medium">
-                              ⚡ Ledger balances & statements auto-update on save
+                  {matchedParty ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>
+                            <strong>Linked to Ledger:</strong> {matchedParty.name} (
+                            {matchedParty.partyType === 'customer' ? 'Customer / Debtor' : 'Vendor / Creditor'})
+                            <span className="ml-1.5 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 font-mono font-semibold">
+                              Current Bal: ₹
+                              {(matchedParty.currentBalance ? parseFloat(matchedParty.currentBalance) : 0).toLocaleString(
+                                'en-IN',
+                                { minimumFractionDigits: 2 }
+                              )}{' '}
+                              {(matchedParty.currentBalanceType || 'dr').toUpperCase()}
                             </span>
-                          </div>
-
-                          {/* Quick Tally Address Type Selector Strip when party has saved addresses */}
-                          {partyAddrs.length > 1 && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/30">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 shrink-0 flex items-center gap-1">
-                                  <MapPin className="w-3 h-3" />
-                                  {voucherType === 'purchase' ? 'Supplier Bill-From:' : 'Buyer (Bill-To):'}
-                                </span>
-                                <select
-                                  value={billingAddressId || partyAddrs[0].id}
-                                  onChange={(e) => handleSelectBillingAddressSlot(matched, e.target.value)}
-                                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
-                                >
-                                  {partyAddrs.map((addr) => (
-                                    <option key={addr.id} value={addr.id}>
-                                      [{addr.addressType}] {addr.mailingName} — {addr.stateName} ({addr.stateCode}) {addr.gstin ? `• ${addr.gstin}` : ''}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 shrink-0 flex items-center gap-1">
-                                  <Truck className="w-3 h-3" />
-                                  Consignee (Ship-To):
-                                </span>
-                                <select
-                                  value={isSameAsBillingAddress ? (billingAddressId || partyAddrs[0].id) : (shippingAddressId || partyAddrs[0].id)}
-                                  onChange={(e) => handleSelectShippingAddressSlot(matched, e.target.value)}
-                                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-cyan-500"
-                                >
-                                  {partyAddrs.map((addr) => (
-                                    <option key={addr.id} value={addr.id}>
-                                      [{addr.addressType}] {addr.mailingName} — {addr.address ? addr.address.slice(0, 32) : addr.stateName}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
+                          </span>
+                          {savedPartyAddresses.length > 1 && (
+                            <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[10px] font-semibold flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-cyan-400" />
+                              {savedPartyAddresses.length} Saved Addresses (Tally Multi-Address)
+                            </span>
                           )}
                         </div>
-                      );
-                    } else if (partyName.trim()) {
-                      return (
-                        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-teal-500/10 border border-teal-500/30 text-xs text-teal-300">
+                        <span className="text-[11px] text-emerald-400/80 font-medium">
+                          ⚡ Ledger balances & statements auto-update on save
+                        </span>
+                      </div>
+
+                      {/* Quick Tally Address Type Selector Strip when details panel is collapsed */}
+                      {!showPartyContactDetails && savedPartyAddresses.length > 1 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/30">
                           <div className="flex items-center gap-2">
-                            <Sparkles className="w-4 h-4 text-teal-400 shrink-0" />
-                            <span>
-                              <strong>Automatic Ledger Sync:</strong> "{partyName}" will be automatically registered as a new{' '}
-                              <span className="font-semibold underline underline-offset-2">
-                                {voucherType === 'purchase' ? 'Vendor (Creditor)' : 'Customer (Debtor)'}
-                              </span>{' '}
-                              in your Party Ledgers.
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 shrink-0 flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {voucherType === 'purchase' ? 'Supplier Bill-From:' : 'Buyer (Bill-To):'}
                             </span>
+                            <select
+                              value={billingAddressId || savedPartyAddresses[0].id}
+                              onChange={(e) => handleSelectBillingAddressSlot(matchedParty, e.target.value)}
+                              className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+                            >
+                              {savedPartyAddresses.map((addr) => (
+                                <option key={addr.id} value={addr.id}>
+                                  [{addr.addressType}] {addr.mailingName} — {addr.stateName} ({addr.stateCode}){' '}
+                                  {addr.gstin ? `• ${addr.gstin}` : ''}
+                                </option>
+                              ))}
+                            </select>
                           </div>
-                          <span className="text-[11px] text-teal-400/80 font-medium">Auto-creates party master</span>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 shrink-0 flex items-center gap-1">
+                              <Truck className="w-3 h-3" />
+                              Consignee (Ship-To):
+                            </span>
+                            <select
+                              value={
+                                isSameAsBillingAddress
+                                  ? billingAddressId || savedPartyAddresses[0].id
+                                  : shippingAddressId || savedPartyAddresses[0].id
+                              }
+                              onChange={(e) => handleSelectShippingAddressSlot(matchedParty, e.target.value)}
+                              className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-cyan-500"
+                            >
+                              {savedPartyAddresses.map((addr) => (
+                                <option key={addr.id} value={addr.id}>
+                                  [{addr.addressType}] {addr.mailingName} —{' '}
+                                  {addr.address ? addr.address.slice(0, 32) : addr.stateName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
-                      );
-                    } else {
-                      return (
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400">
-                          <Sparkles className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span>Select an existing party or type a new party name — Customer/Vendor ledgers are synced automatically.</span>
-                        </div>
-                      );
-                    }
-                  })()}
+                      )}
+                    </div>
+                  ) : partyName.trim() ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-teal-500/10 border border-teal-500/30 text-xs text-teal-300">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-teal-400 shrink-0" />
+                        <span>
+                          <strong>Automatic Ledger Sync:</strong> &quot;{partyName}&quot; will be automatically
+                          registered as a new{' '}
+                          <span className="font-semibold underline underline-offset-2">
+                            {voucherType === 'purchase' ? 'Vendor (Creditor)' : 'Customer (Debtor)'}
+                          </span>{' '}
+                          in your Party Ledgers.
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-teal-400/80 font-medium">Auto-creates party master</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400">
+                      <Sparkles className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>
+                        Select an existing party or type a new party name — Customer/Vendor ledgers are synced
+                        automatically.
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Tally-Style Buyer (Bill-To) & Consignee (Ship-To) Multiple Address & Contact Details */}
@@ -1704,33 +1767,32 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                       <span>
                         {showPartyContactDetails ? 'Hide' : 'Configure'} Buyer (Bill-To) & Consignee (Ship-To) Mailing Details
                       </span>
-                      {!isSameAsBillingAddress && (
-                        <span className="px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] font-semibold">
-                          Separate Consignee / Ship-To Active
-                        </span>
-                      )}
                     </button>
 
-                    <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={!isSameAsBillingAddress}
-                        onChange={(e) => {
-                          const separate = e.target.checked;
-                          setIsSameAsBillingAddress(!separate);
-                          if (separate) {
+                    <div className="flex items-center gap-2 text-[11px]">
+                      {!isSameAsBillingAddress ? (
+                        <span className="px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] font-semibold flex items-center gap-1">
+                          <Truck className="w-3 h-3 text-cyan-400" />
+                          Separate Consignee / Ship-To Active
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsSameAsBillingAddress(false);
                             setShowPartyContactDetails(true);
                             if (!consigneeName) setConsigneeName(billingMailingName || partyName);
                             if (!shippingAddress) setShippingAddress(partyAddress);
                             if (!consigneeGstin) setConsigneeGstin(partyGstin);
                             if (!consigneeStateCode) setConsigneeStateCode(placeOfSupply);
-                          }
-                        }}
-                        className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0 cursor-pointer"
-                      />
-                      <Truck className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Ship to a different Consignee / Branch / Delivery Address</span>
-                    </label>
+                          }}
+                          className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer font-medium"
+                        >
+                          <Truck className="w-3.5 h-3.5" />
+                          <span>+ Different Consignee / Ship-To Address</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {showPartyContactDetails && (
@@ -1748,35 +1810,25 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                             </span>
                           </div>
 
-                          {(() => {
-                            const matched = parties.find(
-                              (p) =>
-                                (partyId && String(p.id) === partyId) ||
-                                (partyName.trim() && p.name.trim().toLowerCase() === partyName.trim().toLowerCase())
-                            );
-                            const savedAddrs = matched ? normalizePartyAddresses(matched) : [];
-                            if (matched && savedAddrs.length > 0) {
-                              return (
-                                <div>
-                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
-                                    Select Saved Address Type from Party Master
-                                  </label>
-                                  <select
-                                    value={billingAddressId || savedAddrs[0].id}
-                                    onChange={(e) => handleSelectBillingAddressSlot(matched, e.target.value)}
-                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                                  >
-                                    {savedAddrs.map((a) => (
-                                      <option key={a.id} value={a.id}>
-                                        {a.addressType} — {a.mailingName} ({a.stateName}) {a.address ? `• ${a.address.slice(0, 35)}` : ''}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()}
+                          {matchedParty && savedPartyAddresses.length > 0 && (
+                            <div>
+                              <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                Select Saved Address Type from Party Master
+                              </label>
+                              <select
+                                value={billingAddressId || savedPartyAddresses[0].id}
+                                onChange={(e) => handleSelectBillingAddressSlot(matchedParty, e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              >
+                                {savedPartyAddresses.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.addressType} — {a.mailingName} ({a.stateName}){' '}
+                                    {a.address ? `• ${a.address.slice(0, 35)}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             <div>
@@ -1900,36 +1952,25 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                             </div>
                           ) : (
                             <div className="space-y-2.5">
-                              {(() => {
-                                const matched = parties.find(
-                                  (p) =>
-                                    (partyId && String(p.id) === partyId) ||
-                                    (partyName.trim() && p.name.trim().toLowerCase() === partyName.trim().toLowerCase())
-                                );
-                                const savedAddrs = matched ? normalizePartyAddresses(matched) : [];
-                                if (matched && savedAddrs.length > 0) {
-                                  return (
-                                    <div>
-                                      <label className="block text-[10px] font-medium text-slate-400 mb-1">
-                                        Pick Consignee / Delivery Address from Party Master
-                                      </label>
-                                      <select
-                                        value={shippingAddressId}
-                                        onChange={(e) => handleSelectShippingAddressSlot(matched, e.target.value)}
-                                        className="w-full bg-slate-950 border border-cyan-500/40 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
-                                      >
-                                        <option value="">-- Custom / Manual Consignee Address --</option>
-                                        {savedAddrs.map((a) => (
-                                          <option key={a.id} value={a.id}>
-                                            [{a.addressType}] {a.mailingName} — {a.address || a.stateName} ({a.stateCode})
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
+                              {matchedParty && savedPartyAddresses.length > 0 && (
+                                <div>
+                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                    Pick Consignee / Delivery Address from Party Master
+                                  </label>
+                                  <select
+                                    value={shippingAddressId}
+                                    onChange={(e) => handleSelectShippingAddressSlot(matchedParty, e.target.value)}
+                                    className="w-full bg-slate-950 border border-cyan-500/40 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                  >
+                                    <option value="">-- Custom / Manual Consignee Address --</option>
+                                    {savedPartyAddresses.map((a) => (
+                                      <option key={a.id} value={a.id}>
+                                        [{a.addressType}] {a.mailingName} — {a.address || a.stateName} ({a.stateCode})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                 <div>
@@ -2507,42 +2548,132 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                   </div>
                 </div>
 
-                {/* Calculation breakdown */}
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-400">
-                    <span>Taxable Subtotal:</span>
-                    <span className="font-mono">₹{subtotal.toFixed(2)}</span>
-                  </div>
-
-                  {isTaxExemptSupply ? (
-                    <div className="flex justify-between text-slate-400">
-                      <span>GST (Nil / Exempted):</span>
-                      <span className="font-mono">₹0.00</span>
-                    </div>
-                  ) : isInterstate ? (
-                    <div className="flex justify-between text-purple-400">
-                      <span>Total IGST:</span>
-                      <span className="font-mono">₹{taxTotal.toFixed(2)}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between text-emerald-400">
-                        <span>Total CGST:</span>
-                        <span className="font-mono">₹{cgstTotal.toFixed(2)}</span>
+                  {/* Calculation breakdown + Dynamic UPI QR Code Generator */}
+                  <div className="space-y-3">
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Taxable Subtotal:</span>
+                        <span className="font-mono">₹{subtotal.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-emerald-400">
-                        <span>Total SGST:</span>
-                        <span className="font-mono">₹{sgstTotal.toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
 
-                  <div className="flex justify-between text-slate-200 font-bold text-sm pt-2 border-t border-slate-800">
-                    <span>Grand Total:</span>
-                    <span className="font-mono text-emerald-400">₹{grandTotal.toFixed(2)}</span>
+                      {isTaxExemptSupply ? (
+                        <div className="flex justify-between text-slate-400">
+                          <span>GST (Nil / Exempted):</span>
+                          <span className="font-mono">₹0.00</span>
+                        </div>
+                      ) : isInterstate ? (
+                        <div className="flex justify-between text-purple-400">
+                          <span>Total IGST:</span>
+                          <span className="font-mono">₹{taxTotal.toFixed(2)}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex justify-between text-emerald-400">
+                            <span>Total CGST:</span>
+                            <span className="font-mono">₹{cgstTotal.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-400">
+                            <span>Total SGST:</span>
+                            <span className="font-mono">₹{sgstTotal.toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="flex justify-between text-slate-200 font-bold text-sm pt-2 border-t border-slate-800">
+                        <span>Grand Total:</span>
+                        <span className="font-mono text-emerald-400">₹{grandTotal.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    {/* Dynamic UPI QR Code Card based on Invoice Total & Company UPI ID */}
+                    {voucherType === 'sales' && (
+                      <div
+                        className={`p-3.5 rounded-xl border transition ${
+                          paymentMode === 'upi'
+                            ? 'bg-cyan-500/10 border-cyan-500/40'
+                            : 'bg-slate-950/90 border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <QrCode className="w-4 h-4 text-cyan-400 shrink-0" />
+                            <span className="text-xs font-bold text-white">
+                              Dynamic UPI Payment QR
+                            </span>
+                            {isValidUpiId(effectiveCompanyUpiId) && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-semibold">
+                                NPCI Verified URI
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaidAmount(grandTotal.toFixed(2));
+                              setPaymentMode('upi');
+                            }}
+                            disabled={grandTotal <= 0}
+                            className="text-[10px] px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-semibold transition cursor-pointer disabled:opacity-40"
+                          >
+                            ✓ Mark Paid via UPI
+                          </button>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-3">
+                          <div className="p-1.5 bg-white rounded-xl border border-slate-200 shrink-0 shadow-sm">
+                            <img
+                              src={formUpiQrUrl}
+                              alt="Dynamic Invoice UPI QR"
+                              className="w-24 h-24 object-contain"
+                            />
+                          </div>
+
+                          <div className="flex-1 w-full space-y-2 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                                Company UPI ID (VPA)
+                              </label>
+                              <input
+                                type="text"
+                                value={upiIdOverride || company?.upiId || 'company@upi'}
+                                onChange={(e) => setUpiIdOverride(e.target.value)}
+                                placeholder="e.g. business@hdfcbank"
+                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between text-[11px] bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                              <span className="text-slate-400">QR Payable Amount:</span>
+                              <span className="font-mono font-bold text-cyan-300">
+                                ₹{formPayableAmount.toFixed(2)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyUpiText(formUpiUri, 'form-uri')}
+                                className="flex-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-medium flex items-center justify-center gap-1 cursor-pointer transition"
+                              >
+                                {copiedUpiKey === 'form-uri' ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    <span className="text-emerald-300">Copied UPI Link!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-cyan-400" />
+                                    <span>Copy UPI Deep Link</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
 
               {/* Action Buttons */}
               <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 pt-4 border-t border-slate-800 shrink-0">
@@ -2606,6 +2737,15 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {selectedInvoice.voucherType !== 'purchase' && (
+                  <button
+                    onClick={() => openUpiQrModal(selectedInvoice)}
+                    className="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 border border-cyan-300 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-cyan-600" />
+                    <span>UPI QR</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     const invToEdit = selectedInvoice;
@@ -2718,6 +2858,229 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* DYNAMIC UPI QR CODE PAYMENT MODAL */}
+      {qrModalInvoice && (() => {
+        const invGrandTotal = parseFloat(qrModalInvoice.grandTotal || '0') || 0;
+        const invPaidAmount = parseFloat(qrModalInvoice.paidAmount || '0') || 0;
+        const invBalanceDue = Math.max(0, invGrandTotal - invPaidAmount);
+
+        const activeQrAmount =
+          qrAmountMode === 'balance' && invBalanceDue > 0
+            ? invBalanceDue
+            : qrAmountMode === 'custom'
+            ? Math.max(0, parseFloat(qrCustomAmount) || 0)
+            : invGrandTotal;
+
+        const modalUpiUri = buildUpiPaymentUri({
+          upiId: effectiveCompanyUpiId,
+          payeeName: effectiveBusinessName,
+          amount: activeQrAmount,
+          invoiceNumber: qrModalInvoice.invoiceNumber,
+        });
+
+        const modalQrImgUrl = getUpiQrCodeImageUrl(
+          {
+            upiId: effectiveCompanyUpiId,
+            payeeName: effectiveBusinessName,
+            amount: activeQrAmount,
+            invoiceNumber: qrModalInvoice.invoiceNumber,
+          },
+          240
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-4 sm:p-6 space-y-4 shadow-2xl relative my-auto">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 shrink-0">
+                    <QrCode className="w-5 h-5 text-cyan-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-base font-bold text-white truncate">
+                      Dynamic UPI Payment QR
+                    </h3>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      Invoice #{qrModalInvoice.invoiceNumber} • {qrModalInvoice.partyName}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <FullScreenButton mode="modal" />
+                  <button
+                    onClick={() => setQrModalInvoice(null)}
+                    className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* QR Display Box */}
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center space-y-3">
+                <div className="p-3 bg-white rounded-2xl shadow-lg border-2 border-cyan-500/30">
+                  <img
+                    src={modalQrImgUrl}
+                    alt={`UPI QR for ${qrModalInvoice.invoiceNumber}`}
+                    className="w-44 h-44 sm:w-48 sm:h-48 object-contain"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-slate-400">Scan with GPay, PhonePe, Paytm or BHIM</div>
+                  <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">
+                    ₹{activeQrAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-300 mt-0.5">
+                    Payee: <strong className="text-white">{effectiveBusinessName}</strong> ({effectiveCompanyUpiId})
+                  </div>
+                </div>
+              </div>
+
+              {/* Payable Amount Mode Selector & UPI ID Input */}
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-400 mb-1.5">
+                    Select QR Payable Amount
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {invBalanceDue > 0 && invBalanceDue < invGrandTotal && (
+                      <button
+                        type="button"
+                        onClick={() => setQrAmountMode('balance')}
+                        className={`px-2.5 py-1.5 rounded-lg font-medium text-[11px] border transition cursor-pointer ${
+                          qrAmountMode === 'balance'
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-semibold'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                      >
+                        Balance (₹{invBalanceDue.toFixed(0)})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setQrAmountMode('total')}
+                      className={`px-2.5 py-1.5 rounded-lg font-medium text-[11px] border transition cursor-pointer ${
+                        qrAmountMode === 'total'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-semibold'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                    >
+                      Full Total (₹{invGrandTotal.toFixed(0)})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrAmountMode('custom')}
+                      className={`px-2.5 py-1.5 rounded-lg font-medium text-[11px] border transition cursor-pointer ${
+                        qrAmountMode === 'custom'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                      }`}
+                    >
+                      Custom Amt
+                    </button>
+                  </div>
+                </div>
+
+                {qrAmountMode === 'custom' && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                      Custom UPI Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="any"
+                      value={qrCustomAmount}
+                      onChange={(e) => setQrCustomAmount(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-medium text-slate-400">
+                      Company UPI ID (VPA)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyUpiText(effectiveCompanyUpiId, 'modal-vpa')}
+                      className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedUpiKey === 'modal-vpa' ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied VPA</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy UPI ID</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={upiIdOverride || company?.upiId || 'company@upi'}
+                    onChange={(e) => setUpiIdOverride(e.target.value)}
+                    placeholder="e.g. merchant@icici"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => handleCopyUpiText(modalUpiUri, 'modal-uri')}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  {copiedUpiKey === 'modal-uri' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-300">UPI Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Copy Payment Link</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="flex items-center gap-2">
+                  {onRecordVoucher && canRecordPayment && qrModalInvoice.paymentStatus !== 'paid' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetInv = qrModalInvoice;
+                        setQrModalInvoice(null);
+                        onRecordVoucher('receipt', targetInv.partyId, targetInv.id);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition shadow-lg shadow-emerald-500/20"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Record Receipt</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setQrModalInvoice(null)}
+                    className="px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-medium cursor-pointer transition"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

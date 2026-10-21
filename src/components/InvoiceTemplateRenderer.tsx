@@ -1,5 +1,6 @@
 import React from 'react';
 import { CompanyProfile, Invoice } from '../types.ts';
+import { getUpiQrCodeImageUrl } from '../utils/upiQrUtils';
 import {
   QrCode,
   ShieldCheck,
@@ -275,11 +276,23 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
       (invoice.consigneeName && invoice.consigneeName !== buyerName)
     );
 
-  // Calculate UPI QR URL for instant scan
-  const upiQrString = encodeURIComponent(
-    `upi://pay?pa=${upiId}&pn=${encodeURIComponent(businessName)}&am=${parseFloat(invoice.grandTotal || '0').toFixed(2)}&cu=INR&tn=Invoice_${invoice.invoiceNumber}`
+  // Calculate dynamic UPI QR URL for instant scan based on invoice total (or remaining balance if partial)
+  const parsedGrandTotal = parseFloat(invoice.grandTotal || '0') || 0;
+  const parsedPaidAmount = parseFloat(invoice.paidAmount || '0') || 0;
+  const qrPayableAmount =
+    invoice.paymentStatus === 'partial' && parsedGrandTotal > parsedPaidAmount
+      ? parsedGrandTotal - parsedPaidAmount
+      : parsedGrandTotal;
+
+  const qrCodeUrl = getUpiQrCodeImageUrl(
+    {
+      upiId,
+      payeeName: businessName,
+      amount: qrPayableAmount,
+      invoiceNumber: invoice.invoiceNumber,
+    },
+    140
   );
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&margin=0&data=${upiQrString}`;
 
   // Helper for voucher category label
   const getVoucherTitle = () => {
