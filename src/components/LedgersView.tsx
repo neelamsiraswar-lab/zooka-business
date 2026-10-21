@@ -5,7 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole } from '../lib/permissions';
 import { AppSelect } from './AppSelect';
 import { SkeletonLedgersView } from './SkeletonLoaders';
+import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
 import {
+  Calendar,
   Users,
   Plus,
   Search,
@@ -78,6 +80,17 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
   const [showPartyModal, setShowPartyModal] = useState(false);
   const [editingParty, setEditingParty] = useState<Party | null>(null);
   const [statementParty, setStatementParty] = useState<Party | null>(null);
+  const [statementMonthFilter, setStatementMonthFilter] = useState<string>('all');
+
+  const availableMonths = useMemo(
+    () =>
+      getAvailableMonths([
+        ...invoices.map((i) => i.invoiceDate),
+        ...payments.map((p) => p.date || p.paymentDate),
+        ...cheques.map((c) => c.chequeDate),
+      ]),
+    [invoices, payments, cheques]
+  );
 
   // Party Form State
   const [partyType, setPartyType] = useState<'customer' | 'vendor'>('customer');
@@ -1234,41 +1247,78 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
 
               {/* Linked Transactions Table */}
               <div>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                   <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-teal-400" />
                     Linked Transactions & Vouchers
                   </h4>
-                  <span className="text-[11px] text-slate-500 font-mono">
-                    Auto-calculated from billing ledger
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs">
+                      <Calendar className="w-3.5 h-3.5 text-teal-400" />
+                      <select
+                        aria-label="Filter Party Statement by Month"
+                        value={statementMonthFilter}
+                        onChange={(e) => setStatementMonthFilter(e.target.value)}
+                        className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer"
+                      >
+                        <option value="all" className="bg-slate-900 text-white">All Months</option>
+                        <option value="this_month" className="bg-slate-900 text-white">This Month</option>
+                        <option value="prev_month" className="bg-slate-900 text-white">Previous Month</option>
+                        {availableMonths.map((m) => (
+                          <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="border border-slate-800 rounded-xl overflow-x-auto max-h-72 overflow-y-auto">
                 {(() => {
+                  const matchesMonth = (dStr?: string) => {
+                    if (statementMonthFilter === 'all') return true;
+                    if (!dStr) return false;
+                    const now = new Date();
+                    if (statementMonthFilter === 'this_month') {
+                      const b = getMonthBounds(now.getFullYear(), now.getMonth());
+                      return dStr >= b.startDate && dStr <= b.endDate;
+                    }
+                    if (statementMonthFilter === 'prev_month') {
+                      const prevM = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+                      const prevY = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+                      const b = getMonthBounds(prevY, prevM);
+                      return dStr >= b.startDate && dStr <= b.endDate;
+                    }
+                    return dStr.startsWith(statementMonthFilter);
+                  };
+
                   const partyInvoices = invoices.filter(
                     (inv) =>
-                      (inv.partyId && inv.partyId === statementParty.id) ||
-                      (inv.partyName && inv.partyName.trim().toLowerCase() === statementParty.name.trim().toLowerCase()) ||
-                      (statementParty.gstin && inv.partyGstin && inv.partyGstin.trim().toUpperCase() === statementParty.gstin.trim().toUpperCase())
+                      matchesMonth(inv.invoiceDate) &&
+                      ((inv.partyId && inv.partyId === statementParty.id) ||
+                        (inv.partyName && inv.partyName.trim().toLowerCase() === statementParty.name.trim().toLowerCase()) ||
+                        (statementParty.gstin && inv.partyGstin && inv.partyGstin.trim().toUpperCase() === statementParty.gstin.trim().toUpperCase()))
                   );
 
                   const partyPayments = payments.filter(
                     (pm) =>
-                      (pm.partyId && pm.partyId === statementParty.id) ||
-                      (pm.partyName && pm.partyName.trim().toLowerCase() === statementParty.name.trim().toLowerCase())
+                      matchesMonth(pm.date || pm.paymentDate) &&
+                      ((pm.partyId && pm.partyId === statementParty.id) ||
+                        (pm.partyName && pm.partyName.trim().toLowerCase() === statementParty.name.trim().toLowerCase()))
                   );
 
                   const partyCheques = cheques.filter(
                     (c) =>
-                      (c.partyId && c.partyId === statementParty.id) ||
-                      (c.payeeName && c.payeeName.trim().toLowerCase() === statementParty.name.trim().toLowerCase())
+                      matchesMonth(c.chequeDate) &&
+                      ((c.partyId && c.partyId === statementParty.id) ||
+                        (c.payeeName && c.payeeName.trim().toLowerCase() === statementParty.name.trim().toLowerCase()))
                   );
 
                   if (partyInvoices.length === 0 && partyPayments.length === 0 && partyCheques.length === 0) {
                     return (
                       <div className="p-8 text-center text-xs text-slate-500">
-                        No transactions, vouchers, or cheques recorded yet for this party. Creating an invoice, receipt, payment, or cheque will automatically reflect here.
+                        No transactions, vouchers, or cheques found for the selected period.
                       </div>
                     );
                   }
@@ -1288,6 +1338,7 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
 
                   const items: LedgerItem[] = [
                     ...partyInvoices.map((inv) => {
+                      const isPurchase = inv.voucherType === 'purchase' || inv.invoiceType === 'purchase_bill';
                       const total = parseFloat(inv.grandTotal);
                       const paid = parseFloat(inv.paidAmount || '0');
                       const due = Math.max(0, total - paid);
@@ -1295,22 +1346,21 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                         id: `inv-${inv.id}`,
                         date: inv.invoiceDate,
                         voucherNumber: inv.invoiceNumber,
-                        type: inv.voucherType === 'sales' ? 'Sales Invoice' : 'Purchase Bill',
+                        type: isPurchase ? 'Purchase Bill' : 'Sales Invoice',
                         isVoucher: false,
                         amount: total,
                         settledOrMode: `₹${paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })} settled`,
                         balanceOrStatus: due > 0 ? `Due ₹${due.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'Settled',
-                        badgeClass:
-                          inv.voucherType === 'sales'
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+                        badgeClass: !isPurchase
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
                       };
                     }),
                     ...partyPayments.map((pm) => {
                       const amt = parseFloat(pm.amount);
                       return {
                         id: `pm-${pm.id}`,
-                        date: pm.paymentDate,
+                        date: pm.date || pm.paymentDate || '',
                         voucherNumber: pm.voucherNumber,
                         type: pm.voucherType === 'receipt' ? 'Receipt Voucher' : 'Payment Voucher',
                         isVoucher: true,

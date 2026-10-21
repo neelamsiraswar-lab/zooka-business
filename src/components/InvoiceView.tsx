@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDialog } from '../context/DialogContext';
 import { Invoice, CompanyProfile, Party, InventoryItem, InvoiceItem, PurchaseGstType } from '../types';
 import { InvoiceTemplateRenderer } from './InvoiceTemplateRenderer';
@@ -7,6 +7,7 @@ import { AppSelect } from './AppSelect';
 import { SkeletonInvoiceView } from './SkeletonLoaders';
 import { HsnAutoSuggestSelector } from './HsnAutoSuggestSelector';
 import { inferCategoryFromItem } from '../data/hsnCategories';
+import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
 import {
   FileText,
   Plus,
@@ -97,6 +98,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   const [previewTemplate, setPreviewTemplate] = useState<CompanyProfile['invoiceDesignTemplate'] | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'unpaid' | 'partial'>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Form states
@@ -165,9 +167,30 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   const isInterstate = isForceInterstateSupply ? true : placeOfSupply !== companyState;
 
   // Dedicated filtering: Robust check for purchase vs sales vouchers across existing & new records
-  const pageInvoices = invoices.filter((inv) => {
+  const allTypeInvoices = invoices.filter((inv) => {
     const isInvPurchase = inv.voucherType === 'purchase' || inv.invoiceType === 'purchase_bill';
     return targetVoucherType === 'purchase' ? isInvPurchase : !isInvPurchase;
+  });
+
+  const availableMonths = useMemo(
+    () => getAvailableMonths(allTypeInvoices.map((i) => i.invoiceDate)),
+    [allTypeInvoices]
+  );
+
+  const pageInvoices = allTypeInvoices.filter((inv) => {
+    if (monthFilter === 'all') return true;
+    const now = new Date();
+    if (monthFilter === 'this_month') {
+      const b = getMonthBounds(now.getFullYear(), now.getMonth());
+      return inv.invoiceDate >= b.startDate && inv.invoiceDate <= b.endDate;
+    }
+    if (monthFilter === 'prev_month') {
+      const prevM = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const prevY = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const b = getMonthBounds(prevY, prevM);
+      return inv.invoiceDate >= b.startDate && inv.invoiceDate <= b.endDate;
+    }
+    return inv.invoiceDate && inv.invoiceDate.startsWith(monthFilter);
   });
 
   const filteredInvoices = pageInvoices.filter((inv) => {
@@ -815,19 +838,40 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
           </button>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder={
-              isSales
-                ? 'Search sales by invoice #, customer, GSTIN...'
-                : 'Search bills by bill #, supplier, GSTIN...'
-            }
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-slate-700"
-          />
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs">
+            <Calendar className={`w-3.5 h-3.5 ${isSales ? 'text-emerald-400' : 'text-blue-400'}`} />
+            <select
+              aria-label="Filter Invoices by Month"
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer"
+            >
+              <option value="all" className="bg-slate-900 text-white">All Months</option>
+              <option value="this_month" className="bg-slate-900 text-white">This Month</option>
+              <option value="prev_month" className="bg-slate-900 text-white">Previous Month</option>
+              {availableMonths.map((m) => (
+                <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="relative flex-1 sm:w-72">
+            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder={
+                isSales
+                  ? 'Search sales by invoice #, customer, GSTIN...'
+                  : 'Search bills by bill #, supplier, GSTIN...'
+              }
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-slate-700"
+            />
+          </div>
         </div>
       </div>
 

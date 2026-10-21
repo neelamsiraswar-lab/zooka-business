@@ -65,14 +65,21 @@ export const GstrPreviousMonthComparisonView: React.FC<GstrPreviousMonthComparis
   onNavigateToGstr1,
   initialSelectedMonth,
 }) => {
-  // Discover available months from invoices, expenses, and current date
+  // Discover available months from invoices, expenses, and current FY
   const availableMonths = useMemo(() => {
     const monthSet = new Set<string>();
     const now = new Date();
     const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     monthSet.add(currentYm);
 
-    // Also include past 6 months by default
+    // Include all 12 months of current FY (Apr - Mar) plus past 6 months
+    const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    for (let m = 3; m < 12; m++) {
+      monthSet.add(`${fyStart}-${String(m + 1).padStart(2, '0')}`);
+    }
+    for (let m = 0; m < 3; m++) {
+      monthSet.add(`${fyStart + 1}-${String(m + 1).padStart(2, '0')}`);
+    }
     for (let i = 1; i <= 6; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       monthSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
@@ -96,12 +103,14 @@ export const GstrPreviousMonthComparisonView: React.FC<GstrPreviousMonthComparis
     return Array.from(monthSet).sort().reverse();
   }, [invoices, expenses]);
 
-  // Selected Current Month (defaults to initialSelectedMonth, or the first available month)
+  // Selected Current Month (defaults to initialSelectedMonth, or current month)
   const [selectedYm, setSelectedYm] = useState<string>(() => {
+    const now = new Date();
+    const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     if (initialSelectedMonth && availableMonths.includes(initialSelectedMonth)) {
       return initialSelectedMonth;
     }
-    return availableMonths[0] || '2026-09';
+    return availableMonths.includes(currentYm) ? currentYm : availableMonths[0] || '2026-10';
   });
 
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<'all' | 'collected' | 'paid' | 'net'>('all');
@@ -150,26 +159,30 @@ export const GstrPreviousMonthComparisonView: React.FC<GstrPreviousMonthComparis
 
   // Counts of sales and inward records for both periods
   const currentCounts = useMemo(() => {
-    const sales = invoices.filter(
-      (i) =>
-        i.voucherType === 'sales' &&
+    const sales = invoices.filter((i) => {
+      const isPurchase = i.voucherType === 'purchase' || i.invoiceType === 'purchase_bill';
+      return (
+        !isPurchase &&
         i.status !== 'cancelled' &&
         i.invoiceDate >= currentPeriod.startDate &&
         i.invoiceDate <= currentPeriod.endDate
-    ).length;
+      );
+    }).length;
     const inward = currentReport.inwardSupplies.length;
     const inwardTaxable = currentReport.inwardSupplies.reduce((acc, curr) => acc + curr.taxableValue, 0);
     return { sales, inward, inwardTaxable };
   }, [invoices, currentPeriod, currentReport.inwardSupplies]);
 
   const prevCounts = useMemo(() => {
-    const sales = invoices.filter(
-      (i) =>
-        i.voucherType === 'sales' &&
+    const sales = invoices.filter((i) => {
+      const isPurchase = i.voucherType === 'purchase' || i.invoiceType === 'purchase_bill';
+      return (
+        !isPurchase &&
         i.status !== 'cancelled' &&
         i.invoiceDate >= prevPeriod.startDate &&
         i.invoiceDate <= prevPeriod.endDate
-    ).length;
+      );
+    }).length;
     const inward = prevReport.inwardSupplies.length;
     const inwardTaxable = prevReport.inwardSupplies.reduce((acc, curr) => acc + curr.taxableValue, 0);
     return { sales, inward, inwardTaxable };

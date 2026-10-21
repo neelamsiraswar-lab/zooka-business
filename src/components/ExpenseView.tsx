@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDialog } from '../context/DialogContext';
 import { AppSelect } from './AppSelect';
 import { Expense } from '../types';
 import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
+import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
 import {
   TrendingDown,
   Plus,
@@ -71,6 +72,12 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [itcFilter, setItcFilter] = useState<'ALL' | 'ELIGIBLE' | 'INELIGIBLE'>('ALL');
+  const [monthFilter, setMonthFilter] = useState<string>('ALL');
+
+  const availableMonths = useMemo(
+    () => getAvailableMonths(expenses.map((e) => e.date)),
+    [expenses]
+  );
 
   // Form states
   const [category, setCategory] = useState('Office Supplies');
@@ -161,8 +168,25 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
     }
   };
 
+  // Month-scoped expenses
+  const monthScopedExpenses = expenses.filter((exp) => {
+    if (monthFilter === 'ALL') return true;
+    const now = new Date();
+    if (monthFilter === 'THIS_MONTH') {
+      const b = getMonthBounds(now.getFullYear(), now.getMonth());
+      return exp.date >= b.startDate && exp.date <= b.endDate;
+    }
+    if (monthFilter === 'PREV_MONTH') {
+      const prevM = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const prevY = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const b = getMonthBounds(prevY, prevM);
+      return exp.date >= b.startDate && exp.date <= b.endDate;
+    }
+    return exp.date && exp.date.startsWith(monthFilter);
+  });
+
   // Filtered expenses calculation
-  const filteredExpenses = expenses.filter((exp) => {
+  const filteredExpenses = monthScopedExpenses.filter((exp) => {
     // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -189,11 +213,11 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
   });
 
   // KPIs
-  const totalExpenseSum = expenses.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
-  const totalItcClaimable = expenses
+  const totalExpenseSum = monthScopedExpenses.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
+  const totalItcClaimable = monthScopedExpenses
     .filter((e) => e.itcEligible)
     .reduce((acc, curr) => acc + (parseFloat(curr.gstPaid) || 0), 0);
-  const totalIneligible = expenses
+  const totalIneligible = monthScopedExpenses
     .filter((e) => !e.itcEligible)
     .reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0);
 
@@ -334,6 +358,26 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
               <XCircle className="w-3 h-3" />
               Non-ITC
             </button>
+          </div>
+
+          {/* Month-Wise Dropdown */}
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-rose-400" />
+            <select
+              aria-label="Filter Expenses by Month"
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer"
+            >
+              <option value="ALL" className="bg-slate-900 text-white">All Months</option>
+              <option value="THIS_MONTH" className="bg-slate-900 text-white">This Month</option>
+              <option value="PREV_MONTH" className="bg-slate-900 text-white">Previous Month</option>
+              {availableMonths.map((m) => (
+                <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                  {m.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Category Dropdown */}

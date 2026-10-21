@@ -6,6 +6,12 @@ import { AppSelect } from './AppSelect';
 import { AccountMatchSelector } from './AccountMatchSelector';
 import { SkeletonAccountingView } from './SkeletonLoaders';
 import {
+  getAvailableMonths,
+  getBoundsForYm,
+  getMonthBounds,
+  formatLocalDate,
+} from '../utils/datePeriodUtils';
+import {
   BookOpen,
   Plus,
   Scale,
@@ -78,7 +84,16 @@ type AccountingTab =
   | 'journal_vouchers'
   | 'chart_of_accounts';
 
-type DateFilterPreset = 'all' | 'today' | 'this_week' | 'this_month' | 'this_quarter' | 'fy_2026_27' | 'custom';
+type DateFilterPreset =
+  | 'all'
+  | 'today'
+  | 'this_week'
+  | 'this_month'
+  | 'prev_month'
+  | 'month'
+  | 'this_quarter'
+  | 'fy_2026_27'
+  | 'custom';
 
 export const AccountingView: React.FC<AccountingViewProps> = ({
   invoices = [],
@@ -105,12 +120,24 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
 
   const [activeTab, setActiveTab] = useState<AccountingTab>('daybook');
   const [datePreset, setDatePreset] = useState<DateFilterPreset>('fy_2026_27');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => formatLocalDate(new Date()).slice(0, 7));
   const [customStartDate, setCustomStartDate] = useState('2026-04-01');
   const [customEndDate, setCustomEndDate] = useState('2027-03-31');
   const [searchQuery, setSearchQuery] = useState('');
   const [voucherTypeFilter, setVoucherTypeFilter] = useState('all');
   const [cashBankFilter, setCashBankFilter] = useState<'all' | 'cash' | 'bank'>('all');
   const [coaCategoryFilter, setCoaCategoryFilter] = useState<'all' | 'assets' | 'liabilities' | 'capital' | 'pnl'>('all');
+
+  const availableMonths = useMemo(
+    () =>
+      getAvailableMonths([
+        ...invoices.map((i) => i.invoiceDate),
+        ...expenses.map((e) => e.date),
+        ...payments.map((p) => p.date),
+        ...journalEntries.map((j) => j.date),
+      ]),
+    [invoices, expenses, payments, journalEntries]
+  );
 
   // General Ledger state
   const [selectedLedgerAccount, setSelectedLedgerAccount] = useState<string>('Cash in Hand');
@@ -122,7 +149,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
   const [editingJvId, setEditingJvId] = useState<number | null>(null);
 
   // Form State for Journal/Contra Voucher
-  const [jvDate, setJvDate] = useState(new Date().toISOString().split('T')[0]);
+  const [jvDate, setJvDate] = useState(() => formatLocalDate(new Date()));
   const [jvVoucherNumber, setJvVoucherNumber] = useState('');
   const [jvReferenceNumber, setJvReferenceNumber] = useState('');
   const [jvDebitAccount, setJvDebitAccount] = useState('');
@@ -134,40 +161,54 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Date Range Calculation
+  // Timezone-safe Date Range Calculation
   const dateRange = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
-    
+    const todayStr = formatLocalDate(now);
+
     if (datePreset === 'today') {
-      return { start: todayStr, end: todayStr };
+      return { start: todayStr, end: todayStr, label: `Today (${todayStr})` };
     }
     if (datePreset === 'this_week') {
       const d = new Date(now);
       const day = d.getDay();
       const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      const monday = new Date(d.setDate(diff)).toISOString().split('T')[0];
-      return { start: monday, end: todayStr };
+      d.setDate(diff);
+      const monday = formatLocalDate(d);
+      return { start: monday, end: todayStr, label: `This Week (${monday} to ${todayStr})` };
     }
     if (datePreset === 'this_month') {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-      return { start: startOfMonth, end: endOfMonth };
+      const b = getMonthBounds(now.getFullYear(), now.getMonth());
+      return { start: b.startDate, end: b.endDate, label: b.label };
+    }
+    if (datePreset === 'prev_month') {
+      const prevM = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const prevY = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const b = getMonthBounds(prevY, prevM);
+      return { start: b.startDate, end: b.endDate, label: b.label };
+    }
+    if (datePreset === 'month') {
+      const b = getBoundsForYm(selectedMonth);
+      return { start: b.startDate, end: b.endDate, label: b.label };
     }
     if (datePreset === 'this_quarter') {
       const q = Math.floor(now.getMonth() / 3);
-      const startOfQ = new Date(now.getFullYear(), q * 3, 1).toISOString().split('T')[0];
-      const endOfQ = new Date(now.getFullYear(), q * 3 + 3, 0).toISOString().split('T')[0];
-      return { start: startOfQ, end: endOfQ };
+      const startB = getMonthBounds(now.getFullYear(), q * 3);
+      const endB = getMonthBounds(now.getFullYear(), q * 3 + 2);
+      return {
+        start: startB.startDate,
+        end: endB.endDate,
+        label: `Quarter (${startB.shortLabel} - ${endB.shortLabel})`,
+      };
     }
     if (datePreset === 'fy_2026_27') {
-      return { start: '2026-04-01', end: '2027-03-31' };
+      return { start: '2026-04-01', end: '2027-03-31', label: 'FY 2026-27 (Apr 2026 - Mar 2027)' };
     }
     if (datePreset === 'custom') {
-      return { start: customStartDate, end: customEndDate };
+      return { start: customStartDate, end: customEndDate, label: `${customStartDate} to ${customEndDate}` };
     }
-    return { start: '2000-01-01', end: '2099-12-31' };
-  }, [datePreset, customStartDate, customEndDate]);
+    return { start: '2000-01-01', end: '2099-12-31', label: 'All Time' };
+  }, [datePreset, selectedMonth, customStartDate, customEndDate]);
 
   // Unified Double-Entry Transaction Engine & Day Book
   const dayBookEntries = useMemo(() => {
@@ -520,10 +561,16 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     return list.sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
   }, [invoices, payments, expenses, journalEntries]);
 
+  // Entries scoped to active dateRange (for voucher-type chip counts)
+  const periodDayBookEntries = useMemo(() => {
+    return dayBookEntries.filter(
+      (item) => item.rawDate >= dateRange.start && item.rawDate <= dateRange.end
+    );
+  }, [dayBookEntries, dateRange]);
+
   // Filtered Day Book Entries
   const filteredDayBook = useMemo(() => {
-    return dayBookEntries.filter((item) => {
-      if (item.rawDate < dateRange.start || item.rawDate > dateRange.end) return false;
+    return periodDayBookEntries.filter((item) => {
       if (voucherTypeFilter !== 'all' && item.voucherType !== voucherTypeFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -537,9 +584,16 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       }
       return true;
     });
-  }, [dayBookEntries, dateRange, voucherTypeFilter, searchQuery]);
+  }, [periodDayBookEntries, voucherTypeFilter, searchQuery]);
 
-  // Comprehensive Trial Balance Calculation
+  // Filtered Journal Vouchers for active dateRange
+  const filteredJournalEntries = useMemo(() => {
+    return journalEntries.filter(
+      (jv) => jv.date >= dateRange.start && jv.date <= dateRange.end
+    );
+  }, [journalEntries, dateRange]);
+
+  // Comprehensive Trial Balance Calculation (with prior-period Opening Balance roll-forward)
   const trialBalance = useMemo(() => {
     const ledgerMap: Record<
       string,
@@ -628,38 +682,39 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       }
     });
 
-    // 3. Post movements from all transactions within date range
-    dayBookEntries.forEach((entry) => {
-      if (entry.rawDate < dateRange.start || entry.rawDate > dateRange.end) return;
+    // Group classification guesser for dynamic accounts
+    const getAccountGroup = (accName: string) => {
+      const lower = accName.toLowerCase();
+      if (
+        lower.startsWith('input cgst') ||
+        lower.startsWith('input sgst') ||
+        lower.startsWith('input igst') ||
+        lower.includes('input tax credit') ||
+        lower.includes('input gst')
+      ) {
+        return 'Current Assets';
+      }
+      if (
+        lower.startsWith('output cgst') ||
+        lower.startsWith('output sgst') ||
+        lower.startsWith('output igst') ||
+        lower.includes('output gst')
+      ) {
+        return 'Current Liabilities';
+      }
+      if (lower.includes('ineligible itc')) return 'Direct Expenses';
+      if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('asset') || lower.includes('deposit')) return 'Current Assets';
+      if (lower.includes('creditor') || lower.includes('payable') || lower.includes('gst') || lower.includes('tax') || lower.includes('loan')) return 'Current Liabilities';
+      if (lower.includes('capital') || lower.includes('equity') || lower.includes('drawing')) return 'Capital & Equity';
+      if (lower.includes('sales') || lower.includes('revenue') || lower.includes('income') || lower.includes('discount received')) return 'Direct Incomes';
+      if (lower.includes('purchase') || lower.includes('freight') || lower.includes('wage')) return 'Direct Expenses';
+      return 'Indirect Expenses';
+    };
 
-      // Group classification guesser for dynamic accounts
-      const getAccountGroup = (accName: string) => {
-        const lower = accName.toLowerCase();
-        if (
-          lower.startsWith('input cgst') ||
-          lower.startsWith('input sgst') ||
-          lower.startsWith('input igst') ||
-          lower.includes('input tax credit') ||
-          lower.includes('input gst')
-        ) {
-          return 'Current Assets';
-        }
-        if (
-          lower.startsWith('output cgst') ||
-          lower.startsWith('output sgst') ||
-          lower.startsWith('output igst') ||
-          lower.includes('output gst')
-        ) {
-          return 'Current Liabilities';
-        }
-        if (lower.includes('ineligible itc')) return 'Direct Expenses';
-        if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('asset') || lower.includes('deposit')) return 'Current Assets';
-        if (lower.includes('creditor') || lower.includes('payable') || lower.includes('gst') || lower.includes('tax') || lower.includes('loan')) return 'Current Liabilities';
-        if (lower.includes('capital') || lower.includes('equity') || lower.includes('drawing')) return 'Capital & Equity';
-        if (lower.includes('sales') || lower.includes('revenue') || lower.includes('income') || lower.includes('discount received')) return 'Direct Incomes';
-        if (lower.includes('purchase') || lower.includes('freight') || lower.includes('wage')) return 'Direct Expenses';
-        return 'Indirect Expenses';
-      };
+    // 3. Post movements: transactions prior to dateRange.start roll into Opening Balance;
+    //    transactions within [dateRange.start, dateRange.end] post to Period Movement.
+    dayBookEntries.forEach((entry) => {
+      if (entry.rawDate > dateRange.end) return;
 
       const drGroup = getAccountGroup(entry.debitAccount);
       const crGroup = getAccountGroup(entry.creditAccount);
@@ -667,14 +722,23 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       const drAcc = ensureLedger(entry.debitAccount, drGroup as any);
       const crAcc = ensureLedger(entry.creditAccount, crGroup as any);
 
-      drAcc.debitMovement += entry.amount;
-      crAcc.creditMovement += entry.amount;
+      if (entry.rawDate < dateRange.start) {
+        drAcc.openingDebit += entry.amount;
+        crAcc.openingCredit += entry.amount;
+      } else {
+        drAcc.debitMovement += entry.amount;
+        crAcc.creditMovement += entry.amount;
+      }
     });
 
-    // 4. Calculate Closing Balances
+    // 4. Normalize Opening Balances (net Dr/Cr) and Calculate Closing Balances
     const rows = Object.values(ledgerMap).map((item) => {
-      const netDr = item.openingDebit + item.debitMovement;
-      const netCr = item.openingCredit + item.creditMovement;
+      const rawOpNet = item.openingDebit - item.openingCredit;
+      const openingDebit = rawOpNet > 0 ? rawOpNet : 0;
+      const openingCredit = rawOpNet < 0 ? Math.abs(rawOpNet) : 0;
+
+      const netDr = openingDebit + item.debitMovement;
+      const netCr = openingCredit + item.creditMovement;
 
       let closingDebit = 0;
       let closingCredit = 0;
@@ -687,6 +751,8 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
 
       return {
         ...item,
+        openingDebit,
+        openingCredit,
         closingDebit,
         closingCredit,
       };
@@ -725,16 +791,16 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     };
   }, [dayBookEntries, parties, company, dateRange]);
 
-  // Trading and P&L Statement Engine
+  // Trading and P&L Statement Engine (Period-scoped for selected month/period)
   const pnlStatement = useMemo(() => {
-    // 1. Trading Account
+    // 1. Trading Account (Period Movement)
     const salesTotal = trialBalance.rows
       .filter((r) => r.groupName === 'Direct Incomes' || r.accountName.toLowerCase().includes('sales'))
-      .reduce((sum, r) => sum + (r.closingCredit - r.closingDebit), 0);
+      .reduce((sum, r) => sum + Math.max(0, r.creditMovement - r.debitMovement), 0);
 
     const purchasesTotal = trialBalance.rows
       .filter((r) => r.groupName === 'Direct Expenses' || r.accountName.toLowerCase().includes('purchase'))
-      .reduce((sum, r) => sum + (r.closingDebit - r.closingCredit), 0);
+      .reduce((sum, r) => sum + Math.max(0, r.debitMovement - r.creditMovement), 0);
 
     const openingStock = 0;
     const closingStock = summary?.totalStockValuation || 0;
@@ -742,12 +808,12 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     const grossProfit = Math.max(0, (salesTotal + closingStock) - (openingStock + purchasesTotal));
     const grossLoss = Math.max(0, (openingStock + purchasesTotal) - (salesTotal + closingStock));
 
-    // 2. Profit & Loss Account
+    // 2. Profit & Loss Account (Period Movement)
     const indirectExpenses = trialBalance.rows
       .filter((r) => r.groupName === 'Indirect Expenses')
       .map((r) => ({
         name: r.accountName,
-        amount: r.closingDebit - r.closingCredit,
+        amount: r.debitMovement - r.creditMovement,
       }))
       .filter((e) => e.amount > 0);
 
@@ -757,13 +823,22 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       .filter((r) => r.groupName === 'Indirect Incomes')
       .map((r) => ({
         name: r.accountName,
-        amount: r.closingCredit - r.closingDebit,
+        amount: r.creditMovement - r.debitMovement,
       }))
       .filter((i) => i.amount > 0);
 
     const totalIndirectIncomes = indirectIncomes.reduce((sum, i) => sum + i.amount, 0);
 
     const netProfit = grossProfit + totalIndirectIncomes - grossLoss - totalIndirectExpenses;
+
+    // Cumulative P&L as of dateRange.end for Balance Sheet Equity alignment
+    const cumulativeIncomes = trialBalance.rows
+      .filter((r) => r.groupName === 'Direct Incomes' || r.groupName === 'Indirect Incomes')
+      .reduce((sum, r) => sum + (r.closingCredit - r.closingDebit), 0);
+    const cumulativeExpenses = trialBalance.rows
+      .filter((r) => r.groupName === 'Direct Expenses' || r.groupName === 'Indirect Expenses')
+      .reduce((sum, r) => sum + (r.closingDebit - r.closingCredit), 0);
+    const cumulativeNetProfit = cumulativeIncomes + closingStock - cumulativeExpenses;
 
     return {
       salesTotal,
@@ -777,10 +852,11 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       indirectIncomes,
       totalIndirectIncomes,
       netProfit,
+      cumulativeNetProfit,
     };
   }, [trialBalance, summary]);
 
-  // Balance Sheet Statement Engine
+  // Balance Sheet Statement Engine (as of dateRange.end)
   const balanceSheet = useMemo(() => {
     const assets = trialBalance.rows.filter(
       (r) => r.groupName === 'Current Assets' || r.groupName === 'Fixed Assets'
@@ -802,7 +878,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
 
     const totalCapital = capitalItems.reduce((sum, c) => sum + c.closingCredit, 0);
     const totalCurrentLiabilities = currentLiabilities.reduce((sum, c) => sum + c.closingCredit, 0);
-    const netProfitAddition = pnlStatement.netProfit;
+    const netProfitAddition = pnlStatement.cumulativeNetProfit;
 
     const grandTotalLiabilities = totalCapital + netProfitAddition + totalCurrentLiabilities;
 
@@ -839,13 +915,13 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
 
     let currentBalance = 0; // Positive for Debit, Negative for Credit
 
-    // Opening Balance
+    // Opening Balance (already includes prior-period roll-forward from trialBalance)
     const tbRow = trialBalance.rows.find((r) => r.accountName.toLowerCase() === selectedLedgerAccount.toLowerCase());
     const opDr = tbRow ? tbRow.openingDebit : 0;
     const opCr = tbRow ? tbRow.openingCredit : 0;
     currentBalance = opDr - opCr;
 
-    // Filter daybook entries matching this account
+    // Filter daybook entries matching this account within dateRange
     const sortedChronological = [...dayBookEntries].reverse();
 
     sortedChronological.forEach((entry) => {
@@ -899,14 +975,25 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     };
   }, [dayBookEntries, selectedLedgerAccount, dateRange, trialBalance]);
 
-  // Cash & Bank Book Data
+  // Cash & Bank Book Data (Period-scoped with Opening Balance roll-forward)
   const cashBankBook = useMemo(() => {
-    const cashEntries = dayBookEntries.filter(
+    let cashOpening = 0;
+    let bankOpening = 0;
+
+    dayBookEntries.forEach((e) => {
+      if (e.rawDate >= dateRange.start) return;
+      if (e.debitAccount.toLowerCase().includes('cash')) cashOpening += e.amount;
+      if (e.creditAccount.toLowerCase().includes('cash')) cashOpening -= e.amount;
+      if (e.debitAccount.toLowerCase().includes('bank')) bankOpening += e.amount;
+      if (e.creditAccount.toLowerCase().includes('bank')) bankOpening -= e.amount;
+    });
+
+    const cashEntries = periodDayBookEntries.filter(
       (e) =>
         e.debitAccount.toLowerCase().includes('cash') ||
         e.creditAccount.toLowerCase().includes('cash')
     );
-    const bankEntries = dayBookEntries.filter(
+    const bankEntries = periodDayBookEntries.filter(
       (e) =>
         e.debitAccount.toLowerCase().includes('bank') ||
         e.creditAccount.toLowerCase().includes('bank')
@@ -918,7 +1005,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     const cashCr = cashEntries
       .filter((e) => e.creditAccount.toLowerCase().includes('cash'))
       .reduce((sum, e) => sum + e.amount, 0);
-    const cashClosing = cashDr - cashCr;
+    const cashClosing = cashOpening + cashDr - cashCr;
 
     const bankDr = bankEntries
       .filter((e) => e.debitAccount.toLowerCase().includes('bank'))
@@ -926,21 +1013,21 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     const bankCr = bankEntries
       .filter((e) => e.creditAccount.toLowerCase().includes('bank'))
       .reduce((sum, e) => sum + e.amount, 0);
-    const bankClosing = bankDr - bankCr;
+    const bankClosing = bankOpening + bankDr - bankCr;
 
     return {
       cashEntries,
       bankEntries,
-      cashOpening: 0,
+      cashOpening,
       cashDr,
       cashCr,
       cashClosing,
-      bankOpening: 0,
+      bankOpening,
       bankDr,
       bankCr,
       bankClosing,
     };
-  }, [dayBookEntries]);
+  }, [dayBookEntries, periodDayBookEntries, dateRange]);
 
   // Handle Journal Voucher Submit
   const handleCreateJv = async (e: React.FormEvent) => {
@@ -1202,7 +1289,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               id: 'daybook',
               label: 'Day Book (Roznamcha)',
               icon: Calendar,
-              badge: `${dayBookEntries.length}`,
+              badge: `${periodDayBookEntries.length}`,
             },
             {
               id: 'trial_balance',
@@ -1239,7 +1326,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               id: 'journal_vouchers',
               label: 'Journal Vouchers (JV)',
               icon: FileText,
-              badge: `${journalEntries.length}`,
+              badge: `${filteredJournalEntries.length}`,
             },
             {
               id: 'chart_of_accounts',
@@ -1280,17 +1367,18 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
         </div>
       </div>
 
-      {/* Universal Date Range & Period Chip Filter Bar */}
-      <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+      {/* Universal Date Range & Month-Wise Chip Filter Bar */}
+      <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
             <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-            Period Chips:
+            Period Filter:
           </span>
           {[
             { id: 'today', label: 'Today' },
             { id: 'this_week', label: 'This Week' },
             { id: 'this_month', label: 'This Month' },
+            { id: 'prev_month', label: 'Prev Month' },
             { id: 'this_quarter', label: 'Quarter' },
             { id: 'fy_2026_27', label: 'FY 2026-27' },
             { id: 'all', label: 'All Time' },
@@ -1312,25 +1400,59 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               </button>
             );
           })}
+
+          {/* Dedicated Month-Wise Selector */}
+          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+            <span className="text-[11px] font-semibold text-emerald-400">Month-Wise:</span>
+            <select
+              aria-label="Select Month for Accounting Books"
+              value={datePreset === 'month' ? selectedMonth : ''}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setSelectedMonth(e.target.value);
+                  setDatePreset('month');
+                }
+              }}
+              className={`px-2.5 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer bg-slate-950 border focus:outline-none ${
+                datePreset === 'month'
+                  ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/15'
+                  : 'border-slate-800 text-slate-300 hover:text-white'
+              }`}
+            >
+              <option value="" disabled>
+                Pick Month...
+              </option>
+              {availableMonths.map((m) => (
+                <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {datePreset === 'custom' && (
-          <div className="flex items-center gap-2 text-xs bg-slate-950 p-1.5 rounded-xl border border-slate-800">
-            <input
-              type="date"
-              value={customStartDate}
-              onChange={(e) => setCustomStartDate(e.target.value)}
-              className="px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-            />
-            <span className="text-slate-400">to</span>
-            <input
-              type="date"
-              value={customEndDate}
-              onChange={(e) => setCustomEndDate(e.target.value)}
-              className="px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-            />
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-mono">
+            Active Period: <strong className="text-emerald-400">{dateRange.label}</strong>
+          </span>
+          {datePreset === 'custom' && (
+            <div className="flex items-center gap-2 text-xs bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+              />
+              <span className="text-slate-400">to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="px-2.5 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ===================== TAB 1: DAY BOOK (ROZNAMCHA) ===================== */}
@@ -1341,7 +1463,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-emerald-400" />
-                  Day Book (Roznamcha)
+                  Day Book (Roznamcha) — <span className="text-emerald-400 text-sm">{dateRange.label}</span>
                 </h2>
                 <p className="text-xs text-slate-400">
                   Unified chronological transaction register of all sales, purchases, payments, receipts, expenses, and journal vouchers.
@@ -1377,14 +1499,14 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                 Voucher Type:
               </span>
               {[
-                { id: 'all', label: 'All Vouchers', count: dayBookEntries.length },
-                { id: 'sales', label: 'Sales (INV)', count: dayBookEntries.filter((d) => d.voucherType === 'sales').length, color: 'text-blue-400' },
-                { id: 'purchase', label: 'Purchases (PUR)', count: dayBookEntries.filter((d) => d.voucherType === 'purchase').length, color: 'text-amber-400' },
-                { id: 'receipt', label: 'Receipts (REC)', count: dayBookEntries.filter((d) => d.voucherType === 'receipt').length, color: 'text-emerald-400' },
-                { id: 'payment', label: 'Payments (PAY)', count: dayBookEntries.filter((d) => d.voucherType === 'payment').length, color: 'text-rose-400' },
-                { id: 'expense', label: 'Expenses (EXP)', count: dayBookEntries.filter((d) => d.voucherType === 'expense').length, color: 'text-orange-400' },
-                { id: 'journal', label: 'Journal (JV)', count: dayBookEntries.filter((d) => d.voucherType === 'journal').length, color: 'text-purple-400' },
-                { id: 'contra', label: 'Contra (CON)', count: dayBookEntries.filter((d) => d.voucherType === 'contra').length, color: 'text-cyan-400' },
+                { id: 'all', label: 'All Vouchers', count: periodDayBookEntries.length },
+                { id: 'sales', label: 'Sales (INV)', count: periodDayBookEntries.filter((d) => d.voucherType === 'sales').length, color: 'text-blue-400' },
+                { id: 'purchase', label: 'Purchases (PUR)', count: periodDayBookEntries.filter((d) => d.voucherType === 'purchase').length, color: 'text-amber-400' },
+                { id: 'receipt', label: 'Receipts (REC)', count: periodDayBookEntries.filter((d) => d.voucherType === 'receipt').length, color: 'text-emerald-400' },
+                { id: 'payment', label: 'Payments (PAY)', count: periodDayBookEntries.filter((d) => d.voucherType === 'payment').length, color: 'text-rose-400' },
+                { id: 'expense', label: 'Expenses (EXP)', count: periodDayBookEntries.filter((d) => d.voucherType === 'expense').length, color: 'text-orange-400' },
+                { id: 'journal', label: 'Journal (JV)', count: periodDayBookEntries.filter((d) => d.voucherType === 'journal').length, color: 'text-purple-400' },
+                { id: 'contra', label: 'Contra (CON)', count: periodDayBookEntries.filter((d) => d.voucherType === 'contra').length, color: 'text-cyan-400' },
               ].map((v) => {
                 const isActive = voucherTypeFilter === v.id;
                 return (
@@ -2163,14 +2285,14 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
-                {journalEntries.length === 0 ? (
+                {filteredJournalEntries.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-8 text-center text-slate-500">
-                      No manual Journal Vouchers recorded yet. Click "+ Create New JV" to post an adjustment or contra voucher.
+                      No manual Journal Vouchers found for {dateRange.label}. Click "+ Create New JV" to post an adjustment or contra voucher.
                     </td>
                   </tr>
                 ) : (
-                  journalEntries.map((jv) => (
+                  filteredJournalEntries.map((jv) => (
                     <tr key={jv.id} className="hover:bg-slate-800/50 transition">
                       <td className="p-3.5 font-medium text-slate-300 whitespace-nowrap">{jv.date}</td>
                       <td className="p-3.5">

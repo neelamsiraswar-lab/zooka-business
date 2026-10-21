@@ -1,6 +1,12 @@
 // src/components/ConsolidatedFinancialReportsView.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Workspace } from '../types';
+import {
+  getAvailableMonths,
+  resolveGstPeriodFilter,
+  GstPeriodPreset,
+  formatLocalDate,
+} from '../utils/datePeriodUtils';
 import {
   Building2,
   FileSpreadsheet,
@@ -46,7 +52,14 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
   const [loading, setLoading] = useState(true);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [entitySummaries, setEntitySummaries] = useState<WorkspaceFinancialSummary[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'quarter' | 'fy' | 'all'>('fy');
+  const [selectedPeriod, setSelectedPeriod] = useState<GstPeriodPreset>('fy');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => formatLocalDate(new Date()).slice(0, 7));
+
+  const availableMonths = useMemo(() => getAvailableMonths(), []);
+  const periodFilter = useMemo(
+    () => resolveGstPeriodFilter(selectedPeriod, selectedMonth),
+    [selectedPeriod, selectedMonth]
+  );
 
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
@@ -73,6 +86,7 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
         let sgstTotal = 0;
         let igstTotal = 0;
         let invoicesCount = 0;
+        let totalUnfilteredDocs = 0;
 
         try {
           const invSnap = await db
@@ -80,22 +94,28 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
             .where('workspaceId', '==', ws.id)
             .get();
 
-          invoicesCount = invSnap.docs.length;
+          totalUnfilteredDocs = invSnap.docs.length;
 
           invSnap.docs.forEach((doc: any) => {
             const data = doc.data();
+            if (data.status === 'cancelled') return;
+            const invDate = data.invoiceDate || '';
+            if (periodFilter.startDate && invDate < periodFilter.startDate) return;
+            if (periodFilter.endDate && invDate > periodFilter.endDate) return;
+
+            invoicesCount++;
             const grandTotal = parseFloat(data.grandTotal || '0') || 0;
-            const subtotal = parseFloat(data.subtotal || '0') || 0;
             const cgst = parseFloat(data.cgstTotal || '0') || 0;
             const sgst = parseFloat(data.sgstTotal || '0') || 0;
             const igst = parseFloat(data.igstTotal || '0') || 0;
+            const isPurchase = data.voucherType === 'purchase' || data.invoiceType === 'purchase_bill';
 
-            if (data.voucherType === 'sales') {
+            if (!isPurchase) {
               totalSales += grandTotal;
               cgstTotal += cgst;
               sgstTotal += sgst;
               igstTotal += igst;
-            } else if (data.voucherType === 'purchase') {
+            } else {
               totalPurchases += grandTotal;
             }
           });
@@ -110,8 +130,14 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
             .where('workspaceId', '==', ws.id)
             .get();
 
+          totalUnfilteredDocs += expSnap.docs.length;
+
           expSnap.docs.forEach((doc: any) => {
             const exp = doc.data();
+            const expDate = exp.date || '';
+            if (periodFilter.startDate && expDate < periodFilter.startDate) return;
+            if (periodFilter.endDate && expDate > periodFilter.endDate) return;
+
             const amount = parseFloat(exp.amount || '0') || 0;
             totalPurchases += amount;
           });
@@ -139,16 +165,23 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
           console.warn(`Could not load parties for workspace ${ws.id}:`, partyErr);
         }
 
-        // If a newly created empty workspace, provide realistic multi-entity baseline
-        if (totalSales === 0 && totalPurchases === 0) {
-          const pseudoSales = ws.plan === 'enterprise' ? 2450000 : ws.plan === 'professional' ? 1280000 : 420000;
+        // If a newly created empty workspace with zero records at all, provide scaled baseline
+        if (totalUnfilteredDocs === 0 && totalSales === 0 && totalPurchases === 0) {
+          const periodScale =
+            selectedPeriod === 'this_month' || selectedPeriod === 'prev_month' || selectedPeriod === 'month'
+              ? 1 / 12
+              : selectedPeriod === 'q1' || selectedPeriod === 'q2' || selectedPeriod === 'q3' || selectedPeriod === 'q4'
+              ? 0.25
+              : 1;
+          const baseSales = ws.plan === 'enterprise' ? 2450000 : ws.plan === 'professional' ? 1280000 : 420000;
+          const pseudoSales = Math.round(baseSales * periodScale);
           const pseudoExp = Math.round(pseudoSales * 0.62);
           totalSales = pseudoSales;
           totalPurchases = pseudoExp;
           cgstTotal = Math.round(pseudoSales * 0.09);
           sgstTotal = Math.round(pseudoSales * 0.09);
-          totalReceivables = Math.round(pseudoSales * 0.18);
-          invoicesCount = ws.invoicesCount || 14;
+          totalReceivables = Math.round(baseSales * 0.18);
+          invoicesCount = Math.max(1, Math.round((ws.invoicesCount || 14) * periodScale));
         }
 
         const netProfit = totalSales - totalPurchases;
@@ -181,7 +214,7 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
 
   useEffect(() => {
     loadConsolidatedData();
-  }, []);
+  }, [selectedPeriod, selectedMonth]);
 
   const toggleSelectEntity = (wsId: string) => {
     setEntitySummaries((prev) =>
@@ -271,18 +304,19 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-slate-400 font-semibold flex items-center gap-1">
             <Filter className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Reporting Period:</span>
+            <span>Reporting Period ({periodFilter.label}):</span>
           </span>
           {[
-            { id: 'month', label: 'This Month' },
-            { id: 'quarter', label: 'Q2 FY 2026-27' },
+            { id: 'this_month', label: 'This Month' },
+            { id: 'prev_month', label: 'Prev Month' },
+            { id: 'q2', label: 'Q2 Return' },
             { id: 'fy', label: 'FY 2026-27 (Annual)' },
             { id: 'all', label: 'All History' },
           ].map((period) => (
             <button
               key={period.id}
               type="button"
-              onClick={() => setSelectedPeriod(period.id as any)}
+              onClick={() => setSelectedPeriod(period.id as GstPeriodPreset)}
               className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
                 selectedPeriod === period.id
                   ? 'bg-indigo-600 text-white font-semibold shadow'
@@ -292,6 +326,33 @@ export const ConsolidatedFinancialReportsView: React.FC<ConsolidatedFinancialRep
               {period.label}
             </button>
           ))}
+          <div className="flex items-center gap-1 pl-1">
+            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+            <select
+              aria-label="Select Month for Consolidated Reports"
+              value={selectedPeriod === 'month' ? selectedMonth : ''}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setSelectedMonth(e.target.value);
+                  setSelectedPeriod('month');
+                }
+              }}
+              className={`px-2 py-1 rounded-lg font-semibold transition cursor-pointer bg-slate-950 border text-xs focus:outline-none ${
+                selectedPeriod === 'month'
+                  ? 'border-indigo-500 text-indigo-300 bg-indigo-500/15'
+                  : 'border-slate-800 text-slate-300 hover:text-white'
+              }`}
+            >
+              <option value="" disabled>
+                Month-Wise...
+              </option>
+              {availableMonths.map((m) => (
+                <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

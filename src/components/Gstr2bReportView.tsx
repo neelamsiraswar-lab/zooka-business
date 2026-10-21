@@ -1,6 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { FinancialSummary, Invoice, Expense, Party, CompanyProfile } from '../types';
 import {
+  getAvailableMonths,
+  resolveGstPeriodFilter,
+  GstPeriodPreset,
+  formatLocalDate,
+} from '../utils/datePeriodUtils';
+import {
   FileSpreadsheet,
   Download,
   Calendar,
@@ -59,9 +65,24 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
   company,
 }) => {
   const [subTab, setSubTab] = useState<'b2b' | 'ineligible' | 'reconciliation' | 'mapping'>('b2b');
+  const [periodPreset, setPeriodPreset] = useState<GstPeriodPreset>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => formatLocalDate(new Date()).slice(0, 7));
   const [searchQuery, setSearchQuery] = useState('');
   const [supplyFilter, setSupplyFilter] = useState<'all' | 'interstate' | 'intrastate'>('all');
   const [copiedItc, setCopiedItc] = useState(false);
+
+  const availableMonths = useMemo(
+    () =>
+      getAvailableMonths([
+        ...invoices.map((i) => i.invoiceDate),
+        ...expenses.map((e) => e.date),
+      ]),
+    [invoices, expenses]
+  );
+
+  const periodFilter = useMemo(() => {
+    return resolveGstPeriodFilter(periodPreset, selectedMonth);
+  }, [periodPreset, selectedMonth]);
 
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
@@ -75,12 +96,18 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
   const recipientGstin = company?.gstin || '27AAECB9382M1ZR';
   const recipientStateCode = company?.stateCode || '27';
 
-  // Transform Purchase Invoices and Business Expenses into unified GSTR-2B Statement records
+  // Transform Purchase Invoices and Business Expenses into unified GSTR-2B Statement records (filtered by month/period)
   const gstr2bRecords = useMemo(() => {
     const list: Gstr2bItem[] = [];
 
     // 1. Purchase Bills from registered/unregistered vendors
-    const purchaseInvoices = invoices.filter((i) => i.voucherType === 'purchase' || i.invoiceType === 'purchase_bill');
+    const purchaseInvoices = invoices.filter((i) => {
+      const isPurchase = i.voucherType === 'purchase' || i.invoiceType === 'purchase_bill';
+      if (!isPurchase || i.status === 'cancelled') return false;
+      if (periodFilter.startDate && i.invoiceDate < periodFilter.startDate) return false;
+      if (periodFilter.endDate && i.invoiceDate > periodFilter.endDate) return false;
+      return true;
+    });
     purchaseInvoices.forEach((inv) => {
       const party = parties.find((p) => p.id === inv.partyId);
       const gstin = inv.partyGstin || party?.gstin || '27AAACS1482E1ZE';
@@ -117,56 +144,62 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
         itcEligible: !isIneligible,
         ineligibleReason: purType === 'ineligible_17_5' ? 'Ineligible under Section 17(5)' : !isRegistered ? 'Unregistered supplier (B2C purchase)' : undefined,
         supplierFilingStatus: isRegistered ? 'GSTR-1 Filed' : 'Unregistered',
-        filingDate: isRegistered ? '11-Sep-2026' : '-',
+        filingDate: isRegistered ? `11-${inv.invoiceDate.slice(5, 7)}-${inv.invoiceDate.slice(0, 4)}` : '-',
         reconciliationStatus: !isIneligible ? 'matched' : 'ineligible',
       });
     });
 
     // 2. Business Expenses with GST / Input Tax
-    expenses.forEach((exp) => {
-      const tax = parseFloat(exp.gstPaid) || 0;
-      const total = parseFloat(exp.amount) || 0;
-      const taxable = Math.max(0, total - tax);
-      const hasGst = tax > 0;
-      const gstin = exp.gstin || (hasGst && exp.itcEligible ? '27AAACB0998Q1ZV' : 'URP / Non-GST');
-      const isRegistered = Boolean(exp.gstin && exp.gstin.length >= 15);
+    expenses
+      .filter((exp) => {
+        if (periodFilter.startDate && exp.date < periodFilter.startDate) return false;
+        if (periodFilter.endDate && exp.date > periodFilter.endDate) return false;
+        return true;
+      })
+      .forEach((exp) => {
+        const tax = parseFloat(exp.gstPaid) || 0;
+        const total = parseFloat(exp.amount) || 0;
+        const taxable = Math.max(0, total - tax);
+        const hasGst = tax > 0;
+        const gstin = exp.gstin || (hasGst && exp.itcEligible ? '27AAACB0998Q1ZV' : 'URP / Non-GST');
+        const isRegistered = Boolean(exp.gstin && exp.gstin.length >= 15);
 
-      // Interstate determination
-      const isInter = isRegistered && !exp.gstin?.startsWith(recipientStateCode);
-      const igstVal = isInter ? tax : 0;
-      const cgstVal = !isInter ? tax / 2 : 0;
-      const sgstVal = !isInter ? tax / 2 : 0;
+        // Interstate determination
+        const isInter = isRegistered && !exp.gstin?.startsWith(recipientStateCode);
+        const igstVal = isInter ? tax : 0;
+        const cgstVal = !isInter ? tax / 2 : 0;
+        const sgstVal = !isInter ? tax / 2 : 0;
 
-      list.push({
-        id: `EXP-${exp.id}`,
-        sourceType: 'Expense Voucher',
-        supplierGstin: gstin,
-        supplierName: exp.vendorName || exp.category,
-        invoiceNumber: exp.referenceNumber || `EXP-${exp.id.toString().padStart(4, '0')}`,
-        invoiceDate: exp.date,
-        invoiceType: hasGst ? 'Services' : 'Non-GST',
-        placeOfSupply: isInter ? exp.gstin!.slice(0, 2) : recipientStateCode,
-        isInterstate: isInter,
-        taxableValue: taxable,
-        igst: igstVal,
-        cgst: cgstVal,
-        sgst: sgstVal,
-        totalTax: tax,
-        totalValue: total,
-        itcEligible: Boolean(exp.itcEligible && hasGst),
-        ineligibleReason: !exp.itcEligible
-          ? hasGst
-            ? 'Section 17(5) Blocked Credit / Personal or Exempt'
-            : 'Non-GST / Exempt Operating Outflow'
-          : undefined,
-        supplierFilingStatus: isRegistered ? 'GSTR-1 Filed' : hasGst ? 'GSTR-1 Filed' : 'Unregistered',
-        filingDate: isRegistered || hasGst ? '10-Sep-2026' : '-',
-        reconciliationStatus: exp.itcEligible && hasGst ? 'matched' : 'ineligible',
+        list.push({
+          id: `EXP-${exp.id}`,
+          sourceType: 'Expense Voucher',
+          supplierGstin: gstin,
+          supplierName: exp.vendorName || exp.category,
+          invoiceNumber: exp.referenceNumber || `EXP-${exp.id.toString().padStart(4, '0')}`,
+          invoiceDate: exp.date,
+          invoiceType: hasGst ? 'Services' : 'Non-GST',
+          placeOfSupply: isInter ? exp.gstin!.slice(0, 2) : recipientStateCode,
+          isInterstate: isInter,
+          taxableValue: taxable,
+          igst: igstVal,
+          cgst: cgstVal,
+          sgst: sgstVal,
+          totalTax: tax,
+          totalValue: total,
+          itcEligible: Boolean(exp.itcEligible && hasGst),
+          ineligibleReason: !exp.itcEligible
+            ? hasGst
+              ? 'Section 17(5) Blocked Credit / Personal or Exempt'
+              : 'Non-GST / Exempt Operating Outflow'
+            : undefined,
+          supplierFilingStatus: isRegistered ? 'GSTR-1 Filed' : hasGst ? 'GSTR-1 Filed' : 'Unregistered',
+          filingDate: isRegistered || hasGst ? `10-${exp.date.slice(5, 7)}-${exp.date.slice(0, 4)}` : '-',
+          reconciliationStatus: exp.itcEligible && hasGst ? 'matched' : 'ineligible',
+        });
       });
-    });
 
     return list;
-  }, [invoices, expenses, parties, recipientStateCode]);
+  }, [invoices, expenses, parties, recipientStateCode, periodFilter]);
 
   // Aggregate Metrics
   const eligibleRecords = useMemo(
@@ -264,9 +297,9 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
   const handleExportJson = () => {
     const payload = {
       gstin: recipientGstin,
-      fp: '092026', // Sept 2026
+      fp: periodFilter.fp,
       version: 'GSTR2B_v1.4',
-      generationDate: '14/09/2026',
+      generationDate: `14/${periodFilter.fp.slice(0, 2)}/${periodFilter.fp.slice(2)}`,
       summary: {
         totalTaxable: metrics.eligibleTaxable,
         eligibleItc: {
@@ -316,7 +349,7 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
     link.href = URL.createObjectURL(blob);
     link.setAttribute(
       'download',
-      `GSTR2B_${recipientGstin}_092026.json`
+      `GSTR2B_${recipientGstin}_${periodFilter.fp}.json`
     );
     document.body.appendChild(link);
     link.click();
@@ -354,6 +387,77 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Period & Month-Wise Selector */}
+            <div className="flex flex-wrap items-center bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs gap-1">
+              <button
+                onClick={() => setPeriodPreset('all')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'all' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                All Records
+              </button>
+              <button
+                onClick={() => setPeriodPreset('this_month')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'this_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                This Month
+              </button>
+              <button
+                onClick={() => setPeriodPreset('prev_month')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'prev_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Prev Month
+              </button>
+              <div className="flex items-center gap-1 pl-1 border-l border-slate-800">
+                <Calendar className="w-3.5 h-3.5 text-emerald-400 ml-1" />
+                <select
+                  aria-label="Select Month for GSTR-2B"
+                  value={periodPreset === 'month' ? selectedMonth : ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedMonth(e.target.value);
+                      setPeriodPreset('month');
+                    }
+                  }}
+                  className={`px-2 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-slate-900 border text-xs focus:outline-none ${
+                    periodPreset === 'month'
+                      ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10'
+                      : 'border-slate-800 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <option value="" disabled>
+                    Month-Wise...
+                  </option>
+                  {availableMonths.map((m) => (
+                    <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => setPeriodPreset('q2')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'q2' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Q2
+              </button>
+              <button
+                onClick={() => setPeriodPreset('fy')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'fy' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Full FY
+              </button>
+            </div>
+
             <button
               onClick={handleCopyItcSummary}
               className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
@@ -398,11 +502,11 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
           </div>
           <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800">
             <span className="text-slate-400 text-[10px] block uppercase font-sans">Tax Period / FY</span>
-            <span className="text-emerald-400 font-bold font-sans">September 2026 (FY 26-27)</span>
+            <span className="text-emerald-400 font-bold font-sans">{periodFilter.label}</span>
           </div>
           <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800">
-            <span className="text-slate-400 text-[10px] block uppercase font-sans">Generation Timestamp</span>
-            <span className="text-slate-300">14-Sep-2026 00:00:00</span>
+            <span className="text-slate-400 text-[10px] block uppercase font-sans">Generation Cut-off</span>
+            <span className="text-slate-300">14th of Month ({periodFilter.fp})</span>
           </div>
           <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800">
             <span className="text-slate-400 text-[10px] block uppercase font-sans">Place of Supply (POS)</span>

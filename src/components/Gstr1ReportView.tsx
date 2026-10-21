@@ -6,6 +6,12 @@ import {
   Gstr1InvoiceSummary,
 } from '../utils/gstTaxEngine';
 import {
+  getAvailableMonths,
+  resolveGstPeriodFilter,
+  GstPeriodPreset,
+  formatLocalDate,
+} from '../utils/datePeriodUtils';
+import {
   FileSpreadsheet,
   Download,
   Calendar,
@@ -35,9 +41,15 @@ interface Gstr1ReportViewProps {
 
 export const Gstr1ReportView: React.FC<Gstr1ReportViewProps> = ({ invoices, company, onNavigateToComparison }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'b2b' | 'b2c' | 'exports' | 'hsn' | 'pos'>('all');
-  const [periodPreset, setPeriodPreset] = useState<'all' | 'this_month' | 'prev_month' | 'q2' | 'fy'>('all');
+  const [periodPreset, setPeriodPreset] = useState<GstPeriodPreset>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => formatLocalDate(new Date()).slice(0, 7));
   const [searchTerm, setSearchTerm] = useState('');
   const [copiedSummary, setCopiedSummary] = useState(false);
+
+  const availableMonths = useMemo(
+    () => getAvailableMonths(invoices.map((i) => i.invoiceDate)),
+    [invoices]
+  );
 
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
@@ -48,47 +60,10 @@ export const Gstr1ReportView: React.FC<Gstr1ReportViewProps> = ({ invoices, comp
     }).format(val);
   };
 
-  // Derive date bounds from periodPreset
+  // Derive timezone-safe date bounds from periodPreset & selectedMonth
   const periodFilter = useMemo(() => {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth(); // 0-indexed
-
-    if (periodPreset === 'this_month') {
-      const start = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
-      const end = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-      return { startDate: start, endDate: end, label: `${monthNames[currentMonth]} ${currentYear}` };
-    }
-
-    if (periodPreset === 'prev_month') {
-      const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-      const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-      const start = new Date(prevYear, prevMonth, 1).toISOString().split('T')[0];
-      const end = new Date(prevYear, prevMonth + 1, 0).toISOString().split('T')[0];
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-      return { startDate: start, endDate: end, label: `${monthNames[prevMonth]} ${prevYear}` };
-    }
-
-    if (periodPreset === 'q2') {
-      // Q2: July to September
-      return {
-        startDate: `${currentYear}-07-01`,
-        endDate: `${currentYear}-09-30`,
-        label: `Q2 (Jul - Sep ${currentYear})`,
-      };
-    }
-
-    if (periodPreset === 'fy') {
-      return {
-        startDate: `${currentYear}-04-01`,
-        endDate: `${currentYear + 1}-03-31`,
-        label: `FY ${currentYear}-${(currentYear + 1).toString().slice(-2)}`,
-      };
-    }
-
-    return { label: 'All Transactions' };
-  }, [periodPreset]);
+    return resolveGstPeriodFilter(periodPreset, selectedMonth);
+  }, [periodPreset, selectedMonth]);
 
   // Aggregate Report Data
   const reportData: Gstr1ReportData = useMemo(() => {
@@ -131,7 +106,7 @@ export const Gstr1ReportView: React.FC<Gstr1ReportViewProps> = ({ invoices, comp
   const handleExportJson = () => {
     const portalJson = {
       gstin: reportData.companyGstin,
-      fp: periodFilter.startDate ? periodFilter.startDate.slice(5, 7) + periodFilter.startDate.slice(0, 4) : '092026',
+      fp: periodFilter.fp,
       cur_gt: reportData.totalInvoiceValue,
       b2b: reportData.b2bInvoices.map((i) => ({
         ctin: i.partyGstin,
@@ -265,11 +240,11 @@ Table Breakdown:
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Period Selector */}
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs">
+            {/* Period & Month-Wise Selector */}
+            <div className="flex flex-wrap items-center bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs gap-1">
               <button
                 onClick={() => setPeriodPreset('all')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
                   periodPreset === 'all' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -277,7 +252,7 @@ Table Breakdown:
               </button>
               <button
                 onClick={() => setPeriodPreset('this_month')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
                   periodPreset === 'this_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -285,23 +260,58 @@ Table Breakdown:
               </button>
               <button
                 onClick={() => setPeriodPreset('prev_month')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
                   periodPreset === 'prev_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 Prev Month
               </button>
+              <div className="flex items-center gap-1 pl-1 border-l border-slate-800">
+                <Calendar className="w-3.5 h-3.5 text-emerald-400 ml-1" />
+                <select
+                  aria-label="Select Month for GSTR-1"
+                  value={periodPreset === 'month' ? selectedMonth : ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedMonth(e.target.value);
+                      setPeriodPreset('month');
+                    }
+                  }}
+                  className={`px-2 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-slate-900 border text-xs focus:outline-none ${
+                    periodPreset === 'month'
+                      ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10'
+                      : 'border-slate-800 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <option value="" disabled>
+                    Month-Wise...
+                  </option>
+                  {availableMonths.map((m) => (
+                    <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button
                 onClick={() => setPeriodPreset('q2')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
                   periodPreset === 'q2' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Q2 Return
+                Q2
+              </button>
+              <button
+                onClick={() => setPeriodPreset('q3')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'q3' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Q3
               </button>
               <button
                 onClick={() => setPeriodPreset('fy')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
                   periodPreset === 'fy' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >

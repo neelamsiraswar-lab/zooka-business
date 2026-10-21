@@ -19,7 +19,6 @@ import {
   Tag,
   Hash,
   Package,
-  ShieldCheck,
   FileText,
 } from 'lucide-react';
 
@@ -67,7 +66,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [category, setCategory] = useState<string>('Electronics & Electricals');
   const [sku, setSku] = useState('');
   const [description, setDescription] = useState('');
-  const [defaultWarranty, setDefaultWarranty] = useState('');
   const [hsnCode, setHsnCode] = useState('8536');
   const [unit, setUnit] = useState('PCS');
   const [sellingPrice, setSellingPrice] = useState('');
@@ -90,8 +88,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       i.name.toLowerCase().includes(search.toLowerCase()) ||
       i.hsnCode.includes(search) ||
       (i.sku && i.sku.toLowerCase().includes(search.toLowerCase())) ||
-      (i.description && i.description.toLowerCase().includes(search.toLowerCase())) ||
-      (i.defaultWarranty && i.defaultWarranty.toLowerCase().includes(search.toLowerCase()));
+      (i.description && i.description.toLowerCase().includes(search.toLowerCase()));
 
     const current = parseFloat(i.currentStock) || 0;
     const min = parseFloat(i.minStockAlert) || 5;
@@ -108,7 +105,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setCategory('Electronics & Electricals');
     setSku('');
     setDescription('');
-    setDefaultWarranty('');
     setHsnCode('8536');
     setUnit('PCS');
     setSellingPrice('');
@@ -125,7 +121,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setCategory(item.category || inferCategoryFromItem(item.name, item.description, item.hsnCode));
     setSku(item.sku || '');
     setDescription(item.description || '');
-    setDefaultWarranty(item.defaultWarranty || '');
     setHsnCode(item.hsnCode);
     setUnit(item.unit);
     setSellingPrice(item.sellingPrice);
@@ -145,7 +140,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         category,
         sku,
         description,
-        defaultWarranty,
         hsnCode,
         unit,
         sellingPrice,
@@ -160,7 +154,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         category,
         sku,
         description,
-        defaultWarranty,
         hsnCode,
         unit,
         sellingPrice,
@@ -175,7 +168,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     setItemName('');
     setSku('');
     setDescription('');
-    setDefaultWarranty('');
     setSellingPrice('');
     setPurchasePrice('');
     setOpeningStock('0');
@@ -391,12 +383,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                           ) : (
                             <div className="text-[10px] text-slate-500 italic">No SKU code</div>
                           )}
-                          {it.defaultWarranty && (
-                            <span className="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-medium">
-                              <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
-                              {it.defaultWarranty}
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="py-3.5 px-4 text-center font-bold text-slate-200">
@@ -536,63 +522,6 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-teal-400 resize-none text-xs"
                 />
-              </div>
-
-              {/* Default Warranty (Pickable & Custom) */}
-              <div className="space-y-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-                <div className="flex items-center justify-between">
-                  <label className="font-medium text-slate-300 flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Default Warranty Policy</span>
-                  </label>
-                  {defaultWarranty && (
-                    <button
-                      type="button"
-                      onClick={() => setDefaultWarranty('')}
-                      className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  placeholder="e.g. 1 Year Manufacturer Warranty"
-                  value={defaultWarranty}
-                  onChange={(e) => setDefaultWarranty(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 text-xs"
-                />
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-slate-400">Quick Pick:</span>
-                  {[
-                    '1 Year Warranty',
-                    '2 Years Warranty',
-                    '3 Years Warranty',
-                    '6 Months Warranty',
-                    '3 Months Warranty',
-                    '18 Months Warranty',
-                    '5 Years Warranty',
-                    '1 Year On-site',
-                    'Lifetime Warranty',
-                    'No Warranty',
-                  ].map((wPreset) => {
-                    const isSelected = defaultWarranty === wPreset;
-                    return (
-                      <button
-                        key={wPreset}
-                        type="button"
-                        onClick={() => setDefaultWarranty(isSelected ? '' : wPreset)}
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition cursor-pointer border ${
-                          isSelected
-                            ? 'bg-emerald-400 text-slate-950 font-bold border-emerald-300 shadow-sm'
-                            : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        {wPreset}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

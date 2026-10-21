@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { FinancialSummary, Invoice, Expense, Party, CompanyProfile } from '../types';
+import {
+  getAvailableMonths,
+  resolveGstPeriodFilter,
+  GstPeriodPreset,
+  formatLocalDate,
+} from '../utils/datePeriodUtils';
 import {
   FileSpreadsheet,
   Download,
@@ -43,6 +49,97 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const [reportType, setReportType] = useState<
     'pnl' | 'gstr1' | 'gstr2b' | 'gstr3b' | 'gstrCompare' | 'deadlines' | 'balanceSheet' | 'consolidated'
   >('pnl');
+  const [periodPreset, setPeriodPreset] = useState<GstPeriodPreset>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => formatLocalDate(new Date()).slice(0, 7));
+
+  const availableMonths = useMemo(
+    () =>
+      getAvailableMonths([
+        ...invoices.map((i) => i.invoiceDate),
+        ...expenses.map((e) => e.date),
+      ]),
+    [invoices, expenses]
+  );
+
+  const periodFilter = useMemo(() => {
+    return resolveGstPeriodFilter(periodPreset, selectedMonth);
+  }, [periodPreset, selectedMonth]);
+
+  // Period-filtered Financial Summary for Trading & P&L and Balance Sheet Schedule
+  const periodSummary = useMemo(() => {
+    if (periodPreset === 'all' && summary) {
+      return summary;
+    }
+
+    const activeInvoices = invoices.filter((inv) => {
+      if (inv.status === 'cancelled') return false;
+      if (periodFilter.startDate && inv.invoiceDate < periodFilter.startDate) return false;
+      if (periodFilter.endDate && inv.invoiceDate > periodFilter.endDate) return false;
+      return true;
+    });
+
+    const activeExpenses = expenses.filter((exp) => {
+      if (periodFilter.startDate && exp.date < periodFilter.startDate) return false;
+      if (periodFilter.endDate && exp.date > periodFilter.endDate) return false;
+      return true;
+    });
+
+    let totalSales = 0;
+    let totalPurchases = 0;
+    let totalTaxCollected = 0;
+    let totalPurchaseItc = 0;
+    let totalReceivables = 0;
+    let totalPayables = 0;
+
+    activeInvoices.forEach((inv) => {
+      const isPurchase = inv.voucherType === 'purchase' || inv.invoiceType === 'purchase_bill';
+      const taxable = parseFloat(inv.subtotal) || 0;
+      const tax = parseFloat(inv.taxTotal) || 0;
+      const grand = parseFloat(inv.grandTotal) || 0;
+      const paid = parseFloat(inv.paidAmount) || 0;
+      const unpaid = Math.max(0, grand - paid);
+
+      if (isPurchase) {
+        totalPurchases += taxable > 0 ? taxable : Math.max(0, grand - tax);
+        if (inv.purchaseType !== 'ineligible_17_5') {
+          totalPurchaseItc += tax;
+        }
+        totalPayables += unpaid;
+      } else {
+        totalSales += taxable > 0 ? taxable : Math.max(0, grand - tax);
+        totalTaxCollected += tax;
+        totalReceivables += unpaid;
+      }
+    });
+
+    let totalExpenses = 0;
+    let totalExpenseItc = 0;
+    activeExpenses.forEach((exp) => {
+      const amt = parseFloat(exp.amount) || 0;
+      const gst = parseFloat(exp.gstPaid) || 0;
+      totalExpenses += exp.itcEligible ? Math.max(0, amt - gst) : amt;
+      if (exp.itcEligible) {
+        totalExpenseItc += gst;
+      }
+    });
+
+    const totalTaxPaidOnExpenses = totalPurchaseItc + totalExpenseItc;
+    const totalStockValuation = summary?.totalStockValuation || 0;
+    const netProfit = totalSales - totalPurchases - totalExpenses;
+
+    return {
+      totalSales,
+      totalPurchases,
+      totalExpenses,
+      totalReceivables: periodPreset === 'all' ? summary?.totalReceivables || totalReceivables : totalReceivables,
+      totalPayables: periodPreset === 'all' ? summary?.totalPayables || totalPayables : totalPayables,
+      totalTaxCollected,
+      totalTaxPaidOnExpenses,
+      netGstLiability: Math.max(0, totalTaxCollected - totalTaxPaidOnExpenses),
+      netProfit,
+      totalStockValuation,
+    };
+  }, [periodPreset, periodFilter, invoices, expenses, summary]);
 
   const formatINR = (val: number | undefined) => {
     if (val === undefined || isNaN(val)) return '₹0.00';
@@ -66,11 +163,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const handleExportGstr1 = () => {
     let csv = 'Invoice Number,Invoice Date,Party Name,Party GSTIN,Place of Supply,Subtotal,CGST,SGST,IGST,Grand Total\n';
     invoices
-      .filter((i) => i.voucherType === 'sales')
+      .filter((i) => {
+        const isPurchase = i.voucherType === 'purchase' || i.invoiceType === 'purchase_bill';
+        if (isPurchase || i.status === 'cancelled') return false;
+        if (periodFilter.startDate && i.invoiceDate < periodFilter.startDate) return false;
+        if (periodFilter.endDate && i.invoiceDate > periodFilter.endDate) return false;
+        return true;
+      })
       .forEach((i) => {
         csv += `"${i.invoiceNumber}","${i.invoiceDate}","${i.partyName}","${i.partyGstin || ''}","${i.placeOfSupply}",${i.subtotal},${i.cgstTotal},${i.sgstTotal},${i.igstTotal},${i.grandTotal}\n`;
       });
-    exportCSV(csv, `GSTR-1-Outward-Supplies-${new Date().toISOString().split('T')[0]}.csv`);
+    exportCSV(csv, `GSTR-1-Outward-Supplies-${periodFilter.label.replace(/\s+/g, '-')}.csv`);
   };
 
   return (
@@ -261,53 +364,124 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       {/* 2. TRADING & PROFIT & LOSS VIEW */}
       {reportType === 'pnl' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
-          <div className="border-b border-slate-800 pb-4 flex justify-between items-center">
+          <div className="border-b border-slate-800 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h3 className="font-bold text-white text-base">Statement of Profit & Loss (Income Statement)</h3>
-              <p className="text-xs text-slate-400">For the period ending today</p>
+              <p className="text-xs text-slate-400">Reporting Period: <span className="text-emerald-400 font-semibold">{periodFilter.label}</span></p>
             </div>
-            <span className="text-xs px-2.5 py-1 bg-slate-950 rounded-lg border border-slate-800 text-slate-300 font-mono">
-              Accrual Basis
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs gap-1">
+                <button
+                  onClick={() => setPeriodPreset('all')}
+                  className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                    periodPreset === 'all' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  All Time
+                </button>
+                <button
+                  onClick={() => setPeriodPreset('this_month')}
+                  className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                    periodPreset === 'this_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  This Month
+                </button>
+                <button
+                  onClick={() => setPeriodPreset('prev_month')}
+                  className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                    periodPreset === 'prev_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Prev Month
+                </button>
+                <div className="flex items-center gap-1 pl-1 border-l border-slate-800">
+                  <Calendar className="w-3.5 h-3.5 text-emerald-400 ml-1" />
+                  <select
+                    aria-label="Select Month for P&L"
+                    value={periodPreset === 'month' ? selectedMonth : ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setSelectedMonth(e.target.value);
+                        setPeriodPreset('month');
+                      }
+                    }}
+                    className={`px-2 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-slate-900 border text-xs focus:outline-none ${
+                      periodPreset === 'month'
+                        ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10'
+                        : 'border-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <option value="" disabled>
+                      Month-Wise...
+                    </option>
+                    {availableMonths.map((m) => (
+                      <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={() => setPeriodPreset('q2')}
+                  className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                    periodPreset === 'q2' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Q2
+                </button>
+                <button
+                  onClick={() => setPeriodPreset('fy')}
+                  className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                    periodPreset === 'fy' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Full FY
+                </button>
+              </div>
+              <span className="text-xs px-2.5 py-1.5 bg-slate-950 rounded-lg border border-slate-800 text-slate-300 font-mono">
+                Accrual Basis
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-mono">
             {/* Debit Side (Expenses / Cost of Goods) */}
             <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
               <div className="text-slate-400 font-bold uppercase tracking-wider text-[11px] pb-2 border-b border-slate-800">
-                Expenditures & Outflows (Dr)
+                Expenditures & Outflows (Dr) — {periodFilter.label}
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Cost of Goods Purchased (Purchases):</span>
-                <span>{formatINR(summary?.totalPurchases)}</span>
+                <span>{formatINR(periodSummary?.totalPurchases)}</span>
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Operating Overheads (Salaries, Rent, Utilities):</span>
-                <span>{formatINR(summary?.totalExpenses)}</span>
+                <span>{formatINR(periodSummary?.totalExpenses)}</span>
               </div>
               <div className="pt-3 border-t border-slate-800 flex justify-between text-sm font-bold text-white">
                 <span>Total Costs:</span>
-                <span>{formatINR((summary?.totalPurchases || 0) + (summary?.totalExpenses || 0))}</span>
+                <span>{formatINR((periodSummary?.totalPurchases || 0) + (periodSummary?.totalExpenses || 0))}</span>
               </div>
             </div>
 
             {/* Credit Side (Revenue & Inflows) */}
             <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
               <div className="text-slate-400 font-bold uppercase tracking-wider text-[11px] pb-2 border-b border-slate-800">
-                Revenue & Inflows (Cr)
+                Revenue & Inflows (Cr) — {periodFilter.label}
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Gross Revenue from Sales:</span>
-                <span className="text-emerald-400 font-bold">{formatINR(summary?.totalSales)}</span>
+                <span className="text-emerald-400 font-bold">{formatINR(periodSummary?.totalSales)}</span>
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Closing Stock Valuation:</span>
-                <span>{formatINR(summary?.totalStockValuation)}</span>
+                <span>{formatINR(periodSummary?.totalStockValuation)}</span>
               </div>
               <div className="pt-3 border-t border-slate-800 flex justify-between text-sm font-bold text-white">
                 <span>Total Operating Value:</span>
                 <span className="text-emerald-400">
-                  {formatINR((summary?.totalSales || 0) + (summary?.totalStockValuation || 0))}
+                  {formatINR((periodSummary?.totalSales || 0) + (periodSummary?.totalStockValuation || 0))}
                 </span>
               </div>
             </div>
@@ -317,12 +491,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 to-teal-950/30 border border-emerald-800/40 flex items-center justify-between">
             <div>
               <span className="text-xs text-emerald-300 uppercase tracking-wider font-semibold">
-                Net Operating Profit
+                Net Operating Profit ({periodFilter.label})
               </span>
               <p className="text-xs text-slate-400 mt-0.5">Calculated as (Sales - Purchases - Operating Expenses)</p>
             </div>
             <div className="text-2xl font-bold font-mono text-emerald-400">
-              {formatINR(summary?.netProfit)}
+              {formatINR(periodSummary?.netProfit)}
             </div>
           </div>
         </div>
@@ -382,36 +556,99 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       {/* 6. BALANCE SHEET REPORT */}
       {reportType === 'balanceSheet' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
-          <div className="border-b border-slate-800 pb-3">
-            <h3 className="font-bold text-white text-base">Statement of Financial Position (Balance Sheet)</h3>
-            <p className="text-xs text-slate-400">Assets vs Liabilities & Capital overview</p>
+          <div className="border-b border-slate-800 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-white text-base">Statement of Financial Position (Balance Sheet)</h3>
+              <p className="text-xs text-slate-400">Assets vs Liabilities & Capital overview — <span className="text-emerald-400 font-semibold">{periodFilter.label}</span></p>
+            </div>
+            <div className="flex flex-wrap items-center bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs gap-1">
+              <button
+                onClick={() => setPeriodPreset('all')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'all' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                All Time
+              </button>
+              <button
+                onClick={() => setPeriodPreset('this_month')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'this_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                This Month
+              </button>
+              <button
+                onClick={() => setPeriodPreset('prev_month')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'prev_month' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Prev Month
+              </button>
+              <div className="flex items-center gap-1 pl-1 border-l border-slate-800">
+                <Calendar className="w-3.5 h-3.5 text-emerald-400 ml-1" />
+                <select
+                  aria-label="Select Month for Balance Sheet"
+                  value={periodPreset === 'month' ? selectedMonth : ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedMonth(e.target.value);
+                      setPeriodPreset('month');
+                    }
+                  }}
+                  className={`px-2 py-1.5 rounded-lg font-semibold transition cursor-pointer bg-slate-900 border text-xs focus:outline-none ${
+                    periodPreset === 'month'
+                      ? 'border-emerald-500/50 text-emerald-300 bg-emerald-500/10'
+                      : 'border-slate-800 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <option value="" disabled>
+                    Month-Wise...
+                  </option>
+                  {availableMonths.map((m) => (
+                    <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => setPeriodPreset('fy')}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+                  periodPreset === 'fy' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Full FY
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-mono">
             {/* Assets */}
             <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
               <div className="text-slate-400 font-bold uppercase tracking-wider text-[11px] pb-2 border-b border-slate-800">
-                Assets (Current & Non-Current)
+                Assets (Current & Non-Current) — {periodFilter.label}
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Sundry Debtors (Customer Receivables):</span>
-                <span className="text-amber-300 font-bold">{formatINR(summary?.totalReceivables)}</span>
+                <span className="text-amber-300 font-bold">{formatINR(periodSummary?.totalReceivables)}</span>
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Closing Stock / Inventory Asset:</span>
-                <span>{formatINR(summary?.totalStockValuation)}</span>
+                <span>{formatINR(periodSummary?.totalStockValuation)}</span>
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Input Tax Credit (ITC Asset):</span>
-                <span>{formatINR(summary?.totalTaxPaidOnExpenses)}</span>
+                <span>{formatINR(periodSummary?.totalTaxPaidOnExpenses)}</span>
               </div>
               <div className="pt-3 border-t border-slate-800 flex justify-between text-sm font-bold text-emerald-400">
                 <span>Total Assets:</span>
                 <span>
                   {formatINR(
-                    (summary?.totalReceivables || 0) +
-                      (summary?.totalStockValuation || 0) +
-                      (summary?.totalTaxPaidOnExpenses || 0)
+                    (periodSummary?.totalReceivables || 0) +
+                      (periodSummary?.totalStockValuation || 0) +
+                      (periodSummary?.totalTaxPaidOnExpenses || 0)
                   )}
                 </span>
               </div>
@@ -420,27 +657,27 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             {/* Liabilities */}
             <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
               <div className="text-slate-400 font-bold uppercase tracking-wider text-[11px] pb-2 border-b border-slate-800">
-                Liabilities & Net Capital
+                Liabilities & Net Capital — {periodFilter.label}
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Sundry Creditors (Vendor Payables):</span>
-                <span className="text-rose-400 font-bold">{formatINR(summary?.totalPayables)}</span>
+                <span className="text-rose-400 font-bold">{formatINR(periodSummary?.totalPayables)}</span>
               </div>
               <div className="flex justify-between text-slate-300">
                 <span>Output GST Payable:</span>
-                <span>{formatINR(summary?.totalTaxCollected)}</span>
+                <span>{formatINR(periodSummary?.totalTaxCollected)}</span>
               </div>
               <div className="flex justify-between text-slate-300">
-                <span>Retained Earnings / Current Period Profit:</span>
-                <span className="text-teal-300 font-bold">{formatINR(summary?.netProfit)}</span>
+                <span>Retained Earnings / Period Profit:</span>
+                <span className="text-teal-300 font-bold">{formatINR(periodSummary?.netProfit)}</span>
               </div>
               <div className="pt-3 border-t border-slate-800 flex justify-between text-sm font-bold text-white">
                 <span>Total Liabilities & Equity:</span>
                 <span>
                   {formatINR(
-                    (summary?.totalPayables || 0) +
-                      (summary?.totalTaxCollected || 0) +
-                      (summary?.netProfit || 0)
+                    (periodSummary?.totalPayables || 0) +
+                      (periodSummary?.totalTaxCollected || 0) +
+                      (periodSummary?.netProfit || 0)
                   )}
                 </span>
               </div>

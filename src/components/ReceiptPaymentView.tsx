@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDialog } from '../context/DialogContext';
 import { AppSelect } from './AppSelect';
 import { PartyMatchSelector } from './PartyMatchSelector';
@@ -10,6 +10,7 @@ import {
   CompanyProfile,
 } from '../types';
 import { getNextPaymentVoucherNumber } from '../db/dataService';
+import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -79,6 +80,12 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentModeFilter, setPaymentModeFilter] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
+
+  const availableMonths = useMemo(
+    () => getAvailableMonths(payments.map((p) => p.date)),
+    [payments]
+  );
 
   // Modal State
   const [showVoucherModal, setShowVoucherModal] = useState(false);
@@ -236,21 +243,38 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
     }
   };
 
+  // Month-scoped payments
+  const monthScopedPayments = payments.filter((p) => {
+    if (monthFilter === 'all') return true;
+    const now = new Date();
+    if (monthFilter === 'this_month') {
+      const b = getMonthBounds(now.getFullYear(), now.getMonth());
+      return p.date >= b.startDate && p.date <= b.endDate;
+    }
+    if (monthFilter === 'prev_month') {
+      const prevM = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const prevY = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      const b = getMonthBounds(prevY, prevM);
+      return p.date >= b.startDate && p.date <= b.endDate;
+    }
+    return p.date && p.date.startsWith(monthFilter);
+  });
+
   // Metrics calculations
-  const totalReceiptsAmount = payments
+  const totalReceiptsAmount = monthScopedPayments
     .filter((p) => p.voucherType === 'receipt')
     .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
-  const totalPaymentsAmount = payments
+  const totalPaymentsAmount = monthScopedPayments
     .filter((p) => p.voucherType === 'payment')
     .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
-  const receiptsCount = payments.filter((p) => p.voucherType === 'receipt').length;
-  const paymentsCount = payments.filter((p) => p.voucherType === 'payment').length;
+  const receiptsCount = monthScopedPayments.filter((p) => p.voucherType === 'receipt').length;
+  const paymentsCount = monthScopedPayments.filter((p) => p.voucherType === 'payment').length;
   const netCashFlow = totalReceiptsAmount - totalPaymentsAmount;
 
   // Filtered Payments list
-  const filteredPayments = payments.filter((p) => {
+  const filteredPayments = monthScopedPayments.filter((p) => {
     if (activeFilter !== 'all' && p.voucherType !== activeFilter) {
       return false;
     }
@@ -272,8 +296,8 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
   // Eligible invoices for the current party & modal type
   const targetPartyInvoices = invoices.filter((inv) => {
     // Receipts settle sales invoices, Payments settle purchase bills
-    const expectedType = modalType === 'receipt' ? 'sales' : 'purchase';
-    if (inv.voucherType !== expectedType) return false;
+    const isPurchase = inv.voucherType === 'purchase' || inv.invoiceType === 'purchase_bill';
+    if (modalType === 'receipt' ? isPurchase : !isPurchase) return false;
     if (inv.paymentStatus === 'paid') return false;
 
     if (selectedPartyId) {
@@ -477,8 +501,27 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
           </button>
         </div>
 
-        {/* Search & Mode Filter */}
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        {/* Search, Month & Mode Filter */}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+            <select
+              aria-label="Filter Vouchers by Month"
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer"
+            >
+              <option value="all" className="bg-slate-900 text-white">All Months</option>
+              <option value="this_month" className="bg-slate-900 text-white">This Month</option>
+              <option value="prev_month" className="bg-slate-900 text-white">Previous Month</option>
+              {availableMonths.map((m) => (
+                <option key={m.ym} value={m.ym} className="bg-slate-900 text-white">
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="relative flex-1 sm:w-64">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
             <input
