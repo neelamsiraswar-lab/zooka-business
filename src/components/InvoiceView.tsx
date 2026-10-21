@@ -8,6 +8,7 @@ import { SkeletonInvoiceView } from './SkeletonLoaders';
 import { HsnAutoSuggestSelector } from './HsnAutoSuggestSelector';
 import { inferCategoryFromItem } from '../data/hsnCategories';
 import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
+import { FullScreenButton } from './FullScreenButton';
 import {
   FileText,
   Plus,
@@ -707,6 +708,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <FullScreenButton mode="component" showLabel />
           {canCreate ? (
             isSales ? (
               <button
@@ -1114,15 +1116,18 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                     : 'Inward supply bill from vendor with Input Tax Credit (ITC) tracking'}
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setEditingInvoiceId(null);
-                }}
-                className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setEditingInvoiceId(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
@@ -2131,6 +2136,7 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                   <Printer className="w-4 h-4" />
                   <span>Print / PDF</span>
                 </button>
+                <FullScreenButton mode="modal" showLabel />
                 <button
                   onClick={() => {
                     setSelectedInvoice(null);
@@ -2163,10 +2169,11 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
               <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 shrink-0">
                 <AlertTriangle className="w-6 h-6 text-rose-400" />
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <h3 className="text-base font-bold text-white">Delete Voucher</h3>
                 <p className="text-xs text-slate-400">This action cannot be undone.</p>
               </div>
+              <FullScreenButton mode="modal" />
             </div>
 
             <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2 text-xs">

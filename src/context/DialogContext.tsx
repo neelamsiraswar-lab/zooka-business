@@ -9,6 +9,7 @@ import {
   HelpCircle,
   Check,
 } from 'lucide-react';
+import { FullScreenButton, UniversalFullScreenEnhancer } from '../components/FullScreenButton';
 
 export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'primary' | 'error';
 
@@ -202,6 +203,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   return (
     <DialogContext.Provider value={{ confirm, alert, prompt, toast: toastMethods }}>
       {children}
+      <UniversalFullScreenEnhancer />
 
       {/* Modern App Dialog Modal Overlay */}
       {isOpen && (
@@ -230,12 +232,15 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
                 )}
               </div>
 
-              <button
-                onClick={() => handleClose(null)}
-                className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <FullScreenButton mode="modal" />
+                <button
+                  onClick={() => handleClose(null)}
+                  className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Prompt Input Field if type is prompt */}

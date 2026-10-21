@@ -22,6 +22,7 @@ import {
 import { updateWorkspace } from '../db/workspaces';
 import { saveCompanyProfile } from '../db/dataService';
 import { ALL_INDIAN_STATES } from './CompanySettingsView';
+import { FullScreenButton } from './FullScreenButton';
 
 interface TenantSetupWizardModalProps {
   isOpen: boolean;
@@ -237,6 +238,7 @@ export const TenantSetupWizardModal: React.FC<TenantSetupWizardModalProps> = ({
             >
               Demo Auto-Fill
             </button>
+            <FullScreenButton mode="modal" showLabel />
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"

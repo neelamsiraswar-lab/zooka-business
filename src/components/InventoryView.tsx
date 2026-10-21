@@ -5,6 +5,7 @@ import { hasPermission, UserRole } from '../lib/permissions';
 import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
 import { HsnAutoSuggestSelector } from './HsnAutoSuggestSelector';
 import { inferCategoryFromItem, PRODUCT_CATEGORIES } from '../data/hsnCategories';
+import { FullScreenButton } from './FullScreenButton';
 import {
   Boxes,
   Plus,
@@ -237,16 +238,19 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           </p>
         </div>
 
-        {canCreate && (
-          <button
-            onClick={openCreateModal}
-            id="add-stock-item-btn"
-            className="px-4 py-2 bg-teal-400 hover:bg-teal-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-500/20 cursor-pointer self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4 font-bold" />
-            <span>Add Stock Item</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <FullScreenButton mode="component" showLabel />
+          {canCreate && (
+            <button
+              onClick={openCreateModal}
+              id="add-stock-item-btn"
+              className="px-4 py-2 bg-teal-400 hover:bg-teal-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-500/20 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 font-bold" />
+              <span>Add Stock Item</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Metrics */}
@@ -486,15 +490,18 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <Boxes className="w-5 h-5 text-teal-400 shrink-0" />
                 <span className="truncate">{editingItem ? 'Edit Stock Item Details' : 'Add Stock Item & HSN Code'}</span>
               </h3>
-              <button
-                onClick={() => {
-                  setShowItemModal(false);
-                  setEditingItem(null);
-                }}
-                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => {
+                    setShowItemModal(false);
+                    setEditingItem(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleCreateOrEditItem} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
@@ -726,12 +733,15 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5 truncate">{adjustingItem.name}</p>
               </div>
-              <button
-                onClick={() => setAdjustingItem(null)}
-                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setAdjustingItem(null)}
+                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSaveStockAdjustment} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
@@ -806,6 +816,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                   <span className="text-white font-semibold break-words">{deletingItem.name}</span>?
                 </p>
               </div>
+              <FullScreenButton mode="modal" />
             </div>
 
             {/* Item details card */}

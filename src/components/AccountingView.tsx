@@ -11,6 +11,7 @@ import {
   getMonthBounds,
   formatLocalDate,
 } from '../utils/datePeriodUtils';
+import { FullScreenButton } from './FullScreenButton';
 import {
   BookOpen,
   Plus,
@@ -1220,6 +1221,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-400' : 'text-emerald-400'}`} />
               <span>{loading ? 'Syncing...' : 'Sync Books'}</span>
             </button>
+            <FullScreenButton mode="component" showLabel />
           </div>
         </div>
 
@@ -2473,12 +2475,15 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                   Double-entry posting ensures debits strictly equal credits.
                 </p>
               </div>
-              <button
-                onClick={() => setShowJvModal(false)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setShowJvModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {formError && (
@@ -2615,12 +2620,15 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                   Voucher #{selectedEntryForSlip.voucherNumber}
                 </h3>
               </div>
-              <button
-                onClick={() => setSelectedEntryForSlip(null)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setSelectedEntryForSlip(null)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3 text-xs">

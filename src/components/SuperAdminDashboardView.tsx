@@ -100,6 +100,7 @@ import { getAllHomepageSections } from '../db/homepageSections';
 import { HomepageCustomizationManager } from './HomepageCustomizationManager';
 import { getAllHomepageFaqs } from '../db/homepageFaqs';
 import { HomepageFaqManager } from './HomepageFaqManager';
+import { FullScreenButton } from './FullScreenButton';
 
 interface SuperAdminDashboardViewProps {
   onSwitchWorkspace?: (workspace: Workspace) => void;
@@ -794,6 +795,9 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
               </button>
             );
           })}
+          <div className="ml-auto pl-2 shrink-0">
+            <FullScreenButton mode="component" showLabel />
+          </div>
         </div>
       </div>
 
@@ -2439,12 +2443,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                 </div>
               </div>
 
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Form */}
@@ -2719,12 +2726,15 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                 </div>
               </div>
 
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Form */}
@@ -2914,16 +2924,19 @@ export const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = (
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  setPlanToDelete(null);
-                  setDeleteConfirmationSlug('');
-                  setDeleteAdminAuthorized(false);
-                }}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => {
+                    setPlanToDelete(null);
+                    setDeleteConfirmationSlug('');
+                    setDeleteAdminAuthorized(false);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Body */}

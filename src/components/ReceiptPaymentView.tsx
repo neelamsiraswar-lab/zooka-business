@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { getNextPaymentVoucherNumber } from '../db/dataService';
 import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
+import { FullScreenButton } from './FullScreenButton';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -356,7 +357,8 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <FullScreenButton mode="component" showLabel />
           {canCreate ? (
             <>
               <button
@@ -790,12 +792,15 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowVoucherModal(false)}
-                className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-2"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0 ml-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setShowVoucherModal(false)}
+                  className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Voucher Form */}
@@ -1142,6 +1147,7 @@ export const ReceiptPaymentView: React.FC<ReceiptPaymentViewProps> = ({
                   <Printer className="w-3.5 h-3.5" />
                   <span>Print Slip</span>
                 </button>
+                <FullScreenButton mode="modal" showLabel />
                 <button
                   onClick={() => setSelectedVoucherForPrint(null)}
                   className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer"

@@ -30,6 +30,7 @@ import { Gstr3bReportView } from './Gstr3bReportView';
 import { GstrPreviousMonthComparisonView } from './GstrPreviousMonthComparisonView';
 import { GstrFilingDeadlineTracker } from './GstrFilingDeadlineTracker';
 import { ConsolidatedFinancialReportsView } from './ConsolidatedFinancialReportsView';
+import { FullScreenButton } from './FullScreenButton';
 
 interface ReportsViewProps {
   summary: FinancialSummary | null;
@@ -235,6 +236,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <span>Export GSTR-1 CSV</span>
             </button>
           )}
+          <FullScreenButton mode="component" showLabel />
         </div>
       </div>
 

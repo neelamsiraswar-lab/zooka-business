@@ -60,6 +60,7 @@ import { WorkspaceSubscriptionView } from './WorkspaceSubscriptionView.tsx';
 import { TenantWhiteLabelSettings } from './TenantWhiteLabelSettings.tsx';
 import { BulkDataMigrationModal } from './BulkDataMigrationModal.tsx';
 import { CloudSqlSyncTab } from './CloudSqlSyncTab.tsx';
+import { FullScreenButton } from './FullScreenButton.tsx';
 import {
   hasPermission,
   isReadOnlyRole,
@@ -1110,6 +1111,10 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
         >
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
+
+        <div className="ml-2 shrink-0">
+          <FullScreenButton mode="component" showLabel />
+        </div>
       </div>
 
       {activeTab === 'whitelabel' ? (
@@ -3023,13 +3028,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                 <UserPlus className="w-5 h-5 text-emerald-400" />
                 Add Team Member
               </h3>
-              <button
-                type="button"
-                onClick={() => setShowInviteModal(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleInviteMember} className="space-y-4 text-xs">
@@ -3148,13 +3156,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                   <p className="text-[11px] text-slate-400">Modify credentials and RBAC permission assignment</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setEditingMember(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {editMemberError && (
@@ -3284,13 +3295,16 @@ export const CompanySettingsView: React.FC<CompanySettingsViewProps> = ({
                 </div>
                 <h3 className="text-base font-bold text-white">Delete User Profile</h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setDeletingMember(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  type="button"
+                  onClick={() => setDeletingMember(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {deleteMemberError && (

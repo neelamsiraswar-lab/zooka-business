@@ -6,6 +6,7 @@ import { hasPermission, UserRole } from '../lib/permissions';
 import { AppSelect } from './AppSelect';
 import { SkeletonLedgersView } from './SkeletonLoaders';
 import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
+import { FullScreenButton } from './FullScreenButton';
 import {
   Calendar,
   Users,
@@ -271,16 +272,19 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
           </p>
         </div>
 
-        {canCreateParty && (
-          <button
-            onClick={openCreatePartyModal}
-            id="add-party-btn"
-            className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4 font-bold" />
-            <span>Add Party (Debtor/Creditor)</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <FullScreenButton mode="component" showLabel />
+          {canCreateParty && (
+            <button
+              onClick={openCreatePartyModal}
+              id="add-party-btn"
+              className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 font-bold" />
+              <span>Add Party (Debtor/Creditor)</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Metrics */}
@@ -939,15 +943,18 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                 <Users className="w-5 h-5 text-emerald-400 shrink-0" />
                 <span className="truncate">{editingParty ? 'Edit Party Ledger Details' : 'Add Party (Customer or Vendor Ledger)'}</span>
               </h3>
-              <button
-                onClick={() => {
-                  setShowPartyModal(false);
-                  setEditingParty(null);
-                }}
-                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => {
+                    setShowPartyModal(false);
+                    setEditingParty(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleCreateOrEditParty} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
@@ -1202,6 +1209,7 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                     <span>Delete</span>
                   </button>
                 )}
+                <FullScreenButton mode="modal" showLabel />
                 <button
                   onClick={() => setStatementParty(null)}
                   className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer"

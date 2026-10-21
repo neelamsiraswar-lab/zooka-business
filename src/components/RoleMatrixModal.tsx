@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, ShieldCheck, Check, Minus, Crown, Building2, Users, FileText, Landmark, Shield } from 'lucide-react';
 import { UserRole } from '../lib/permissions';
+import { FullScreenButton } from './FullScreenButton';
 
 interface RoleMatrixModalProps {
   isOpen: boolean;
@@ -49,13 +50,16 @@ export const RoleMatrixModal: React.FC<RoleMatrixModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <FullScreenButton mode="modal" showLabel />
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Matrix Table */}

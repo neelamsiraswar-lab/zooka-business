@@ -1,6 +1,7 @@
 // src/components/BankReconciliationView.tsx
 import React, { useState, useMemo, useRef } from 'react';
 import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
+import { FullScreenButton } from './FullScreenButton';
 import {
   Landmark,
   UploadCloud,
@@ -691,6 +692,8 @@ export const BankReconciliationView: React.FC<BankReconciliationViewProps> = ({
             <UploadCloud className="w-4 h-4 font-bold" />
             <span>Upload Statement</span>
           </button>
+
+          <FullScreenButton mode="component" showLabel />
         </div>
       </div>
 
@@ -1538,12 +1541,15 @@ export const BankReconciliationView: React.FC<BankReconciliationViewProps> = ({
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowUploadModal(false)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setShowUploadModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4 py-4">
@@ -1663,12 +1669,15 @@ export const BankReconciliationView: React.FC<BankReconciliationViewProps> = ({
                   Select an existing payment voucher, receipt, cheque, or expense to reconcile with this bank entry
                 </p>
               </div>
-              <button
-                onClick={() => setMatchingTxn(null)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setMatchingTxn(null)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Selected Bank Transaction Card */}
@@ -1827,12 +1836,15 @@ export const BankReconciliationView: React.FC<BankReconciliationViewProps> = ({
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setQuickCreateTxn(null)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setQuickCreateTxn(null)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4 py-4 text-xs">

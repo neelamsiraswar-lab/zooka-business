@@ -10,6 +10,7 @@ import {
 import { numberToIndianWords } from '../lib/numberToWords';
 import { useDialog } from '../context/DialogContext';
 import { SkeletonMetricGrid, SkeletonTable } from './SkeletonLoaders';
+import { FullScreenButton } from './FullScreenButton';
 import {
   CreditCard,
   Plus,
@@ -681,6 +682,8 @@ export const ChequeManagementView: React.FC<ChequeManagementViewProps> = ({
             <BookOpen className="w-4 h-4 text-slate-400" />
             <span className="hidden md:inline">Cheque Book Master</span>
           </button>
+
+          <FullScreenButton mode="component" showLabel />
         </div>
       </div>
 
@@ -1272,12 +1275,15 @@ export const ChequeManagementView: React.FC<ChequeManagementViewProps> = ({
                   <p className="text-xs text-slate-400">CTS-2010 Standard Indian Banking Cheque Record</p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsChequeModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setIsChequeModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSubmitCheque} className="space-y-4 mt-4">
@@ -1695,12 +1701,15 @@ export const ChequeManagementView: React.FC<ChequeManagementViewProps> = ({
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsStatusModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setIsStatusModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSubmitStatusUpdate} className="space-y-4 mt-4">
@@ -1857,12 +1866,15 @@ export const ChequeManagementView: React.FC<ChequeManagementViewProps> = ({
                   <p className="text-xs text-slate-400">Configure bank leaves range and numbering</p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsBookModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setIsBookModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSubmitBook} className="space-y-4 mt-4">
@@ -1977,12 +1989,15 @@ export const ChequeManagementView: React.FC<ChequeManagementViewProps> = ({
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedBookForLeaves(null)}
-                className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
+                <button
+                  onClick={() => setSelectedBookForLeaves(null)}
+                  className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Matrix legend */}
@@ -2077,6 +2092,7 @@ export const ChequeManagementView: React.FC<ChequeManagementViewProps> = ({
                 </h2>
               </div>
               <div className="flex items-center gap-2">
+                <FullScreenButton mode="modal" showLabel />
                 <button
                   onClick={() => window.print()}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-900 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors shadow-xs cursor-pointer"

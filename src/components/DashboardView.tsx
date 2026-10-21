@@ -33,6 +33,7 @@ import { TenantSetupWizardModal } from './TenantSetupWizardModal';
 import { BulkDataMigrationModal } from './BulkDataMigrationModal';
 import { ProratedUpgradeModal } from './ProratedUpgradeModal';
 import { getRenewalReminderEvaluation } from '../lib/subscriptionEnforcement';
+import { FullScreenButton } from './FullScreenButton';
 
 interface DashboardViewProps {
   summary: FinancialSummary | null;
@@ -177,6 +178,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <ArrowUpRight className="w-3.5 h-3.5 font-bold" />
             <span>+ GST Invoice</span>
           </button>
+          <FullScreenButton mode="component" showLabel />
         </div>
       </div>
 

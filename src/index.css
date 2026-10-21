@@ -213,3 +213,41 @@
     page-break-after: auto;
   }
 }
+
+/* ========================================================================= */
+/* UNIVERSAL FULL SCREEN VIEW FOR COMPONENTS, POPUPS & MODALS                */
+/* ========================================================================= */
+.fs-backdrop-expanded {
+  padding: 0 !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+}
+
+.fs-modal-expanded {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow-y: auto !important;
+}
+
+.fs-component-expanded {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 45 !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  background-color: #020617 !important;
+  overflow-y: auto !important;
+  padding: 1.25rem 1.5rem 3rem 1.5rem !important;
+}
+

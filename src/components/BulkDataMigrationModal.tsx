@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { db, COLLECTIONS } from '../db/index';
 import { logActivity, createParty, createInventoryItem } from '../db/dataService';
+import { FullScreenButton } from './FullScreenButton';
 
 interface BulkDataMigrationModalProps {
   isOpen: boolean;
@@ -339,6 +340,7 @@ export const BulkDataMigrationModal: React.FC<BulkDataMigrationModalProps> = ({
               <Sparkles className="w-3.5 h-3.5" />
               <span>Load Sample Tally Masters</span>
             </button>
+            <FullScreenButton mode="modal" showLabel />
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
