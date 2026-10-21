@@ -1,4 +1,4 @@
-import { Invoice, Expense, Party, CompanyProfile, InvoiceItem } from '../types';
+import { Invoice, Expense, Party, CompanyProfile, InvoiceItem, PurchaseGstType } from '../types';
 import { INDIAN_STATES, IndianState } from '../data/indianStates';
 
 // Helper to normalize any state input (code or name) to a 2-digit state code
@@ -144,8 +144,12 @@ export function generateGstr1Report(
   const { stateCode: companyStateCode, stateName: companyStateName, gstin: companyGstin } =
     getCompanyGstProfile(company);
 
-  // Filter sales invoices within date range
-  let salesInvoices = invoices.filter((i) => i.voucherType === 'sales' && i.status !== 'cancelled');
+  // Filter sales invoices within date range (exclude any purchase vouchers)
+  let salesInvoices = invoices.filter(
+    (i) =>
+      (i.voucherType === 'sales' || (!i.voucherType && i.invoiceType !== 'purchase_bill')) &&
+      i.status !== 'cancelled'
+  );
 
   if (periodFilter?.startDate && periodFilter?.endDate) {
     salesInvoices = salesInvoices.filter((i) => {
@@ -364,6 +368,9 @@ export interface Gstr3bInwardSummary {
   sgst: number;
   totalTax: number;
   itcEligible: boolean;
+  purchaseType?: PurchaseGstType;
+  tableCategory?: '4_A_1' | '4_A_2' | '4_A_3' | '4_A_5' | '4_B' | '5_EXEMPT';
+  classificationLabel?: string;
 }
 
 export interface Gstr3bReportData {
@@ -492,11 +499,10 @@ export function generateGstr3bReport(
     nilTaxable += inv.taxableValue;
   });
 
-  // Total Output Liability
-  const liabilityIgst = normalIgst + exportIgst;
-  const liabilityCgst = normalCgst;
-  const liabilitySgst = normalSgst;
-  const totalLiabilityAmount = liabilityIgst + liabilityCgst + liabilitySgst;
+  // Outward Supplies Liability before Reverse Charge
+  const outwardIgst = normalIgst + exportIgst;
+  const outwardCgst = normalCgst;
+  const outwardSgst = normalSgst;
 
   // Table 3.2: Inter-State supplies to unregistered consumers (B2CL + Interstate B2CS)
   const table32Map: Record<string, { posCode: string; posName: string; taxableValue: number; igst: number }> = {};
@@ -516,7 +522,11 @@ export function generateGstr3bReport(
   });
 
   // 2. Process Inward Supplies & ITC (Purchases & Expenses)
-  let purchaseInvoices = invoices.filter((i) => i.voucherType === 'purchase' && i.status !== 'cancelled');
+  let purchaseInvoices = invoices.filter(
+    (i) =>
+      (i.voucherType === 'purchase' || i.invoiceType === 'purchase_bill') &&
+      i.status !== 'cancelled'
+  );
   let filteredExpenses = [...expenses];
 
   if (periodFilter?.startDate && periodFilter?.endDate) {
@@ -532,13 +542,26 @@ export function generateGstr3bReport(
 
   const inwardList: Gstr3bInwardSummary[] = [];
 
-  let itcIgst = 0;
-  let itcCgst = 0;
-  let itcSgst = 0;
-
+  // Table 4(A)(1) Import of Goods
+  let importGoodsIgst = 0;
+  // Table 4(A)(2) Import of Services
+  let importServicesIgst = 0;
+  // Table 4(A)(3) + 3.1(d) Inward supplies liable to Reverse Charge (RCM)
+  let rcmTaxable = 0;
+  let rcmIgst = 0;
+  let rcmCgst = 0;
+  let rcmSgst = 0;
+  // Table 4(A)(5) All Other ITC
+  let allOtherIgst = 0;
+  let allOtherCgst = 0;
+  let allOtherSgst = 0;
+  // Table 4(B) Ineligible ITC (Sec 17(5))
   let ineligibleIgst = 0;
   let ineligibleCgst = 0;
   let ineligibleSgst = 0;
+  // Table 5 Inward supplies exempt / nil / non-GST
+  let exemptInterstate = 0;
+  let exemptIntrastate = 0;
 
   // 2a. Purchase Bills
   purchaseInvoices.forEach((inv) => {
@@ -574,7 +597,85 @@ export function generateGstr3bReport(
       }
     }
 
-    const itcEligible = isRegistered;
+    // Determine Statutory Inward Classification
+    const purType: PurchaseGstType =
+      inv.purchaseType ||
+      (inv.saleType === 'rcm'
+        ? 'rcm'
+        : inv.saleType === 'import_overseas'
+        ? 'import_goods'
+        : inv.saleType === 'exempt_nil'
+        ? 'exempt_nil'
+        : 'b2b_itc');
+
+    let tableCategory: '4_A_1' | '4_A_2' | '4_A_3' | '4_A_5' | '4_B' | '5_EXEMPT' = '4_A_5';
+    let classificationLabel = 'Table 4(A)(5) - All Other ITC (B2B)';
+    let itcEligible = isRegistered;
+
+    switch (purType) {
+      case 'import_goods':
+        tableCategory = '4_A_1';
+        classificationLabel = 'Table 4(A)(1) - Import of Goods';
+        importGoodsIgst += calcIgst > 0 ? calcIgst : rawTax;
+        itcEligible = true;
+        break;
+
+      case 'import_services':
+        tableCategory = '4_A_2';
+        classificationLabel = 'Table 4(A)(2) - Import of Services';
+        importServicesIgst += calcIgst > 0 ? calcIgst : rawTax;
+        itcEligible = true;
+        break;
+
+      case 'rcm':
+        tableCategory = '4_A_3';
+        classificationLabel = 'Table 4(A)(3) + 3.1(d) - Reverse Charge (RCM)';
+        rcmTaxable += rawTaxable;
+        rcmIgst += calcIgst;
+        rcmCgst += calcCgst;
+        rcmSgst += calcSgst;
+        itcEligible = true;
+        break;
+
+      case 'ineligible_17_5':
+        tableCategory = '4_B';
+        classificationLabel = 'Table 4(B) - Ineligible ITC Sec 17(5)';
+        ineligibleIgst += calcIgst;
+        ineligibleCgst += calcCgst;
+        ineligibleSgst += calcSgst;
+        itcEligible = false;
+        break;
+
+      case 'exempt_nil':
+        tableCategory = '5_EXEMPT';
+        classificationLabel = 'Table 5 - Exempt / Nil Inward Supply';
+        if (isInter) {
+          exemptInterstate += rawTaxable;
+        } else {
+          exemptIntrastate += rawTaxable;
+        }
+        itcEligible = false;
+        break;
+
+      case 'b2b_itc':
+      default:
+        if (isRegistered) {
+          tableCategory = '4_A_5';
+          classificationLabel = 'Table 4(A)(5) - All Other ITC (B2B)';
+          allOtherIgst += calcIgst;
+          allOtherCgst += calcCgst;
+          allOtherSgst += calcSgst;
+          itcEligible = true;
+        } else {
+          tableCategory = '4_B';
+          classificationLabel = 'Table 4(B) - Ineligible (Unregistered Supplier)';
+          ineligibleIgst += calcIgst;
+          ineligibleCgst += calcCgst;
+          ineligibleSgst += calcSgst;
+          itcEligible = false;
+        }
+        break;
+    }
 
     inwardList.push({
       id: `PUR-${inv.id}`,
@@ -592,17 +693,10 @@ export function generateGstr3bReport(
       sgst: calcSgst,
       totalTax: calcIgst + calcCgst + calcSgst,
       itcEligible,
+      purchaseType: purType,
+      tableCategory,
+      classificationLabel,
     });
-
-    if (itcEligible) {
-      itcIgst += calcIgst;
-      itcCgst += calcCgst;
-      itcSgst += calcSgst;
-    } else {
-      ineligibleIgst += calcIgst;
-      ineligibleCgst += calcCgst;
-      ineligibleSgst += calcSgst;
-    }
   });
 
   // 2b. Operating Expenses with GST
@@ -645,12 +739,16 @@ export function generateGstr3bReport(
       sgst: expSgst,
       totalTax: tax,
       itcEligible,
+      tableCategory: itcEligible ? '4_A_5' : '4_B',
+      classificationLabel: itcEligible
+        ? 'Table 4(A)(5) - All Other ITC (Expense)'
+        : 'Table 4(B) - Ineligible ITC (Expense)',
     });
 
     if (itcEligible) {
-      itcIgst += expIgst;
-      itcCgst += expCgst;
-      itcSgst += expSgst;
+      allOtherIgst += expIgst;
+      allOtherCgst += expCgst;
+      allOtherSgst += expSgst;
     } else {
       ineligibleIgst += expIgst;
       ineligibleCgst += expCgst;
@@ -658,12 +756,18 @@ export function generateGstr3bReport(
     }
   });
 
+  // Total Output Liability (including RCM inward liability in Table 3.1(d))
+  const liabilityIgst = outwardIgst + rcmIgst;
+  const liabilityCgst = outwardCgst + rcmCgst;
+  const liabilitySgst = outwardSgst + rcmSgst;
+  const totalLiabilityAmount = liabilityIgst + liabilityCgst + liabilitySgst;
+
   // Table 4: Eligible ITC Totals
   const allOtherItc = {
-    igst: itcIgst,
-    cgst: itcCgst,
-    sgst: itcSgst,
-    total: itcIgst + itcCgst + itcSgst,
+    igst: allOtherIgst,
+    cgst: allOtherCgst,
+    sgst: allOtherSgst,
+    total: allOtherIgst + allOtherCgst + allOtherSgst,
   };
 
   const ineligibleItc = {
@@ -673,11 +777,29 @@ export function generateGstr3bReport(
     total: ineligibleIgst + ineligibleCgst + ineligibleSgst,
   };
 
+  const totalAvailableItc = {
+    igst: importGoodsIgst + importServicesIgst + rcmIgst + allOtherIgst,
+    cgst: rcmCgst + allOtherCgst,
+    sgst: rcmSgst + allOtherSgst,
+    total:
+      importGoodsIgst +
+      importServicesIgst +
+      rcmIgst +
+      allOtherIgst +
+      rcmCgst +
+      allOtherCgst +
+      rcmSgst +
+      allOtherSgst,
+  };
+
   const netItcAvailable = {
-    igst: Math.max(0, itcIgst),
-    cgst: Math.max(0, itcCgst),
-    sgst: Math.max(0, itcSgst),
-    total: Math.max(0, itcIgst) + Math.max(0, itcCgst) + Math.max(0, itcSgst),
+    igst: Math.max(0, totalAvailableItc.igst - ineligibleItc.igst),
+    cgst: Math.max(0, totalAvailableItc.cgst - ineligibleItc.cgst),
+    sgst: Math.max(0, totalAvailableItc.sgst - ineligibleItc.sgst),
+    total:
+      Math.max(0, totalAvailableItc.igst - ineligibleItc.igst) +
+      Math.max(0, totalAvailableItc.cgst - ineligibleItc.cgst) +
+      Math.max(0, totalAvailableItc.sgst - ineligibleItc.sgst),
   };
 
   // 3. Table 6.1 Tax Liability Offset Engine (Section 49 & Rule 88A)
@@ -720,8 +842,7 @@ export function generateGstr3bReport(
   remItcSgst -= sgstPaidBySgstItc;
 
   // (5) If any IGST liability remains, CGST ITC or SGST ITC cannot cross-utilize,
-  // but under Rule 88A IGST liability had to be fully set off before IGST credit is used for others.
-  // Can CGST ITC be used for IGST? Yes, if IGST liability remained after exhausting IGST ITC:
+  // but can be used for IGST liability:
   let igstPaidByCgstItc = 0;
   let igstPaidBySgstItc = 0;
   if (remLiabilityIgst > 0 && remItcCgst > 0) {
@@ -758,7 +879,7 @@ export function generateGstr3bReport(
       taxable: { taxableValue: normalTaxable, igst: normalIgst, cgst: normalCgst, sgst: normalSgst, cess: 0 },
       zeroRated: { taxableValue: exportTaxable, igst: exportIgst, cess: 0 },
       nilExempt: { taxableValue: nilTaxable },
-      rcm: { taxableValue: 0, igst: 0, cgst: 0, sgst: 0, cess: 0 },
+      rcm: { taxableValue: rcmTaxable, igst: rcmIgst, cgst: rcmCgst, sgst: rcmSgst, cess: 0 },
       nonGst: { taxableValue: 0 },
       totalLiability: {
         igst: liabilityIgst,
@@ -769,17 +890,17 @@ export function generateGstr3bReport(
     },
     table32: Object.values(table32Map),
     table4: {
-      importGoods: { igst: 0, cess: 0 },
-      importServices: { igst: 0, cess: 0 },
-      rcmItc: { igst: 0, cgst: 0, sgst: 0, cess: 0 },
+      importGoods: { igst: importGoodsIgst, cess: 0 },
+      importServices: { igst: importServicesIgst, cess: 0 },
+      rcmItc: { igst: rcmIgst, cgst: rcmCgst, sgst: rcmSgst, cess: 0 },
       allOtherItc,
-      totalAvailableItc: allOtherItc,
+      totalAvailableItc,
       ineligibleItc,
       netItcAvailable,
     },
     table5: {
-      interstate: 0,
-      intrastate: 0,
+      interstate: exemptInterstate,
+      intrastate: exemptIntrastate,
     },
     table61: {
       liability: {

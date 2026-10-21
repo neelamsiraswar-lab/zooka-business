@@ -186,43 +186,244 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       source: any;
     }> = [];
 
-    // 1. Sales Invoices: Dr Customer (or Cash/Bank if cash sale) / Cr Sales Account (+ Output GST)
+    // 1. Sales Invoices: Dr Customer / Cr Sales Account, Cr Output CGST, Cr Output SGST, Cr Output IGST
+    //    Purchase Bills: Dr Purchase Account, Dr Input CGST, Dr Input SGST, Dr Input IGST / Cr Vendor
     invoices.forEach((inv) => {
-      const isSale = inv.invoiceType === 'tax_invoice' || inv.invoiceType === 'bill_of_supply' || !inv.invoiceType;
-      const isPurchase = inv.invoiceType === 'purchase_bill';
+      const isPurchase = inv.voucherType === 'purchase' || inv.invoiceType === 'purchase_bill';
+      const isSale = !isPurchase && (inv.voucherType === 'sales' || inv.invoiceType === 'tax_invoice' || inv.invoiceType === 'bill_of_supply' || !inv.invoiceType);
       const grandTotal = parseFloat(inv.grandTotal) || 0;
       if (grandTotal <= 0) return;
 
+      const taxableAmount = parseFloat(inv.subtotal) || 0;
+      const cgst = parseFloat(inv.cgstTotal) || 0;
+      const sgst = parseFloat(inv.sgstTotal) || 0;
+      const igst = parseFloat(inv.igstTotal) || 0;
+      const taxSum = cgst + sgst + igst;
+      // Taxable base value: use subtotal or back out tax
+      const baseTaxable = taxableAmount > 0 ? taxableAmount : Math.max(0, grandTotal - taxSum);
+
       if (isSale) {
+        const debtorAccount = inv.partyName || 'Sundry Debtors';
+
+        // Leg 1: Sales Revenue (Taxable Value)
         list.push({
-          id: `inv-${inv.id}`,
+          id: `inv-${inv.id}-rev`,
           date: inv.invoiceDate,
           rawDate: inv.invoiceDate,
           voucherType: 'sales',
           typeLabel: 'Sales Invoice',
           voucherNumber: inv.invoiceNumber,
-          debitAccount: inv.partyName || 'Sundry Debtors',
+          debitAccount: debtorAccount,
           creditAccount: 'Sales Account',
           partyName: inv.partyName,
-          narration: `Tax Invoice to ${inv.partyName} (Taxable: ₹${inv.taxableAmount || 0}, GST: ₹${inv.totalGst || 0})`,
-          amount: grandTotal,
+          narration: `Sales to ${debtorAccount} (Taxable ₹${baseTaxable.toFixed(2)})`,
+          amount: baseTaxable,
           source: inv,
         });
+
+        // Leg 2: Output CGST
+        if (cgst > 0) {
+          list.push({
+            id: `inv-${inv.id}-cgst`,
+            date: inv.invoiceDate,
+            rawDate: inv.invoiceDate,
+            voucherType: 'sales',
+            typeLabel: 'Sales Invoice (CGST)',
+            voucherNumber: inv.invoiceNumber,
+            debitAccount: debtorAccount,
+            creditAccount: 'Output CGST',
+            partyName: inv.partyName,
+            narration: `Output CGST on Inv #${inv.invoiceNumber}`,
+            amount: cgst,
+            source: inv,
+          });
+        }
+
+        // Leg 3: Output SGST
+        if (sgst > 0) {
+          list.push({
+            id: `inv-${inv.id}-sgst`,
+            date: inv.invoiceDate,
+            rawDate: inv.invoiceDate,
+            voucherType: 'sales',
+            typeLabel: 'Sales Invoice (SGST)',
+            voucherNumber: inv.invoiceNumber,
+            debitAccount: debtorAccount,
+            creditAccount: 'Output SGST',
+            partyName: inv.partyName,
+            narration: `Output SGST on Inv #${inv.invoiceNumber}`,
+            amount: sgst,
+            source: inv,
+          });
+        }
+
+        // Leg 4: Output IGST
+        if (igst > 0) {
+          list.push({
+            id: `inv-${inv.id}-igst`,
+            date: inv.invoiceDate,
+            rawDate: inv.invoiceDate,
+            voucherType: 'sales',
+            typeLabel: 'Sales Invoice (IGST)',
+            voucherNumber: inv.invoiceNumber,
+            debitAccount: debtorAccount,
+            creditAccount: 'Output IGST',
+            partyName: inv.partyName,
+            narration: `Output IGST on interstate Inv #${inv.invoiceNumber}`,
+            amount: igst,
+            source: inv,
+          });
+        }
+
+        // Optional rounding adjustment if grandTotal !== baseTaxable + taxSum
+        const roundDiff = grandTotal - (baseTaxable + taxSum);
+        if (Math.abs(roundDiff) >= 0.01) {
+          if (roundDiff > 0) {
+            list.push({
+              id: `inv-${inv.id}-rnd`,
+              date: inv.invoiceDate,
+              rawDate: inv.invoiceDate,
+              voucherType: 'sales',
+              typeLabel: 'Sales Invoice (Rounding)',
+              voucherNumber: inv.invoiceNumber,
+              debitAccount: debtorAccount,
+              creditAccount: 'Round Off / Adjustments',
+              partyName: inv.partyName,
+              narration: `Round-off adjustment on Inv #${inv.invoiceNumber}`,
+              amount: Math.abs(roundDiff),
+              source: inv,
+            });
+          } else {
+            list.push({
+              id: `inv-${inv.id}-rnd`,
+              date: inv.invoiceDate,
+              rawDate: inv.invoiceDate,
+              voucherType: 'sales',
+              typeLabel: 'Sales Invoice (Rounding)',
+              voucherNumber: inv.invoiceNumber,
+              debitAccount: 'Round Off / Adjustments',
+              creditAccount: debtorAccount,
+              partyName: inv.partyName,
+              narration: `Round-off discount on Inv #${inv.invoiceNumber}`,
+              amount: Math.abs(roundDiff),
+              source: inv,
+            });
+          }
+        }
       } else if (isPurchase) {
+        const creditorAccount = inv.partyName || 'Sundry Creditors';
+        const purType = inv.purchaseType || (inv.saleType === 'rcm' ? 'rcm' : inv.saleType === 'exempt_nil' ? 'exempt_nil' : 'b2b_itc');
+        const isIneligible = purType === 'ineligible_17_5';
+        const isRcm = purType === 'rcm';
+
+        // Leg 1: Purchase Account (Taxable Value)
         list.push({
-          id: `pur-${inv.id}`,
+          id: `pur-${inv.id}-cost`,
           date: inv.invoiceDate,
           rawDate: inv.invoiceDate,
           voucherType: 'purchase',
           typeLabel: 'Purchase Bill',
           voucherNumber: inv.invoiceNumber,
           debitAccount: 'Purchase Account',
-          creditAccount: inv.partyName || 'Sundry Creditors',
+          creditAccount: creditorAccount,
           partyName: inv.partyName,
-          narration: `Purchase bill from ${inv.partyName} (Taxable: ₹${inv.taxableAmount || 0}, ITC: ₹${inv.totalGst || 0})`,
-          amount: grandTotal,
+          narration: `Purchase from ${creditorAccount} (Taxable ₹${baseTaxable.toFixed(2)})`,
+          amount: baseTaxable,
           source: inv,
         });
+
+        // Leg 2: Input CGST or Ineligible ITC
+        if (cgst > 0) {
+          const itcAccount = isIneligible ? 'Ineligible ITC Sec 17(5)' : 'Input CGST';
+          list.push({
+            id: `pur-${inv.id}-cgst`,
+            date: inv.invoiceDate,
+            rawDate: inv.invoiceDate,
+            voucherType: 'purchase',
+            typeLabel: isRcm ? 'Purchase Bill (CGST RCM)' : (isIneligible ? 'Purchase Bill (Ineligible CGST)' : 'Purchase Bill (Input CGST)'),
+            voucherNumber: inv.invoiceNumber,
+            debitAccount: itcAccount,
+            creditAccount: isRcm ? 'Output CGST (RCM)' : creditorAccount,
+            partyName: inv.partyName,
+            narration: `${itcAccount} on bill #${inv.invoiceNumber}`,
+            amount: cgst,
+            source: inv,
+          });
+        }
+
+        // Leg 3: Input SGST or Ineligible ITC
+        if (sgst > 0) {
+          const itcAccount = isIneligible ? 'Ineligible ITC Sec 17(5)' : 'Input SGST';
+          list.push({
+            id: `pur-${inv.id}-sgst`,
+            date: inv.invoiceDate,
+            rawDate: inv.invoiceDate,
+            voucherType: 'purchase',
+            typeLabel: isRcm ? 'Purchase Bill (SGST RCM)' : (isIneligible ? 'Purchase Bill (Ineligible SGST)' : 'Purchase Bill (Input SGST)'),
+            voucherNumber: inv.invoiceNumber,
+            debitAccount: itcAccount,
+            creditAccount: isRcm ? 'Output SGST (RCM)' : creditorAccount,
+            partyName: inv.partyName,
+            narration: `${itcAccount} on bill #${inv.invoiceNumber}`,
+            amount: sgst,
+            source: inv,
+          });
+        }
+
+        // Leg 4: Input IGST or Ineligible ITC
+        if (igst > 0) {
+          const itcAccount = isIneligible ? 'Ineligible ITC Sec 17(5)' : 'Input IGST';
+          list.push({
+            id: `pur-${inv.id}-igst`,
+            date: inv.invoiceDate,
+            rawDate: inv.invoiceDate,
+            voucherType: 'purchase',
+            typeLabel: isRcm ? 'Purchase Bill (IGST RCM)' : (isIneligible ? 'Purchase Bill (Ineligible IGST)' : 'Purchase Bill (Input IGST)'),
+            voucherNumber: inv.invoiceNumber,
+            debitAccount: itcAccount,
+            creditAccount: isRcm ? 'Output IGST (RCM)' : creditorAccount,
+            partyName: inv.partyName,
+            narration: `${itcAccount} on bill #${inv.invoiceNumber}`,
+            amount: igst,
+            source: inv,
+          });
+        }
+
+        // Optional rounding adjustment
+        const roundDiff = grandTotal - (baseTaxable + taxSum);
+        if (Math.abs(roundDiff) >= 0.01 && !isRcm) {
+          if (roundDiff > 0) {
+            list.push({
+              id: `pur-${inv.id}-rnd`,
+              date: inv.invoiceDate,
+              rawDate: inv.invoiceDate,
+              voucherType: 'purchase',
+              typeLabel: 'Purchase Bill (Rounding)',
+              voucherNumber: inv.invoiceNumber,
+              debitAccount: 'Round Off / Adjustments',
+              creditAccount: creditorAccount,
+              partyName: inv.partyName,
+              narration: `Round-off adjustment on bill #${inv.invoiceNumber}`,
+              amount: Math.abs(roundDiff),
+              source: inv,
+            });
+          } else {
+            list.push({
+              id: `pur-${inv.id}-rnd`,
+              date: inv.invoiceDate,
+              rawDate: inv.invoiceDate,
+              voucherType: 'purchase',
+              typeLabel: 'Purchase Bill (Rounding)',
+              voucherNumber: inv.invoiceNumber,
+              debitAccount: creditorAccount,
+              creditAccount: 'Round Off / Adjustments',
+              partyName: inv.partyName,
+              narration: `Round-off discount on bill #${inv.invoiceNumber}`,
+              amount: Math.abs(roundDiff),
+              source: inv,
+            });
+          }
+        }
       }
     });
 
@@ -394,8 +595,16 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     ensureLedger(company?.bankName || 'Bank Account', 'Current Assets', 0, 0);
     ensureLedger('Sales Account', 'Direct Incomes', 0, 0);
     ensureLedger('Purchase Account', 'Direct Expenses', 0, 0);
-    ensureLedger('Input Tax Credit (ITC GST)', 'Current Assets', 0, 0);
-    ensureLedger('Output GST Payable', 'Current Liabilities', 0, 0);
+    ensureLedger('Input CGST', 'Current Assets', 0, 0);
+    ensureLedger('Input SGST', 'Current Assets', 0, 0);
+    ensureLedger('Input IGST', 'Current Assets', 0, 0);
+    ensureLedger('Output CGST', 'Current Liabilities', 0, 0);
+    ensureLedger('Output SGST', 'Current Liabilities', 0, 0);
+    ensureLedger('Output IGST', 'Current Liabilities', 0, 0);
+    ensureLedger('Output CGST (RCM)', 'Current Liabilities', 0, 0);
+    ensureLedger('Output SGST (RCM)', 'Current Liabilities', 0, 0);
+    ensureLedger('Output IGST (RCM)', 'Current Liabilities', 0, 0);
+    ensureLedger('Ineligible ITC Sec 17(5)', 'Direct Expenses', 0, 0);
     ensureLedger('Capital Account / Owner Equity', 'Capital & Equity', 0, 0);
     ensureLedger('Office Furniture & Equipment', 'Fixed Assets', 0, 0);
 
@@ -426,6 +635,24 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       // Group classification guesser for dynamic accounts
       const getAccountGroup = (accName: string) => {
         const lower = accName.toLowerCase();
+        if (
+          lower.startsWith('input cgst') ||
+          lower.startsWith('input sgst') ||
+          lower.startsWith('input igst') ||
+          lower.includes('input tax credit') ||
+          lower.includes('input gst')
+        ) {
+          return 'Current Assets';
+        }
+        if (
+          lower.startsWith('output cgst') ||
+          lower.startsWith('output sgst') ||
+          lower.startsWith('output igst') ||
+          lower.includes('output gst')
+        ) {
+          return 'Current Liabilities';
+        }
+        if (lower.includes('ineligible itc')) return 'Direct Expenses';
         if (lower.includes('cash') || lower.includes('bank') || lower.includes('debtor') || lower.includes('asset') || lower.includes('deposit')) return 'Current Assets';
         if (lower.includes('creditor') || lower.includes('payable') || lower.includes('gst') || lower.includes('tax') || lower.includes('loan')) return 'Current Liabilities';
         if (lower.includes('capital') || lower.includes('equity') || lower.includes('drawing')) return 'Capital & Equity';

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDialog } from '../context/DialogContext';
-import { Invoice, CompanyProfile, Party, InventoryItem, InvoiceItem } from '../types';
+import { Invoice, CompanyProfile, Party, InventoryItem, InvoiceItem, PurchaseGstType } from '../types';
 import { InvoiceTemplateRenderer } from './InvoiceTemplateRenderer';
 import { PartyMatchSelector } from './PartyMatchSelector';
 import { AppSelect } from './AppSelect';
@@ -101,6 +101,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
 
   // Form states
   const [voucherType, setVoucherType] = useState<'sales' | 'purchase'>(targetVoucherType);
+  const [purchaseGstType, setPurchaseGstType] = useState<PurchaseGstType>('b2b_itc');
+  const [partyFilterMode, setPartyFilterMode] = useState<'smart' | 'all'>('smart');
   const [saleType, setSaleType] = useState<string>('regular');
   const [taxMode, setTaxMode] = useState<'exclusive' | 'inclusive'>('exclusive');
   const [partyId, setPartyId] = useState<string>('');
@@ -154,16 +156,19 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   // Tax rules based on Sale/Purchase Type
   const isTaxExemptSupply =
     (voucherType === 'sales' && (saleType === 'bill_of_supply' || saleType === 'export_without_tax')) ||
-    (voucherType === 'purchase' && saleType === 'exempt_nil');
+    (voucherType === 'purchase' && (purchaseGstType === 'exempt_nil' || saleType === 'exempt_nil'));
 
   const isForceInterstateSupply =
     (voucherType === 'sales' && (saleType === 'export_with_tax' || saleType === 'sez')) ||
-    (voucherType === 'purchase' && saleType === 'import_overseas');
+    (voucherType === 'purchase' && (purchaseGstType === 'import_goods' || purchaseGstType === 'import_services' || saleType === 'import_overseas'));
 
   const isInterstate = isForceInterstateSupply ? true : placeOfSupply !== companyState;
 
-  // Dedicated filtering: Never show purchase on sales page, nor sales on purchase page!
-  const pageInvoices = invoices.filter((inv) => inv.voucherType === targetVoucherType);
+  // Dedicated filtering: Robust check for purchase vs sales vouchers across existing & new records
+  const pageInvoices = invoices.filter((inv) => {
+    const isInvPurchase = inv.voucherType === 'purchase' || inv.invoiceType === 'purchase_bill';
+    return targetVoucherType === 'purchase' ? isInvPurchase : !isInvPurchase;
+  });
 
   const filteredInvoices = pageInvoices.filter((inv) => {
     if (statusFilter !== 'all' && inv.paymentStatus !== statusFilter) {
@@ -385,6 +390,8 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   const openCreateModal = (type: 'sales' | 'purchase') => {
     setEditingInvoiceId(null);
     setVoucherType(type);
+    setPurchaseGstType('b2b_itc');
+    setPartyFilterMode('smart');
     setSaleType('regular');
     setTaxMode('exclusive');
     setPartyId('');
@@ -430,7 +437,19 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
 
   const openEditModal = (inv: Invoice) => {
     setEditingInvoiceId(inv.id);
-    setVoucherType(inv.voucherType === 'purchase' ? 'purchase' : 'sales');
+    const isPur = inv.voucherType === 'purchase' || inv.invoiceType === 'purchase_bill';
+    setVoucherType(isPur ? 'purchase' : 'sales');
+    setPurchaseGstType(
+      inv.purchaseType ||
+      (inv.saleType === 'rcm'
+        ? 'rcm'
+        : inv.saleType === 'import_overseas'
+        ? 'import_goods'
+        : inv.saleType === 'exempt_nil'
+        ? 'exempt_nil'
+        : 'b2b_itc')
+    );
+    setPartyFilterMode('smart');
     setSaleType(inv.saleType || 'regular');
     setTaxMode((inv.taxMode as 'exclusive' | 'inclusive') || 'exclusive');
     setPartyId(inv.partyId ? String(inv.partyId) : '');
@@ -586,9 +605,22 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
         ? 'partial'
         : 'unpaid';
 
+    const isPur = voucherType === 'purchase';
+    const computedSaleType = isPur
+      ? (purchaseGstType === 'rcm'
+          ? 'rcm'
+          : purchaseGstType === 'import_goods' || purchaseGstType === 'import_services'
+          ? 'import_overseas'
+          : purchaseGstType === 'exempt_nil'
+          ? 'exempt_nil'
+          : 'regular')
+      : saleType;
+
     const payload = {
       voucherType,
-      saleType,
+      invoiceType: isPur ? 'purchase_bill' : (saleType === 'bill_of_supply' ? 'bill_of_supply' : 'tax_invoice'),
+      purchaseType: isPur ? purchaseGstType : undefined,
+      saleType: computedSaleType,
       taxMode,
       partyId: partyId ? parseInt(partyId) : null,
       partyName,
@@ -850,20 +882,50 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                     <td className="py-3 px-4 text-slate-400">{inv.invoiceDate}</td>
                     <td className="py-3 px-4">
                       <div className="flex flex-col gap-1 items-start">
-                        {inv.saleType && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
-                            {inv.saleType === 'bill_of_supply'
-                              ? 'Bill of Supply'
-                              : inv.saleType === 'export_without_tax'
-                              ? 'Export (LUT)'
-                              : inv.saleType === 'export_with_tax'
-                              ? 'Export (IGST)'
-                              : inv.saleType === 'rcm' || inv.saleType === 'unregistered_rcm'
-                              ? 'Reverse Charge'
-                              : inv.saleType === 'sez' || inv.saleType === 'sez_inward'
-                              ? 'SEZ Supply'
-                              : 'Regular Taxable'}
+                        {targetVoucherType === 'purchase' ? (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                              inv.purchaseType === 'rcm' || inv.saleType === 'rcm'
+                                ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                                : inv.purchaseType === 'import_goods'
+                                ? 'bg-blue-500/10 text-blue-300 border-blue-500/30'
+                                : inv.purchaseType === 'import_services'
+                                ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                                : inv.purchaseType === 'ineligible_17_5'
+                                ? 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                                : inv.purchaseType === 'exempt_nil'
+                                ? 'bg-slate-800 text-slate-400 border-slate-700'
+                                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                            }`}
+                          >
+                            {inv.purchaseType === 'rcm' || inv.saleType === 'rcm'
+                              ? 'Table 4(A)(3) RCM'
+                              : inv.purchaseType === 'import_goods'
+                              ? 'Table 4(A)(1) Import Goods'
+                              : inv.purchaseType === 'import_services'
+                              ? 'Table 4(A)(2) Import Services'
+                              : inv.purchaseType === 'ineligible_17_5'
+                              ? 'Table 4(B) Ineligible 17(5)'
+                              : inv.purchaseType === 'exempt_nil'
+                              ? 'Table 5 Exempt / Nil'
+                              : 'Table 4(A)(5) B2B ITC'}
                           </span>
+                        ) : (
+                          inv.saleType && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                              {inv.saleType === 'bill_of_supply'
+                                ? 'Bill of Supply'
+                                : inv.saleType === 'export_without_tax'
+                                ? 'Export (LUT)'
+                                : inv.saleType === 'export_with_tax'
+                                ? 'Export (IGST)'
+                                : inv.saleType === 'rcm' || inv.saleType === 'unregistered_rcm'
+                                ? 'Reverse Charge'
+                                : inv.saleType === 'sez' || inv.saleType === 'sez_inward'
+                                ? 'SEZ Supply'
+                                : 'Regular Taxable'}
+                            </span>
+                          )
                         )}
                         {inv.taxMode && (
                           <span
@@ -1048,32 +1110,42 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-slate-400 mb-1">
-                      {voucherType === 'sales' ? 'Sale Type / GST Category' : 'Purchase / Inward Type'}
+                      {voucherType === 'sales' ? 'Sale Type / GST Category' : 'Statutory GST Purchase Classification'}
                     </label>
-                    <select
-                      value={saleType}
-                      onChange={(e) => setSaleType(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    >
-                      {voucherType === 'sales' ? (
-                        <>
-                          <option value="regular">Regular Taxable (B2B / B2C)</option>
-                          <option value="bill_of_supply">Bill of Supply (Exempt / Nil-Rated)</option>
-                          <option value="export_with_tax">Export with Payment of IGST</option>
-                          <option value="export_without_tax">Export under LUT / Bond (Zero-Rated)</option>
-                          <option value="rcm">Reverse Charge (Tax by Recipient u/s 9(3))</option>
-                          <option value="sez">SEZ Unit Supply (IGST)</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="regular">Regular Taxable (ITC Eligible)</option>
-                          <option value="unregistered_rcm">Purchase from Unregistered (RCM u/s 9(4))</option>
-                          <option value="import_overseas">Import of Goods / Services</option>
-                          <option value="exempt_nil">Exempted / Nil-Rated Inward</option>
-                          <option value="sez_inward">SEZ Inward Supply</option>
-                        </>
-                      )}
-                    </select>
+                    {voucherType === 'sales' ? (
+                      <select
+                        value={saleType}
+                        onChange={(e) => setSaleType(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="regular">Regular Taxable (B2B / B2C Outward)</option>
+                        <option value="bill_of_supply">Bill of Supply (Exempt / Nil-Rated)</option>
+                        <option value="export_with_tax">Export with Payment of IGST</option>
+                        <option value="export_without_tax">Export under LUT / Bond (Zero-Rated)</option>
+                        <option value="rcm">Reverse Charge (Tax by Recipient u/s 9(3))</option>
+                        <option value="sez">SEZ Unit Supply (IGST)</option>
+                      </select>
+                    ) : (
+                      <select
+                        value={purchaseGstType}
+                        onChange={(e) => {
+                          const val = e.target.value as PurchaseGstType;
+                          setPurchaseGstType(val);
+                          if (val === 'rcm') setSaleType('rcm');
+                          else if (val === 'import_goods' || val === 'import_services') setSaleType('import_overseas');
+                          else if (val === 'exempt_nil') setSaleType('exempt_nil');
+                          else setSaleType('regular');
+                        }}
+                        className="w-full bg-slate-900 border border-blue-500/40 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-400 font-medium"
+                      >
+                        <option value="b2b_itc">Table 4(A)(5) — Standard B2B Inward Supply (All Other ITC)</option>
+                        <option value="rcm">Table 4(A)(3) + 3.1(d) — Reverse Charge (RCM u/s 9(3) / 9(4))</option>
+                        <option value="import_goods">Table 4(A)(1) — Import of Goods (Bill of Entry IGST)</option>
+                        <option value="import_services">Table 4(A)(2) — Import of Services (Cross-border)</option>
+                        <option value="ineligible_17_5">Table 4(B) — Ineligible ITC as per Section 17(5) Blocked</option>
+                        <option value="exempt_nil">Table 5 — Exempt, Nil-Rated or Non-GST Supply</option>
+                      </select>
+                    )}
                   </div>
 
                   <div>
@@ -1220,14 +1292,30 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
               {/* Customer / Party details */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-950/50 border border-slate-800/80 rounded-xl">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    {voucherType === 'sales' ? 'Party / Customer Name (Sundry Debtor)' : 'Party / Vendor Name (Sundry Creditor)'}{' '}
-                    <span className="text-rose-400">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-medium text-slate-400">
+                      {voucherType === 'sales' ? 'Party / Customer Name (Sundry Debtor)' : 'Party / Vendor Name (Sundry Creditor)'}{' '}
+                      <span className="text-rose-400">*</span>
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400">
+                        {partyFilterMode === 'smart'
+                          ? (voucherType === 'sales' ? 'Filter: Customers only' : 'Filter: Vendors only')
+                          : 'Showing all parties'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPartyFilterMode(partyFilterMode === 'smart' ? 'all' : 'smart')}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer font-medium"
+                      >
+                        {partyFilterMode === 'smart' ? 'Show All Parties' : 'Smart Filter'}
+                      </button>
+                    </div>
+                  </div>
                   <PartyMatchSelector
                     parties={parties}
                     partyType={voucherType === 'sales' ? 'customer' : 'vendor'}
-                    partyTypeFilter={voucherType === 'sales' ? 'customer' : 'vendor'}
+                    partyTypeFilter={partyFilterMode === 'smart' ? (voucherType === 'sales' ? 'customer' : 'vendor') : 'all'}
                     selectedPartyId={partyId ? parseInt(partyId) : undefined}
                     partyName={partyName}
                     onSelectParty={(p, customName) => {

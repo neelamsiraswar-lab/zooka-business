@@ -998,37 +998,56 @@ TOTAL NET ITC: ${formatINR(reportData.table4.netItcAvailable.total)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80 font-mono">
-                {/* 4(A)(1) */}
+                {/* 4(A)(1) IMPORT OF GOODS */}
                 <tr className="hover:bg-slate-800/30">
                   <td className="p-3.5 font-sans text-slate-300">
                     <span className="font-semibold text-white">(A)(1) Import of Goods</span>
+                    <span className="text-[10px] text-slate-400 block">Customs Bill of Entry inward supplies</span>
                   </td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
+                  <td className="p-3.5 text-right font-bold text-purple-400">
+                    ₹{reportData.table4.importGoods.igst.toFixed(2)}
+                  </td>
                   <td className="p-3.5 text-right text-slate-500">—</td>
                   <td className="p-3.5 text-right text-slate-500">—</td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
+                  <td className="p-3.5 text-right font-bold text-emerald-400">
+                    ₹{reportData.table4.importGoods.igst.toFixed(2)}
+                  </td>
                 </tr>
 
-                {/* 4(A)(2) */}
+                {/* 4(A)(2) IMPORT OF SERVICES */}
                 <tr className="hover:bg-slate-800/30">
                   <td className="p-3.5 font-sans text-slate-300">
                     <span className="font-semibold text-white">(A)(2) Import of Services</span>
+                    <span className="text-[10px] text-slate-400 block">Cross-border services received from overseas</span>
                   </td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
+                  <td className="p-3.5 text-right font-bold text-purple-400">
+                    ₹{reportData.table4.importServices.igst.toFixed(2)}
+                  </td>
                   <td className="p-3.5 text-right text-slate-500">—</td>
                   <td className="p-3.5 text-right text-slate-500">—</td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
+                  <td className="p-3.5 text-right font-bold text-emerald-400">
+                    ₹{reportData.table4.importServices.igst.toFixed(2)}
+                  </td>
                 </tr>
 
-                {/* 4(A)(3) */}
+                {/* 4(A)(3) INWARD SUPPLIES LIABLE TO REVERSE CHARGE */}
                 <tr className="hover:bg-slate-800/30">
                   <td className="p-3.5 font-sans text-slate-300">
-                    <span className="font-semibold text-white">(A)(3) Inward supplies liable to reverse charge</span>
+                    <span className="font-semibold text-white">(A)(3) Inward Supplies Liable to Reverse Charge (RCM)</span>
+                    <span className="text-[10px] text-slate-400 block">GTA, advocate legal fees & unregistered RCM</span>
                   </td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
-                  <td className="p-3.5 text-right text-slate-500">₹0.00</td>
+                  <td className="p-3.5 text-right font-bold text-purple-400">
+                    ₹{reportData.table4.rcmItc.igst.toFixed(2)}
+                  </td>
+                  <td className="p-3.5 text-right font-bold text-blue-400">
+                    ₹{reportData.table4.rcmItc.cgst.toFixed(2)}
+                  </td>
+                  <td className="p-3.5 text-right font-bold text-teal-400">
+                    ₹{reportData.table4.rcmItc.sgst.toFixed(2)}
+                  </td>
+                  <td className="p-3.5 text-right font-bold text-emerald-400">
+                    ₹{(reportData.table4.rcmItc.igst + reportData.table4.rcmItc.cgst + reportData.table4.rcmItc.sgst).toFixed(2)}
+                  </td>
                 </tr>
 
                 {/* 4(A)(5) ALL OTHER ITC */}
@@ -1191,15 +1210,34 @@ TOTAL NET ITC: ${formatINR(reportData.table4.netItcAvailable.total)}
                         {rec.sgst > 0 ? `₹${rec.sgst.toFixed(2)}` : '—'}
                       </td>
                       <td className="p-3 text-center font-sans">
-                        {rec.itcEligible ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+                        {rec.tableCategory === '4_A_1' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold" title={rec.classificationLabel}>
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>Eligible Table 4(A)</span>
+                            <span>Table 4(A)(1) Imports</span>
+                          </span>
+                        ) : rec.tableCategory === '4_A_2' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold" title={rec.classificationLabel}>
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Table 4(A)(2) Services</span>
+                          </span>
+                        ) : rec.tableCategory === '4_A_3' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold" title={rec.classificationLabel}>
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Table 4(A)(3) RCM</span>
+                          </span>
+                        ) : rec.tableCategory === '5_EXEMPT' ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-700/40 text-slate-400 border border-slate-700 font-semibold" title={rec.classificationLabel}>
+                            <span>Table 5 Exempt</span>
+                          </span>
+                        ) : rec.itcEligible ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold" title={rec.classificationLabel}>
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Table 4(A)(5) B2B ITC</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-semibold">
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 font-semibold" title={rec.classificationLabel}>
                             <AlertCircle className="w-3 h-3" />
-                            <span>Ineligible Sec 17(5)</span>
+                            <span>Table 4(B) Ineligible</span>
                           </span>
                         )}
                       </td>

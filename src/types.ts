@@ -321,13 +321,34 @@ export interface InvoiceItem {
   total: string;
 }
 
+export type PurchaseGstType =
+  | 'b2b_itc'         // Table 4(A)(5) - All other ITC (Standard B2B Purchases)
+  | 'rcm'             // Table 4(A)(3) + 3.1(d) - Inward supplies liable to reverse charge
+  | 'import_goods'    // Table 4(A)(1) - Import of goods
+  | 'import_services' // Table 4(A)(2) - Import of services
+  | 'ineligible_17_5' // Table 4(B)(1) - As per section 17(5) / blocked credit
+  | 'exempt_nil';     // Table 5 - Exempt, Nil-rated and Non-GST inward supplies
+
 export interface Invoice {
   id: number;
   userId: number;
   workspaceId?: string;
   partyId?: number;
   voucherType: 'sales' | 'purchase' | 'receipt' | 'payment';
-  saleType?: 'regular' | 'bill_of_supply' | 'export_with_tax' | 'export_without_tax' | 'rcm' | 'sez';
+  invoiceType?: 'tax_invoice' | 'bill_of_supply' | 'purchase_bill' | 'export_invoice' | 'debit_note' | 'credit_note' | string;
+  purchaseType?: PurchaseGstType;
+  saleType?:
+    | 'regular'
+    | 'bill_of_supply'
+    | 'export_with_tax'
+    | 'export_without_tax'
+    | 'rcm'
+    | 'sez'
+    | 'import_overseas'
+    | 'exempt_nil'
+    | 'unregistered_rcm'
+    | 'sez_inward'
+    | string;
   taxMode?: 'exclusive' | 'inclusive';
   invoiceNumber: string;
   invoiceDate: string;

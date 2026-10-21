@@ -80,7 +80,7 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
     const list: Gstr2bItem[] = [];
 
     // 1. Purchase Bills from registered/unregistered vendors
-    const purchaseInvoices = invoices.filter((i) => i.voucherType === 'purchase');
+    const purchaseInvoices = invoices.filter((i) => i.voucherType === 'purchase' || i.invoiceType === 'purchase_bill');
     purchaseInvoices.forEach((inv) => {
       const party = parties.find((p) => p.id === inv.partyId);
       const gstin = inv.partyGstin || party?.gstin || '27AAACS1482E1ZE';
@@ -93,6 +93,11 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
       const taxVal = parseFloat(inv.taxTotal) || igstVal + cgstVal + sgstVal;
       const grandVal = parseFloat(inv.grandTotal) || taxable + taxVal;
 
+      const purType = inv.purchaseType || (inv.saleType === 'rcm' ? 'rcm' : inv.saleType === 'import_overseas' ? 'import_goods' : inv.saleType === 'exempt_nil' ? 'exempt_nil' : 'b2b_itc');
+      const isIneligible = purType === 'ineligible_17_5' || !isRegistered;
+      const isRcm = purType === 'rcm';
+      const isImport = purType === 'import_goods' || purType === 'import_services';
+
       list.push({
         id: `PUR-${inv.id}`,
         sourceType: 'Purchase Bill',
@@ -100,7 +105,7 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
         supplierName: inv.partyName || party?.name || 'Registered Vendor',
         invoiceNumber: inv.invoiceNumber,
         invoiceDate: inv.invoiceDate,
-        invoiceType: 'Regular B2B',
+        invoiceType: isRcm ? 'RCM' : isImport ? 'Services' : purType === 'exempt_nil' ? 'Non-GST' : 'Regular B2B',
         placeOfSupply: inv.placeOfSupply || recipientStateCode,
         isInterstate: inv.isInterstate || false,
         taxableValue: taxable,
@@ -109,11 +114,11 @@ export const Gstr2bReportView: React.FC<Gstr2bReportViewProps> = ({
         sgst: sgstVal,
         totalTax: taxVal,
         totalValue: grandVal,
-        itcEligible: isRegistered,
-        ineligibleReason: isRegistered ? undefined : 'Unregistered supplier (B2C purchase)',
+        itcEligible: !isIneligible,
+        ineligibleReason: purType === 'ineligible_17_5' ? 'Ineligible under Section 17(5)' : !isRegistered ? 'Unregistered supplier (B2C purchase)' : undefined,
         supplierFilingStatus: isRegistered ? 'GSTR-1 Filed' : 'Unregistered',
         filingDate: isRegistered ? '11-Sep-2026' : '-',
-        reconciliationStatus: isRegistered ? 'matched' : 'ineligible',
+        reconciliationStatus: !isIneligible ? 'matched' : 'ineligible',
       });
     });
 

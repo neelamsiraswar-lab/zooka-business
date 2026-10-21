@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for resolving purchase vs sale voucher classification in accounting, full multi-ledger tax split (Taxable, CGST, SGST, IGST), GST statutory inward classifications (B2B ITC, RCM, Imports, Ineligible Sec 17(5)), and smart party type filtering.",
+  "updatedAt":  "2026-10-21T14:05:01.413520229Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
