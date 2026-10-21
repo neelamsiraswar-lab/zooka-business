@@ -255,16 +255,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           );
         })()}
 
-        {/* Fullscreen Button */}
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-          className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer transition hidden sm:flex items-center justify-center"
-        >
-          {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-        </button>
-
         {/* Manual Refresh / Sync Button */}
         <button
           type="button"

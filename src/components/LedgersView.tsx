@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Party, Invoice, PaymentVoucher, Cheque } from '../types';
+import { Party, PartyAddress, Invoice, PaymentVoucher, Cheque } from '../types';
 import { useDialog } from '../context/DialogContext';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole } from '../lib/permissions';
@@ -7,6 +7,16 @@ import { AppSelect } from './AppSelect';
 import { SkeletonLedgersView } from './SkeletonLoaders';
 import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
 import { FullScreenButton } from './FullScreenButton';
+import { INDIAN_STATES } from '../data/indianStates';
+import {
+  TALLY_ADDRESS_TYPES,
+  normalizePartyAddresses,
+  createEmptyPartyAddress,
+  extractStateFromGstin,
+  getStateNameByCode,
+  getDefaultBillingAddress,
+  formatPartyAddressBlock,
+} from '../utils/partyAddressUtils';
 import {
   Calendar,
   Users,
@@ -32,6 +42,8 @@ import {
   LayoutGrid,
   ArrowUpDown,
   Filter,
+  Truck,
+  Copy,
 } from 'lucide-react';
 
 interface LedgersViewProps {
@@ -104,6 +116,9 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
   const [address, setAddress] = useState('');
   const [openingBalance, setOpeningBalance] = useState('0');
   const [balanceType, setBalanceType] = useState<'dr' | 'cr'>('dr');
+  // Tally Multiple Mailing Details (Multiple Addresses) State
+  const [partyAddresses, setPartyAddresses] = useState<PartyAddress[]>([]);
+  const [activeAddressIndex, setActiveAddressIndex] = useState<number>(0);
 
   const customerList = parties.filter((p) => p.partyType === 'customer');
   const vendorList = parties.filter((p) => p.partyType === 'vendor');
@@ -121,12 +136,25 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
   }, 0);
 
   const filteredParties = useMemo(() => {
+    const q = search.toLowerCase().trim();
     const result = parties.filter((p) => {
+      const addrList = normalizePartyAddresses(p);
+      const matchAddressBook = addrList.some(
+        (a) =>
+          (a.address && a.address.toLowerCase().includes(q)) ||
+          (a.city && a.city.toLowerCase().includes(q)) ||
+          (a.pincode && a.pincode.includes(q)) ||
+          (a.gstin && a.gstin.toLowerCase().includes(q)) ||
+          (a.addressType && a.addressType.toLowerCase().includes(q)) ||
+          (a.mailingName && a.mailingName.toLowerCase().includes(q))
+      );
       const matchSearch =
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        (p.gstin && p.gstin.toLowerCase().includes(search.toLowerCase())) ||
-        (p.phone && p.phone.includes(search)) ||
-        (p.stateName && p.stateName.toLowerCase().includes(search.toLowerCase()));
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.gstin && p.gstin.toLowerCase().includes(q)) ||
+        (p.phone && p.phone.includes(q)) ||
+        (p.stateName && p.stateName.toLowerCase().includes(q)) ||
+        matchAddressBook;
 
       if (!matchSearch) return false;
       if (partyTypeFilter === 'customer') return p.partyType === 'customer';
@@ -177,6 +205,15 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
     setAddress('');
     setOpeningBalance('0');
     setBalanceType('dr');
+    setPartyAddresses([
+      createEmptyPartyAddress('Primary / Billing', {
+        stateCode: '27',
+        stateName: 'Maharashtra',
+        isDefaultBilling: true,
+        isDefaultShipping: true,
+      }),
+    ]);
+    setActiveAddressIndex(0);
     setShowPartyModal(true);
   };
 
@@ -192,21 +229,157 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
     setAddress(p.address || '');
     setOpeningBalance(p.openingBalance || '0');
     setBalanceType(p.balanceType);
+    const normalized = normalizePartyAddresses(p);
+    setPartyAddresses(normalized);
+    setActiveAddressIndex(0);
     setShowPartyModal(true);
+  };
+
+  const updateAddressField = (index: number, patch: Partial<PartyAddress>) => {
+    setPartyAddresses((prev) => {
+      const next = prev.map((item, idx) => (idx === index ? { ...item, ...patch } : { ...item }));
+      // If setting default billing or default shipping, ensure uniqueness
+      if (patch.isDefaultBilling) {
+        next.forEach((item, idx) => {
+          item.isDefaultBilling = idx === index;
+        });
+      }
+      if (patch.isDefaultShipping) {
+        next.forEach((item, idx) => {
+          item.isDefaultShipping = idx === index;
+        });
+      }
+      const primary = next.find((a) => a.isDefaultBilling) || next[0];
+      if (primary) {
+        setGstin(primary.gstin || '');
+        setStateCode(primary.stateCode || '27');
+        setStateName(primary.stateName || getStateNameByCode(primary.stateCode || '27'));
+        setPhone(primary.phone || '');
+        setEmail(primary.email || '');
+        setAddress(formatPartyAddressBlock(primary) || primary.address || '');
+      }
+      return next;
+    });
+  };
+
+  const handleAddAddressSlot = (presetType: string = 'Delivery / Ship-To') => {
+    const baseAddr = partyAddresses[0] || {
+      stateCode,
+      stateName,
+      gstin,
+      phone,
+      email,
+    };
+    const newSlot = createEmptyPartyAddress(presetType, {
+      mailingName: partyName.trim(),
+      stateCode: baseAddr.stateCode || '27',
+      stateName: baseAddr.stateName || 'Maharashtra',
+      gstin: baseAddr.gstin || '',
+      phone: baseAddr.phone || '',
+      email: baseAddr.email || '',
+      isDefaultBilling: false,
+      isDefaultShipping: presetType.toLowerCase().includes('ship') || presetType.toLowerCase().includes('delivery'),
+    });
+
+    setPartyAddresses((prev) => {
+      const next = prev.map((a) => ({
+        ...a,
+        isDefaultShipping: newSlot.isDefaultShipping ? false : a.isDefaultShipping,
+      }));
+      return [...next, newSlot];
+    });
+    setActiveAddressIndex(partyAddresses.length);
+  };
+
+  const handleDuplicateAddressSlot = (idx: number) => {
+    const source = partyAddresses[idx];
+    if (!source) return;
+    const copy: PartyAddress = {
+      ...source,
+      id: `addr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      addressType: source.addressType === 'Primary / Billing' ? 'Delivery / Ship-To' : `${source.addressType} (Branch)`,
+      isDefaultBilling: false,
+      isDefaultShipping: true,
+    };
+    setPartyAddresses((prev) => {
+      const next = prev.map((a) => ({ ...a, isDefaultShipping: false }));
+      return [...next, copy];
+    });
+    setActiveAddressIndex(partyAddresses.length);
+  };
+
+  const handleRemoveAddressSlot = (idx: number) => {
+    if (partyAddresses.length <= 1) return;
+    setPartyAddresses((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (!next.some((a) => a.isDefaultBilling)) next[0].isDefaultBilling = true;
+      if (!next.some((a) => a.isDefaultShipping)) next[0].isDefaultShipping = true;
+      const primary = next.find((a) => a.isDefaultBilling) || next[0];
+      if (primary) {
+        setGstin(primary.gstin || '');
+        setStateCode(primary.stateCode || '27');
+        setStateName(primary.stateName || 'Maharashtra');
+        setPhone(primary.phone || '');
+        setEmail(primary.email || '');
+        setAddress(formatPartyAddressBlock(primary) || primary.address || '');
+      }
+      return next;
+    });
+    setActiveAddressIndex((prev) => Math.max(0, Math.min(prev, partyAddresses.length - 2)));
   };
 
   const handleCreateOrEditParty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partyName.trim()) return;
+
+    const cleanedAddresses = (partyAddresses.length > 0
+      ? partyAddresses
+      : [
+          createEmptyPartyAddress('Primary / Billing', {
+            mailingName: partyName.trim(),
+            address: address.trim(),
+            stateCode,
+            stateName,
+            gstin: gstin.trim().toUpperCase(),
+            phone: phone.trim(),
+            email: email.trim(),
+            isDefaultBilling: true,
+            isDefaultShipping: true,
+          }),
+        ]
+    ).map((a, idx) => ({
+      ...a,
+      id: a.id || `addr-${Date.now()}-${idx + 1}`,
+      addressType: (a.addressType || 'Primary / Billing').trim(),
+      mailingName: (a.mailingName || partyName).trim(),
+      address: (a.address || '').trim(),
+      city: (a.city || '').trim(),
+      pincode: (a.pincode || '').trim(),
+      stateCode: a.stateCode || stateCode || '27',
+      stateName: a.stateName || getStateNameByCode(a.stateCode || stateCode || '27'),
+      gstin: a.gstin ? a.gstin.trim().toUpperCase() : '',
+      gstRegistrationType: a.gstRegistrationType || (a.gstin ? 'Regular' : 'Unregistered'),
+      contactPerson: (a.contactPerson || '').trim(),
+      phone: (a.phone || '').trim(),
+      email: (a.email || '').trim(),
+    }));
+
+    const primaryBill = cleanedAddresses.find((a) => a.isDefaultBilling) || cleanedAddresses[0];
+
     const payload = {
       partyType,
       name: partyName.trim(),
-      gstin: gstin ? gstin.trim().toUpperCase() : null,
-      stateCode,
-      stateName,
-      phone: phone.trim() || null,
-      email: email.trim() || null,
-      address: address.trim() || null,
+      mailingName: primaryBill?.mailingName || partyName.trim(),
+      gstRegistrationType: primaryBill?.gstRegistrationType || (primaryBill?.gstin ? 'Regular' : 'Unregistered'),
+      gstin: (primaryBill?.gstin || gstin || '').trim().toUpperCase() || null,
+      stateCode: primaryBill?.stateCode || stateCode || '27',
+      stateName: primaryBill?.stateName || stateName || 'Maharashtra',
+      phone: (primaryBill?.phone || phone || '').trim() || null,
+      email: (primaryBill?.email || email || '').trim() || null,
+      address: formatPartyAddressBlock(primaryBill) || (primaryBill?.address || address || '').trim() || null,
+      city: primaryBill?.city || null,
+      pincode: primaryBill?.pincode || null,
+      addresses: cleanedAddresses,
       openingBalance,
       balanceType,
     };
@@ -512,6 +685,23 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                                 <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-teal-300 font-normal">
                                   Auto-Synced
                                 </span>
+                                {(() => {
+                                  const addrList = normalizePartyAddresses(p);
+                                  if (addrList.length > 1) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditPartyModal(p)}
+                                        className="text-[9.5px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1 cursor-pointer hover:bg-amber-500/25 transition"
+                                        title={`Tally Multiple Addresses: ${addrList.map((a) => a.addressType).join(', ')}`}
+                                      >
+                                        <MapPin className="w-2.5 h-2.5 text-amber-400" />
+                                        <span>{addrList.length} Addresses</span>
+                                      </button>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                               </div>
                               <span className="text-[10px] text-slate-500 block truncate">
                                 Code: PTY-{String(p.id).padStart(4, '0')}
@@ -561,7 +751,31 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                               <span className="truncate">{p.email}</span>
                             </div>
                           )}
-                          {!p.phone && !p.email && <span className="text-slate-600">-</span>}
+                          {(() => {
+                            const addrList = normalizePartyAddresses(p);
+                            if (addrList.length > 1) {
+                              return (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {addrList.slice(0, 3).map((a) => (
+                                    <span
+                                      key={a.id}
+                                      className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800/90 text-slate-300 border border-slate-700/70 truncate max-w-[110px]"
+                                      title={`${a.addressType}: ${a.address || a.stateName}`}
+                                    >
+                                      {a.addressType}
+                                    </span>
+                                  ))}
+                                  {addrList.length > 3 && (
+                                    <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-amber-300">
+                                      +{addrList.length - 3}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+                          {!p.phone && !p.email && (normalizePartyAddresses(p).length <= 1) && <span className="text-slate-600">-</span>}
                         </td>
 
                         {/* Opening Balance */}
@@ -836,6 +1050,43 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                           {p.address}
                         </div>
                       )}
+
+                      {(() => {
+                        const addrList = normalizePartyAddresses(p);
+                        if (addrList.length > 1) {
+                          return (
+                            <div className="pt-2 mt-1 border-t border-slate-800/50 space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-amber-300 font-semibold">
+                                <span className="flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-amber-400" />
+                                  Multiple Mailing Details ({addrList.length})
+                                </span>
+                                {canEditParty && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditPartyModal(p)}
+                                    className="text-teal-400 hover:underline cursor-pointer"
+                                  >
+                                    Manage
+                                  </button>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {addrList.map((a) => (
+                                  <span
+                                    key={a.id}
+                                    className="text-[9.5px] px-1.5 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 truncate max-w-[140px]"
+                                    title={`${a.addressType}: ${a.address || ''} (${a.stateName})`}
+                                  >
+                                    {a.addressType}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
 
@@ -934,15 +1185,22 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
         </div>
       )}
 
-      {/* CREATE / EDIT PARTY MODAL */}
+      {/* CREATE / EDIT PARTY MODAL (WITH TALLY MULTIPLE MAILING DETAILS / ADDRESS TYPES) */}
       {showPartyModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full max-h-[92vh] flex flex-col shadow-2xl relative my-auto overflow-hidden">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl relative my-auto overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-800 p-4 sm:p-5 shrink-0 bg-slate-950">
-              <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 truncate">
-                <Users className="w-5 h-5 text-emerald-400 shrink-0" />
-                <span className="truncate">{editingParty ? 'Edit Party Ledger Details' : 'Add Party (Customer or Vendor Ledger)'}</span>
-              </h3>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 truncate">
+                  <Users className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <span className="truncate">
+                    {editingParty ? `Edit Party Master — ${editingParty.name}` : 'Create Party Ledger Master (Tally Style)'}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Configure debtor/creditor ledger with Tally-style Multiple Mailing Details (Bill-To Buyer, Ship-To Consignee, Branches & Godowns).
+                </p>
+              </div>
               <div className="flex items-center gap-2 shrink-0">
                 <FullScreenButton mode="modal" showLabel />
                 <button
@@ -957,10 +1215,11 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
               </div>
             </div>
 
-            <form onSubmit={handleCreateOrEditParty} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-400 mb-1">Party Type</label>
+            <form onSubmit={handleCreateOrEditParty} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-xs">
+              {/* Primary Ledger Identity & Opening Balance */}
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-4 bg-slate-950/70 border border-slate-800 rounded-xl">
+                <div className="sm:col-span-4">
+                  <label className="block font-medium text-slate-400 mb-1">Account Group / Party Type</label>
                   <AppSelect
                     value={partyType}
                     onChange={(val) => setPartyType(val as any)}
@@ -971,127 +1230,387 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label className="block font-medium text-slate-400 mb-1">Party / Business Name</label>
+                <div className="sm:col-span-5">
+                  <label className="block font-medium text-slate-400 mb-1">
+                    Ledger / Legal Business Name <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Reliance Retail Ltd"
                     value={partyName}
-                    onChange={(e) => setPartyName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-400 mb-1">GSTIN (15-digit)</label>
-                  <input
-                    type="text"
-                    maxLength={15}
-                    placeholder="27AABCU9603R1ZM"
-                    value={gstin}
-                    onChange={(e) => setGstin(e.target.value.toUpperCase())}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPartyName(val);
+                      if (partyAddresses.length > 0 && !partyAddresses[0].mailingName) {
+                        updateAddressField(0, { mailingName: val });
+                      }
+                    }}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
-                <div>
-                  <label className="block font-medium text-slate-400 mb-1">State Code / Name</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Code (27)"
-                      value={stateCode}
-                      onChange={(e) => setStateCode(e.target.value)}
-                      className="w-20 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono text-center focus:outline-none focus:border-emerald-500"
-                    />
-                    <input
-                      type="text"
-                      placeholder="State Name"
-                      value={stateName}
-                      onChange={(e) => setStateName(e.target.value)}
-                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-400 mb-1">Phone Number</label>
-                  <input
-                    type="tel"
-                    placeholder="e.g. 9820012345"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-medium text-slate-400 mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    placeholder="e.g. accounts@party.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-400 mb-1">Billing & Shipping Address</label>
-                <textarea
-                  rows={2}
-                  placeholder="Plot 42, MIDC Industrial Area..."
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white resize-none focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
-                <div>
+                <div className="sm:col-span-3">
                   <label className="block font-medium text-slate-400 mb-1">Opening Balance (₹)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={openingBalance}
-                    onChange={(e) => setOpeningBalance(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-medium text-slate-400 mb-1">Balance Type</label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1.5">
+                    <input
+                      type="number"
+                      step="any"
+                      value={openingBalance}
+                      onChange={(e) => setOpeningBalance(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
+                    />
                     <button
                       type="button"
-                      onClick={() => setBalanceType('dr')}
-                      className={`flex-1 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                      onClick={() => setBalanceType(balanceType === 'dr' ? 'cr' : 'dr')}
+                      className={`px-2.5 py-2 rounded-xl font-bold uppercase transition cursor-pointer shrink-0 border ${
                         balanceType === 'dr'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : 'bg-slate-900 text-slate-500'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
                       }`}
+                      title="Click to toggle Debit (Dr) / Credit (Cr)"
                     >
-                      Debit (Dr)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBalanceType('cr')}
-                      className={`flex-1 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-                        balanceType === 'cr'
-                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                          : 'bg-slate-900 text-slate-500'
-                      }`}
-                    >
-                      Credit (Cr)
+                      {balanceType}
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* TALLY PRIME STYLE MULTIPLE MAILING DETAILS / ADDRESS TYPES */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-xs sm:text-sm font-bold text-white">
+                        Multiple Mailing Details & Address Types (Tally Style)
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold">
+                        {partyAddresses.length} {partyAddresses.length === 1 ? 'Address' : 'Addresses'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Maintain separate Billing (Buyer), Shipping/Consignee (Delivery), Branch Offices, Factory & Godown addresses with branch-specific GSTINs.
+                    </p>
+                  </div>
+
+                  {/* Quick Add Preset Address Type Buttons */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleAddAddressSlot('Delivery / Ship-To')}
+                      className="px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Truck className="w-3 h-3 text-emerald-400" />
+                      <span>+ Ship-To / Delivery</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddAddressSlot('Branch Office')}
+                      className="px-2.5 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Building2 className="w-3 h-3 text-blue-400" />
+                      <span>+ Branch / Godown</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Address Type Selector Tabs */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  {partyAddresses.map((addr, idx) => {
+                    const isSelected = idx === activeAddressIndex;
+                    return (
+                      <button
+                        key={addr.id || idx}
+                        type="button"
+                        onClick={() => setActiveAddressIndex(idx)}
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer shrink-0 border ${
+                          isSelected
+                            ? 'bg-slate-800 text-white border-emerald-500/50 shadow-sm'
+                            : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'
+                        }`}
+                      >
+                        <MapPin className={`w-3.5 h-3.5 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span>{addr.addressType || `Address #${idx + 1}`}</span>
+                        {addr.isDefaultBilling && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Bill-To
+                          </span>
+                        )}
+                        {addr.isDefaultShipping && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            Ship-To
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => handleAddAddressSlot(`Branch / Site #${partyAddresses.length + 1}`)}
+                    className="px-2.5 py-2 rounded-xl text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-dashed border-slate-700 flex items-center gap-1 transition cursor-pointer shrink-0"
+                    title="Add another custom address type"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Add Address</span>
+                  </button>
+                </div>
+
+                {/* Active Address Editor Panel */}
+                {(() => {
+                  const currentAddr = partyAddresses[activeAddressIndex] || partyAddresses[0];
+                  if (!currentAddr) return null;
+                  const idx = activeAddressIndex < partyAddresses.length ? activeAddressIndex : 0;
+
+                  return (
+                    <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3.5">
+                      {/* Top Bar of Active Address Card: Address Type + Default Toggles + Duplicate/Delete */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                            Address Slot #{idx + 1}:
+                          </span>
+                          {/* Preset Quick Chips for Address Type */}
+                          <div className="flex flex-wrap items-center gap-1">
+                            {TALLY_ADDRESS_TYPES.slice(0, 5).map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => updateAddressField(idx, { addressType: preset })}
+                                className={`text-[10px] px-2 py-0.5 rounded-md transition cursor-pointer border ${
+                                  currentAddr.addressType === preset
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-semibold'
+                                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border-slate-800'
+                                }`}
+                              >
+                                {preset}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicateAddressSlot(idx)}
+                            className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-medium flex items-center gap-1 transition cursor-pointer"
+                            title="Duplicate this address as a Shipping / Branch address"
+                          >
+                            <Copy className="w-3 h-3 text-cyan-400" />
+                            <span>Duplicate</span>
+                          </button>
+                          {partyAddresses.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAddressSlot(idx)}
+                              className="px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-[10px] font-medium flex items-center gap-1 transition cursor-pointer"
+                              title="Remove this address slot"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Remove</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Row 1: Address Type Name, Mailing Name, Default Checkboxes */}
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        <div className="sm:col-span-4">
+                          <label className="block font-medium text-slate-400 mb-1">
+                            Address Type Label (Tally Name)
+                          </label>
+                          <input
+                            type="text"
+                            value={currentAddr.addressType}
+                            onChange={(e) => updateAddressField(idx, { addressType: e.target.value })}
+                            placeholder="e.g. Primary / Billing, Branch - Pune, Godown #2"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-4">
+                          <label className="block font-medium text-slate-400 mb-1">
+                            Mailing / Trade Name on Invoice
+                          </label>
+                          <input
+                            type="text"
+                            value={currentAddr.mailingName || ''}
+                            onChange={(e) => updateAddressField(idx, { mailingName: e.target.value })}
+                            placeholder={partyName || 'Same as Party Ledger Name'}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-4 flex flex-col justify-end gap-1.5">
+                          <label className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(currentAddr.isDefaultBilling)}
+                              onChange={(e) => updateAddressField(idx, { isDefaultBilling: e.target.checked })}
+                              className="rounded border-slate-700 text-emerald-500 focus:ring-0 w-3.5 h-3.5 bg-slate-900"
+                            />
+                            <span className="text-[11px] font-semibold text-emerald-300">
+                              Default Buyer (Bill-To) Address
+                            </span>
+                          </label>
+                          <label className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(currentAddr.isDefaultShipping)}
+                              onChange={(e) => updateAddressField(idx, { isDefaultShipping: e.target.checked })}
+                              className="rounded border-slate-700 text-cyan-500 focus:ring-0 w-3.5 h-3.5 bg-slate-900"
+                            />
+                            <span className="text-[11px] font-semibold text-cyan-300">
+                              Default Consignee (Ship-To) Address
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Street Address, City, Pincode */}
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        <div className="sm:col-span-6">
+                          <label className="block font-medium text-slate-400 mb-1">
+                            Building, Street, Industrial Area / Landmark
+                          </label>
+                          <textarea
+                            rows={2}
+                            placeholder="Plot 42, MIDC Industrial Area, Andheri East..."
+                            value={currentAddr.address}
+                            onChange={(e) => updateAddressField(idx, { address: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white resize-none focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label className="block font-medium text-slate-400 mb-1">City / District</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Mumbai"
+                            value={currentAddr.city || ''}
+                            onChange={(e) => updateAddressField(idx, { city: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label className="block font-medium text-slate-400 mb-1">PIN Code</label>
+                          <input
+                            type="text"
+                            maxLength={6}
+                            placeholder="e.g. 400093"
+                            value={currentAddr.pincode || ''}
+                            onChange={(e) => updateAddressField(idx, { pincode: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Row 3: GST Registration Type, GSTIN (with auto-state detection), State Code & Name */}
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        <div className="sm:col-span-3">
+                          <label className="block font-medium text-slate-400 mb-1">GST Registration Type</label>
+                          <select
+                            value={currentAddr.gstRegistrationType || (currentAddr.gstin ? 'Regular' : 'Unregistered')}
+                            onChange={(e) =>
+                              updateAddressField(idx, { gstRegistrationType: e.target.value as any })
+                            }
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                          >
+                            <option value="Regular">Regular (B2B GST)</option>
+                            <option value="Composition">Composition Dealer</option>
+                            <option value="Unregistered">Unregistered / Consumer</option>
+                            <option value="SEZ">SEZ Unit / Developer</option>
+                          </select>
+                        </div>
+
+                        <div className="sm:col-span-4">
+                          <label className="block font-medium text-slate-400 mb-1">
+                            Branch / Location GSTIN (15-digit)
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={15}
+                            placeholder="27AABCU9603R1ZM"
+                            value={currentAddr.gstin || ''}
+                            onChange={(e) => {
+                              const rawGstin = e.target.value.toUpperCase();
+                              const detected = extractStateFromGstin(rawGstin);
+                              if (detected) {
+                                updateAddressField(idx, {
+                                  gstin: rawGstin,
+                                  stateCode: detected.stateCode,
+                                  stateName: detected.stateName,
+                                  gstRegistrationType: 'Regular',
+                                });
+                              } else {
+                                updateAddressField(idx, { gstin: rawGstin });
+                              }
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-5">
+                          <label className="block font-medium text-slate-400 mb-1">
+                            State & Place of Supply Code
+                          </label>
+                          <select
+                            value={currentAddr.stateCode || '27'}
+                            onChange={(e) => {
+                              const code = e.target.value;
+                              const name = getStateNameByCode(code);
+                              updateAddressField(idx, { stateCode: code, stateName: name });
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                          >
+                            {INDIAN_STATES.map((st) => (
+                              <option key={st.code} value={st.code}>
+                                {st.code} — {st.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Row 4: Contact Person, Phone Number, Email Address */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block font-medium text-slate-400 mb-1">Contact Person</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Rajesh Sharma (Store Manager)"
+                            value={currentAddr.contactPerson || ''}
+                            onChange={(e) => updateAddressField(idx, { contactPerson: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-medium text-slate-400 mb-1">Phone / Mobile Number</label>
+                          <input
+                            type="tel"
+                            placeholder="e.g. +91 98200 12345"
+                            value={currentAddr.phone || ''}
+                            onChange={(e) => updateAddressField(idx, { phone: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-medium text-slate-400 mb-1">Email Address</label>
+                          <input
+                            type="email"
+                            placeholder="e.g. dispatch@party.com"
+                            value={currentAddr.email || ''}
+                            onChange={(e) => updateAddressField(idx, { email: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 pt-3 border-t border-slate-800 shrink-0">
@@ -1125,7 +1644,7 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
                     disabled={loading}
                     className="w-full sm:w-auto px-5 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold rounded-xl shadow-lg shadow-emerald-500/20 transition cursor-pointer text-center"
                   >
-                    {loading ? 'Saving...' : editingParty ? 'Update Party Ledger' : 'Save Party Ledger'}
+                    {loading ? 'Saving...' : editingParty ? 'Update Party & Addresses' : 'Save Party & Addresses'}
                   </button>
                 </div>
               </div>
@@ -1165,6 +1684,20 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {canEditParty && (
+                  <button
+                    onClick={() => {
+                      const target = statementParty;
+                      setStatementParty(null);
+                      openEditPartyModal(target);
+                    }}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                    title="Manage Tally Multiple Mailing & Delivery Addresses"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Addresses ({normalizePartyAddresses(statementParty).length})</span>
+                  </button>
+                )}
                 {onRecordPayment && (
                   <button
                     onClick={() => {
@@ -1220,6 +1753,71 @@ export const LedgersView: React.FC<LedgersViewProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 sm:space-y-6">
+              {/* Tally Multiple Mailing & Delivery Addresses Directory Strip */}
+              {(() => {
+                const addrList = normalizePartyAddresses(statementParty);
+                return (
+                  <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                        Registered Mailing & Delivery Addresses ({addrList.length})
+                      </span>
+                      {canEditParty && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = statementParty;
+                            setStatementParty(null);
+                            openEditPartyModal(target);
+                          }}
+                          className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>+ Add / Edit Address Types</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+                      {addrList.map((a) => (
+                        <div
+                          key={a.id}
+                          className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1 flex flex-col justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-bold text-white text-[11px] truncate">{a.addressType}</span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {a.isDefaultBilling && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                                    Bill-To
+                                  </span>
+                                )}
+                                {a.isDefaultShipping && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold">
+                                    Ship-To
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {a.mailingName && a.mailingName !== statementParty.name && (
+                              <div className="text-[10px] text-slate-300 font-medium">{a.mailingName}</div>
+                            )}
+                            <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                              {formatPartyAddressBlock(a) || 'No street address specified'}
+                            </div>
+                          </div>
+                          <div className="pt-1.5 mt-1 border-t border-slate-800/70 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                            <span>{a.stateName} ({a.stateCode})</span>
+                            <span>{a.gstin || 'Unregistered'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Financial Summary Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">

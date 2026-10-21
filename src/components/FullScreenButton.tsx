@@ -142,6 +142,7 @@ export const FullScreenButton: React.FC<FullScreenButtonProps> = ({
       type="button"
       onClick={handleToggle}
       data-fs-toggle="true"
+      data-fs-react="true"
       title={buttonTitle}
       aria-label={buttonTitle}
       className={
@@ -169,30 +170,56 @@ const MAXIMIZE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height=
 const MINIMIZE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-teal-400"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>`;
 
 /**
- * React-safe fallback enhancer that ensures any dynamically opened popup/modal or view
- * that does not yet have a [data-fs-toggle="true"] button receives a non-intrusive Full Screen View button
- * without ever moving or reparenting React-managed DOM nodes.
+ * React-safe fallback enhancer that ensures any dynamically opened popup/modal or explicit [data-fs-container]
+ * that does not already have a React <FullScreenButton /> receives a single non-intrusive Full Screen View button,
+ * and automatically removes any injected button if a React <FullScreenButton /> is present.
  */
 export const UniversalFullScreenEnhancer: React.FC = () => {
   useEffect(() => {
     const enhanceDom = () => {
-      // 1. Check all fixed modal/popup overlays
+      // 0. Deduplicate: if any container or modal has a React-rendered [data-fs-react="true"] button,
+      // remove any lingering DOM-injected buttons/bars inside that same container/modal.
+      const allScopes = document.querySelectorAll<HTMLElement>(
+        'main > div, [data-fs-container], div.fixed.inset-0'
+      );
+      allScopes.forEach((scope) => {
+        const hasReactBtn = scope.querySelector('[data-fs-react="true"]');
+        if (hasReactBtn) {
+          scope
+            .querySelectorAll('[data-fs-injected-bar="true"], [data-fs-injected="true"]')
+            .forEach((el) => el.remove());
+        } else {
+          // Ensure at most one injected button exists per scope
+          const injectedBtns = scope.querySelectorAll('[data-fs-injected="true"]');
+          if (injectedBtns.length > 1) {
+            injectedBtns.forEach((el, idx) => {
+              if (idx > 0) {
+                const parentBar = el.closest('[data-fs-injected-bar="true"]');
+                if (parentBar) parentBar.remove();
+                else el.remove();
+              }
+            });
+          }
+        }
+      });
+
+      // 1. Check all fixed modal/popup overlays that don't have a React FullScreenButton
       const modalOverlays = document.querySelectorAll<HTMLElement>('div.fixed.inset-0');
       modalOverlays.forEach((backdrop) => {
         if (backdrop.children.length === 0) return;
-        // Skip mobile sidebar overlay (which has aside or backdrop click only)
         if (backdrop.tagName !== 'DIV') return;
         const dialogBox = backdrop.firstElementChild as HTMLElement | null;
         if (!dialogBox || dialogBox.tagName !== 'DIV') return;
-        // Skip pure backdrop divs with no content
         if (dialogBox.children.length === 0 && !dialogBox.textContent?.trim()) return;
+        if (dialogBox.querySelector('.animate-shimmer')) return;
 
-        // Skip if already has a full screen toggle button inside this dialogBox
-        if (dialogBox.querySelector('[data-fs-toggle="true"]')) return;
+        // Skip if already has any full screen toggle button inside this backdrop or dialogBox
+        if (backdrop.querySelector('[data-fs-toggle="true"]')) return;
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.setAttribute('data-fs-toggle', 'true');
+        btn.setAttribute('data-fs-injected', 'true');
         btn.title = 'Full Screen View';
         btn.setAttribute('aria-label', 'Full Screen View');
         btn.className =
@@ -218,7 +245,6 @@ export const UniversalFullScreenEnhancer: React.FC = () => {
           updateModalBtnUI(isExpanded);
         });
 
-        // Append safely without moving any React child nodes
         const headerBar = dialogBox.firstElementChild as HTMLElement | null;
         if (headerBar && headerBar.classList.contains('justify-between')) {
           const lastChild = headerBar.lastElementChild as HTMLElement | null;
@@ -228,7 +254,6 @@ export const UniversalFullScreenEnhancer: React.FC = () => {
           }
         }
 
-        // Otherwise, append a non-intrusive top-right bar or badge inside dialogBox
         const bar = document.createElement('div');
         bar.setAttribute('data-fs-injected-bar', 'true');
         bar.className = 'flex items-center justify-end px-4 pt-3 pb-1 shrink-0 print:hidden';
@@ -236,15 +261,17 @@ export const UniversalFullScreenEnhancer: React.FC = () => {
         dialogBox.insertBefore(bar, dialogBox.firstChild);
       });
 
-      // 2. Check all main view containers inside <main> or [data-fs-container]
-      const viewContainers = document.querySelectorAll<HTMLElement>('main > div, [data-fs-container]');
-      viewContainers.forEach((container) => {
+      // 2. Only enhance explicit [data-fs-container] elements that do not have a FullScreenButton
+      const explicitContainers = document.querySelectorAll<HTMLElement>('[data-fs-container]');
+      explicitContainers.forEach((container) => {
         if (container.querySelector('[data-fs-toggle="true"]')) return;
+        if (container.querySelector('.animate-shimmer')) return;
         if (container.children.length === 0) return;
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.setAttribute('data-fs-toggle', 'true');
+        btn.setAttribute('data-fs-injected', 'true');
         btn.title = 'Full Screen View';
         btn.setAttribute('aria-label', 'Full Screen View');
         btn.className =

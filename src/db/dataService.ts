@@ -2,6 +2,7 @@
 import { db, COLLECTIONS, getNextSequenceId } from './index.ts';
 import { CompanyProfile } from '../types.ts';
 import { getActiveWorkspaceId } from './workspaces.ts';
+import { normalizePartyAddresses, getDefaultBillingAddress, getStateNameByCode } from '../utils/partyAddressUtils.ts';
 
 export function resolveWorkspaceId(providedWorkspaceId?: string): string {
   if (providedWorkspaceId && typeof providedWorkspaceId === 'string' && providedWorkspaceId.trim()) {
@@ -290,8 +291,11 @@ export async function getParties(userIdOrWsId?: any, optionalWorkspaceId?: strin
     const currentBalance = Math.abs(netBalance).toFixed(2);
     const currentBalanceType = netBalance >= 0 ? 'dr' : 'cr';
 
+    const normalizedAddresses = normalizePartyAddresses(party);
+
     return {
       ...party,
+      addresses: normalizedAddresses,
       totalInvoiced: (party.partyType === 'customer' ? totalSales : totalPurchases).toFixed(2),
       totalPaid: (party.partyType === 'customer' ? receipts : paymentsOut).toFixed(2),
       currentBalance,
@@ -317,18 +321,32 @@ export async function createParty(dataOrUserId: any, userIdOrData?: any, userNam
     throw new Error('Active workspace ID is required to scope customer ledger records.');
   }
   const partyId = await getNextSequenceId('party_id');
+  const rawPartyInput = {
+    ...data,
+    id: partyId,
+    stateCode: data.stateCode || '27',
+    stateName: data.stateName || getStateNameByCode(data.stateCode || '27'),
+  };
+  const normalizedAddresses = normalizePartyAddresses(rawPartyInput);
+  const primaryBilling = getDefaultBillingAddress({ ...rawPartyInput, addresses: normalizedAddresses });
+
   const party = {
     id: partyId,
     userId,
     workspaceId: wsId,
     partyType: data.partyType || 'customer',
     name: data.name,
-    gstin: data.gstin || null,
-    stateCode: data.stateCode || '08',
-    stateName: data.stateName || 'Rajasthan',
-    phone: data.phone || null,
-    email: data.email || null,
-    address: data.address || null,
+    mailingName: data.mailingName || primaryBilling?.mailingName || data.name || null,
+    gstRegistrationType: data.gstRegistrationType || primaryBilling?.gstRegistrationType || (data.gstin || primaryBilling?.gstin ? 'Regular' : 'Unregistered'),
+    gstin: data.gstin || primaryBilling?.gstin || null,
+    stateCode: data.stateCode || primaryBilling?.stateCode || '27',
+    stateName: data.stateName || primaryBilling?.stateName || getStateNameByCode(data.stateCode || primaryBilling?.stateCode || '27'),
+    phone: data.phone || primaryBilling?.phone || null,
+    email: data.email || primaryBilling?.email || null,
+    address: data.address || primaryBilling?.address || null,
+    city: data.city || primaryBilling?.city || null,
+    pincode: data.pincode || primaryBilling?.pincode || null,
+    addresses: normalizedAddresses,
     openingBalance: data.openingBalance || '0.00',
     balanceType: data.balanceType || 'dr',
     createdAt: new Date().toISOString(),
@@ -372,7 +390,23 @@ export async function editParty(partyId: number, userId: number, data: any, opti
   }
 
   const targetWsId = existing.workspaceId || wsId;
-  const updated = { ...existing, ...data, id: partyId, workspaceId: targetWsId };
+  const mergedCandidate = { ...existing, ...data, id: partyId, workspaceId: targetWsId };
+  const normalizedAddresses = normalizePartyAddresses(mergedCandidate);
+  const primaryBilling = getDefaultBillingAddress({ ...mergedCandidate, addresses: normalizedAddresses });
+
+  const updated = {
+    ...mergedCandidate,
+    mailingName: data.mailingName !== undefined ? data.mailingName : (primaryBilling?.mailingName || mergedCandidate.name),
+    gstin: data.gstin !== undefined ? data.gstin : (primaryBilling?.gstin || mergedCandidate.gstin || null),
+    stateCode: data.stateCode !== undefined ? data.stateCode : (primaryBilling?.stateCode || mergedCandidate.stateCode || '27'),
+    stateName: data.stateName !== undefined ? data.stateName : (primaryBilling?.stateName || mergedCandidate.stateName || 'Maharashtra'),
+    phone: data.phone !== undefined ? data.phone : (primaryBilling?.phone || mergedCandidate.phone || null),
+    email: data.email !== undefined ? data.email : (primaryBilling?.email || mergedCandidate.email || null),
+    address: data.address !== undefined ? data.address : (primaryBilling?.address || mergedCandidate.address || null),
+    city: data.city !== undefined ? data.city : (primaryBilling?.city || mergedCandidate.city || null),
+    pincode: data.pincode !== undefined ? data.pincode : (primaryBilling?.pincode || mergedCandidate.pincode || null),
+    addresses: normalizedAddresses,
+  };
   await docRef.set(updated, { merge: true });
 
   if (targetWsId) {
@@ -699,6 +733,8 @@ export async function createInvoiceWithItems(userId: number, invoiceData: any, i
     workspaceId: wsId,
     partyId: invoiceData.partyId ? Number(invoiceData.partyId) : null,
     voucherType: invoiceData.voucherType || 'sales',
+    invoiceType: invoiceData.invoiceType || (invoiceData.voucherType === 'purchase' ? 'purchase_bill' : 'tax_invoice'),
+    purchaseType: invoiceData.purchaseType || null,
     saleType: invoiceData.saleType || 'regular',
     taxMode: invoiceData.taxMode || 'exclusive',
     invoiceNumber: invoiceData.invoiceNumber,
@@ -706,7 +742,31 @@ export async function createInvoiceWithItems(userId: number, invoiceData: any, i
     dueDate: invoiceData.dueDate || null,
     partyName: invoiceData.partyName,
     partyGstin: invoiceData.partyGstin || null,
-    placeOfSupply: invoiceData.placeOfSupply || '08',
+    partyPhone: invoiceData.partyPhone || null,
+    partyEmail: invoiceData.partyEmail || null,
+    partyAddress: invoiceData.partyAddress || invoiceData.billingAddress || null,
+    partyStateCode: invoiceData.partyStateCode || invoiceData.billingStateCode || invoiceData.placeOfSupply || '27',
+    partyStateName: invoiceData.partyStateName || invoiceData.billingStateName || getStateNameByCode(invoiceData.placeOfSupply || '27'),
+    // Buyer (Bill-To) & Consignee (Ship-To) Multiple Address fields
+    billingAddressId: invoiceData.billingAddressId || null,
+    billingAddressType: invoiceData.billingAddressType || 'Primary / Billing',
+    billingMailingName: invoiceData.billingMailingName || invoiceData.partyName || null,
+    billingAddress: invoiceData.billingAddress || invoiceData.partyAddress || null,
+    billingStateCode: invoiceData.billingStateCode || invoiceData.placeOfSupply || '27',
+    billingStateName: invoiceData.billingStateName || getStateNameByCode(invoiceData.billingStateCode || invoiceData.placeOfSupply || '27'),
+    billingPincode: invoiceData.billingPincode || null,
+    billingGstin: invoiceData.billingGstin || invoiceData.partyGstin || null,
+    shippingAddressId: invoiceData.shippingAddressId || null,
+    shippingAddressType: invoiceData.shippingAddressType || (invoiceData.isSameAsBillingAddress !== false ? 'Primary / Billing' : 'Delivery / Ship-To'),
+    consigneeName: invoiceData.consigneeName || invoiceData.partyName || null,
+    shippingAddress: invoiceData.shippingAddress || invoiceData.billingAddress || invoiceData.partyAddress || null,
+    consigneeStateCode: invoiceData.consigneeStateCode || invoiceData.placeOfSupply || '27',
+    consigneeStateName: invoiceData.consigneeStateName || getStateNameByCode(invoiceData.consigneeStateCode || invoiceData.placeOfSupply || '27'),
+    consigneePincode: invoiceData.consigneePincode || null,
+    consigneeGstin: invoiceData.consigneeGstin || invoiceData.partyGstin || null,
+    consigneeContact: invoiceData.consigneeContact || invoiceData.partyPhone || null,
+    isSameAsBillingAddress: invoiceData.isSameAsBillingAddress !== undefined ? Boolean(invoiceData.isSameAsBillingAddress) : true,
+    placeOfSupply: invoiceData.placeOfSupply || '27',
     isInterstate: !!invoiceData.isInterstate,
     subtotal: finalSubtotal,
     cgstTotal: finalCgst,
@@ -737,14 +797,49 @@ export async function createInvoiceWithItems(userId: number, invoiceData: any, i
       if (existingParty) {
         invoiceDoc.partyId = existingParty.id;
       } else {
+        const initialAddresses: any[] = [
+          {
+            id: `addr-primary-${Date.now()}`,
+            addressType: invoiceDoc.billingAddressType || 'Primary / Billing',
+            mailingName: invoiceDoc.billingMailingName || invoiceDoc.partyName.trim(),
+            address: invoiceDoc.billingAddress || invoiceDoc.partyAddress || '',
+            stateCode: invoiceDoc.billingStateCode || invoiceDoc.placeOfSupply || '27',
+            stateName: invoiceDoc.billingStateName || getStateNameByCode(invoiceDoc.placeOfSupply || '27'),
+            pincode: invoiceDoc.billingPincode || '',
+            gstin: invoiceDoc.billingGstin || invoiceDoc.partyGstin || '',
+            phone: invoiceDoc.partyPhone || '',
+            email: invoiceDoc.partyEmail || '',
+            isDefaultBilling: true,
+            isDefaultShipping: Boolean(invoiceDoc.isSameAsBillingAddress),
+          },
+        ];
+
+        if (!invoiceDoc.isSameAsBillingAddress && invoiceDoc.shippingAddress) {
+          initialAddresses.push({
+            id: `addr-ship-${Date.now() + 1}`,
+            addressType: invoiceDoc.shippingAddressType || 'Delivery / Ship-To',
+            mailingName: invoiceDoc.consigneeName || invoiceDoc.partyName.trim(),
+            address: invoiceDoc.shippingAddress,
+            stateCode: invoiceDoc.consigneeStateCode || invoiceDoc.placeOfSupply || '27',
+            stateName: invoiceDoc.consigneeStateName || getStateNameByCode(invoiceDoc.consigneeStateCode || '27'),
+            pincode: invoiceDoc.consigneePincode || '',
+            gstin: invoiceDoc.consigneeGstin || invoiceDoc.partyGstin || '',
+            phone: invoiceDoc.consigneeContact || invoiceDoc.partyPhone || '',
+            isDefaultBilling: false,
+            isDefaultShipping: true,
+          });
+        }
+
         const newParty = await createParty({
           name: invoiceDoc.partyName.trim(),
           partyType: invoiceDoc.voucherType === 'sales' ? 'customer' : 'vendor',
           gstin: invoiceDoc.partyGstin || null,
           phone: invoiceData.partyPhone || null,
           email: invoiceData.partyEmail || null,
-          address: invoiceData.partyAddress || null,
-          stateCode: invoiceDoc.placeOfSupply || '08',
+          address: invoiceDoc.billingAddress || invoiceData.partyAddress || null,
+          stateCode: invoiceDoc.placeOfSupply || '27',
+          stateName: getStateNameByCode(invoiceDoc.placeOfSupply || '27'),
+          addresses: initialAddresses,
           workspaceId: wsId,
         }, userId, undefined, wsId);
         if (newParty?.id) {

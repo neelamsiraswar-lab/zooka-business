@@ -324,6 +324,12 @@ export const PartyMatchSelector: React.FC<PartyMatchSelectorProps> = ({
                       {selectedParty.partyType === 'customer' ? 'Debtor' : 'Creditor'}
                     </span>
                   ) : null}
+                  {selectedParty?.addresses && selectedParty.addresses.length > 1 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded shrink-0 bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                      <MapPin className="w-2.5 h-2.5" />
+                      <span>{selectedParty.addresses.length} Addresses</span>
+                    </span>
+                  )}
                 </div>
 
                 {selectedParty && (
@@ -512,6 +518,12 @@ export const PartyMatchSelector: React.FC<PartyMatchSelectorProps> = ({
                               >
                                 {p.partyType === 'customer' ? 'Customer' : 'Vendor'}
                               </span>
+                              {p.addresses && p.addresses.length > 1 && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold flex items-center gap-0.5 shrink-0">
+                                  <MapPin className="w-2.5 h-2.5" />
+                                  {p.addresses.length} Addr
+                                </span>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 truncate">

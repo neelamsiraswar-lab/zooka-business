@@ -9,6 +9,15 @@ import { HsnAutoSuggestSelector } from './HsnAutoSuggestSelector';
 import { inferCategoryFromItem } from '../data/hsnCategories';
 import { getAvailableMonths, getMonthBounds } from '../utils/datePeriodUtils';
 import { FullScreenButton } from './FullScreenButton';
+import { INDIAN_STATES } from '../data/indianStates';
+import {
+  normalizePartyAddresses,
+  getDefaultBillingAddress,
+  getDefaultShippingAddress,
+  formatPartyAddressBlock,
+  extractStateFromGstin,
+  getStateNameByCode,
+} from '../utils/partyAddressUtils';
 import {
   FileText,
   Plus,
@@ -44,6 +53,7 @@ import {
   LayoutTemplate,
   Clock,
   Lock,
+  Truck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission, UserRole } from '../lib/permissions';
@@ -114,6 +124,20 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
   const [partyPhone, setPartyPhone] = useState('');
   const [partyEmail, setPartyEmail] = useState('');
   const [partyAddress, setPartyAddress] = useState('');
+  // Tally Multiple Addresses: Buyer (Bill-To) & Consignee (Ship-To) states
+  const [billingAddressId, setBillingAddressId] = useState<string>('');
+  const [billingAddressType, setBillingAddressType] = useState<string>('Primary');
+  const [billingMailingName, setBillingMailingName] = useState<string>('');
+  const [billingPincode, setBillingPincode] = useState<string>('');
+  const [isSameAsBillingAddress, setIsSameAsBillingAddress] = useState<boolean>(true);
+  const [shippingAddressId, setShippingAddressId] = useState<string>('');
+  const [shippingAddressType, setShippingAddressType] = useState<string>('Primary');
+  const [consigneeName, setConsigneeName] = useState<string>('');
+  const [shippingAddress, setShippingAddress] = useState<string>('');
+  const [consigneeGstin, setConsigneeGstin] = useState<string>('');
+  const [consigneeStateCode, setConsigneeStateCode] = useState<string>('27');
+  const [consigneePincode, setConsigneePincode] = useState<string>('');
+  const [consigneeContact, setConsigneeContact] = useState<string>('');
   const [showPartyContactDetails, setShowPartyContactDetails] = useState(false);
   const [placeOfSupply, setPlaceOfSupply] = useState('27');
   const [invoiceNumber, setInvoiceNumber] = useState(`INV-${Date.now().toString().slice(-5)}`);
@@ -307,18 +331,94 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
     setPartyId(selectedId);
     const found = parties.find((p) => String(p.id) === selectedId);
     if (found) {
+      const normalized = normalizePartyAddresses(found);
+      const defaultBill = getDefaultBillingAddress(found);
+      const defaultShip = getDefaultShippingAddress(found);
+
       setPartyName(found.name);
-      setPartyGstin(found.gstin || '');
-      if (found.stateCode) {
-        setPlaceOfSupply(found.stateCode);
+      setPartyGstin(defaultBill.gstin || found.gstin || '');
+      if (defaultBill.stateCode || found.stateCode) {
+        setPlaceOfSupply(defaultBill.stateCode || found.stateCode);
       }
-      setPartyPhone(found.phone || '');
-      setPartyEmail(found.email || '');
-      setPartyAddress(found.address || '');
-      if (found.phone || found.email || found.address) {
+      setPartyPhone(defaultBill.phone || found.phone || '');
+      setPartyEmail(defaultBill.email || found.email || '');
+      setPartyAddress(formatPartyAddressBlock(defaultBill) || found.address || '');
+
+      // Set Buyer (Bill-To)
+      setBillingAddressId(defaultBill.id);
+      setBillingAddressType(defaultBill.addressType || 'Primary');
+      setBillingMailingName(defaultBill.mailingName || found.name);
+      setBillingPincode(defaultBill.pincode || '');
+
+      // Set Consignee (Ship-To)
+      const isDiffShip = defaultShip.id !== defaultBill.id;
+      setIsSameAsBillingAddress(!isDiffShip);
+      setShippingAddressId(defaultShip.id);
+      setShippingAddressType(defaultShip.addressType || 'Primary');
+      setConsigneeName(defaultShip.mailingName || found.name);
+      setShippingAddress(formatPartyAddressBlock(defaultShip) || found.address || '');
+      setConsigneeGstin(defaultShip.gstin || found.gstin || '');
+      setConsigneeStateCode(defaultShip.stateCode || found.stateCode || company?.stateCode || '27');
+      setConsigneePincode(defaultShip.pincode || '');
+      setConsigneeContact(
+        [defaultShip.contactPerson, defaultShip.phone].filter(Boolean).join(' • ') || found.phone || ''
+      );
+
+      if (found.phone || found.email || found.address || normalized.length > 1) {
         setShowPartyContactDetails(true);
       }
     }
+  };
+
+  const handleSelectBillingAddressSlot = (party: Party, addressId: string) => {
+    const normalized = normalizePartyAddresses(party);
+    const slot = normalized.find((a) => a.id === addressId);
+    if (!slot) return;
+
+    setBillingAddressId(slot.id);
+    setBillingAddressType(slot.addressType);
+    setBillingMailingName(slot.mailingName || party.name);
+    setPartyAddress(formatPartyAddressBlock(slot));
+    setBillingPincode(slot.pincode || '');
+    if (slot.gstin) {
+      setPartyGstin(slot.gstin);
+    }
+    if (slot.stateCode) {
+      setPlaceOfSupply(slot.stateCode);
+    }
+    if (slot.phone) {
+      setPartyPhone(slot.phone);
+    }
+    if (slot.email) {
+      setPartyEmail(slot.email);
+    }
+
+    if (isSameAsBillingAddress) {
+      setShippingAddressId(slot.id);
+      setShippingAddressType(slot.addressType);
+      setConsigneeName(slot.mailingName || party.name);
+      setShippingAddress(formatPartyAddressBlock(slot));
+      setConsigneeGstin(slot.gstin || partyGstin);
+      setConsigneeStateCode(slot.stateCode || placeOfSupply);
+      setConsigneePincode(slot.pincode || '');
+      setConsigneeContact([slot.contactPerson, slot.phone].filter(Boolean).join(' • ') || partyPhone);
+    }
+  };
+
+  const handleSelectShippingAddressSlot = (party: Party, addressId: string) => {
+    const normalized = normalizePartyAddresses(party);
+    const slot = normalized.find((a) => a.id === addressId);
+    if (!slot) return;
+
+    setIsSameAsBillingAddress(slot.id === billingAddressId);
+    setShippingAddressId(slot.id);
+    setShippingAddressType(slot.addressType);
+    setConsigneeName(slot.mailingName || party.name);
+    setShippingAddress(formatPartyAddressBlock(slot));
+    setConsigneeGstin(slot.gstin || party.gstin || '');
+    setConsigneeStateCode(slot.stateCode || party.stateCode || placeOfSupply);
+    setConsigneePincode(slot.pincode || '');
+    setConsigneeContact([slot.contactPerson, slot.phone].filter(Boolean).join(' • ') || party.phone || '');
   };
 
   const handleItemSelect = (index: number, selectedItemId: string) => {
@@ -424,6 +524,19 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
     setPartyPhone('');
     setPartyEmail('');
     setPartyAddress('');
+    setBillingAddressId('');
+    setBillingAddressType('Primary');
+    setBillingMailingName('');
+    setBillingPincode('');
+    setIsSameAsBillingAddress(true);
+    setShippingAddressId('');
+    setShippingAddressType('Primary');
+    setConsigneeName('');
+    setShippingAddress('');
+    setConsigneeGstin('');
+    setConsigneeStateCode(company?.stateCode || '27');
+    setConsigneePincode('');
+    setConsigneeContact('');
     setShowPartyContactDetails(false);
     setPlaceOfSupply(company?.stateCode || '27');
     
@@ -485,10 +598,38 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
         (inv.partyId && p.id === inv.partyId) ||
         (inv.partyName && p.name.trim().toLowerCase() === inv.partyName.trim().toLowerCase())
     );
-    setPartyPhone(matchedParty?.phone || '');
-    setPartyEmail(matchedParty?.email || '');
-    setPartyAddress(matchedParty?.address || '');
-    setShowPartyContactDetails(Boolean(matchedParty?.phone || matchedParty?.email || matchedParty?.address));
+    const billAddr = inv.billingAddress || inv.partyAddress || matchedParty?.address || '';
+    setPartyPhone(inv.partyPhone || matchedParty?.phone || '');
+    setPartyEmail(inv.partyEmail || matchedParty?.email || '');
+    setPartyAddress(billAddr);
+
+    setBillingAddressId(inv.billingAddressId || '');
+    setBillingAddressType(inv.billingAddressType || 'Primary');
+    setBillingMailingName(inv.billingMailingName || inv.partyName || '');
+    setBillingPincode(inv.billingPincode || '');
+
+    const sameShip = inv.isSameAsBillingAddress !== undefined
+      ? inv.isSameAsBillingAddress
+      : (!inv.shippingAddress || inv.shippingAddress === billAddr);
+    setIsSameAsBillingAddress(sameShip);
+    setShippingAddressId(inv.shippingAddressId || '');
+    setShippingAddressType(inv.shippingAddressType || 'Primary');
+    setConsigneeName(inv.consigneeName || inv.partyName || '');
+    setShippingAddress(inv.shippingAddress || billAddr);
+    setConsigneeGstin(inv.consigneeGstin || inv.partyGstin || '');
+    setConsigneeStateCode(inv.consigneeStateCode || inv.placeOfSupply || company?.stateCode || '27');
+    setConsigneePincode(inv.consigneePincode || '');
+    setConsigneeContact(inv.consigneeContact || inv.partyPhone || matchedParty?.phone || '');
+
+    setShowPartyContactDetails(
+      Boolean(
+        matchedParty?.phone ||
+        matchedParty?.email ||
+        matchedParty?.address ||
+        (matchedParty?.addresses && matchedParty.addresses.length > 1) ||
+        !sameShip
+      )
+    );
 
     setPlaceOfSupply(inv.placeOfSupply || company?.stateCode || '27');
     setInvoiceNumber(inv.invoiceNumber);
@@ -640,6 +781,20 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
           : 'regular')
       : saleType;
 
+    const effectiveBillAddr = partyAddress.trim() || null;
+    const effectiveShipAddr = isSameAsBillingAddress
+      ? effectiveBillAddr
+      : (shippingAddress.trim() || effectiveBillAddr);
+    const effectiveConsigneeName = isSameAsBillingAddress
+      ? (billingMailingName.trim() || partyName.trim())
+      : (consigneeName.trim() || partyName.trim());
+    const effectiveConsigneeGstin = isSameAsBillingAddress
+      ? (partyGstin.trim().toUpperCase() || null)
+      : (consigneeGstin.trim().toUpperCase() || partyGstin.trim().toUpperCase() || null);
+    const effectiveConsigneeStateCode = isSameAsBillingAddress
+      ? placeOfSupply
+      : (consigneeStateCode || placeOfSupply);
+
     const payload = {
       voucherType,
       invoiceType: isPur ? 'purchase_bill' : (saleType === 'bill_of_supply' ? 'bill_of_supply' : 'tax_invoice'),
@@ -651,7 +806,29 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
       partyGstin: partyGstin.trim().toUpperCase() || null,
       partyPhone: partyPhone.trim() || null,
       partyEmail: partyEmail.trim() || null,
-      partyAddress: partyAddress.trim() || null,
+      partyAddress: effectiveBillAddr,
+      partyStateCode: placeOfSupply,
+      partyStateName: getStateNameByCode(placeOfSupply),
+      // Buyer (Bill-To) Tally Address fields
+      billingAddressId: billingAddressId || null,
+      billingAddressType: billingAddressType || 'Primary',
+      billingMailingName: billingMailingName.trim() || partyName.trim(),
+      billingAddress: effectiveBillAddr,
+      billingStateCode: placeOfSupply,
+      billingStateName: getStateNameByCode(placeOfSupply),
+      billingPincode: billingPincode.trim() || null,
+      billingGstin: partyGstin.trim().toUpperCase() || null,
+      // Consignee (Ship-To / Delivery) Tally Address fields
+      isSameAsBillingAddress,
+      shippingAddressId: isSameAsBillingAddress ? (billingAddressId || null) : (shippingAddressId || null),
+      shippingAddressType: isSameAsBillingAddress ? (billingAddressType || 'Primary') : (shippingAddressType || 'Ship-To / Delivery'),
+      consigneeName: effectiveConsigneeName,
+      shippingAddress: effectiveShipAddr,
+      consigneeGstin: effectiveConsigneeGstin,
+      consigneeStateCode: effectiveConsigneeStateCode,
+      consigneeStateName: getStateNameByCode(effectiveConsigneeStateCode),
+      consigneePincode: isSameAsBillingAddress ? (billingPincode.trim() || null) : (consigneePincode.trim() || null),
+      consigneeContact: isSameAsBillingAddress ? (partyPhone.trim() || null) : (consigneeContact.trim() || partyPhone.trim() || null),
       placeOfSupply,
       isInterstate,
       invoiceNumber,
@@ -1396,15 +1573,22 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                   <input
                     type="text"
                     value={partyGstin}
-                    onChange={(e) => setPartyGstin(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase();
+                      setPartyGstin(val);
+                      const detected = extractStateFromGstin(val);
+                      if (detected) {
+                        setPlaceOfSupply(detected.stateCode);
+                      }
+                    }}
                     placeholder="e.g. 27AABCU9603R1ZM"
                     maxLength={15}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
                   />
                 </div>
 
-                {/* Auto-Sync to Ledger Status Banner */}
-                <div className="sm:col-span-3">
+                {/* Auto-Sync to Ledger Status Banner + Tally Multiple Address Quick Bar */}
+                <div className="sm:col-span-3 space-y-2">
                   {(() => {
                     const matched = parties.find(
                       (p) =>
@@ -1415,20 +1599,70 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
 
                     if (matched) {
                       const curBal = matched.currentBalance ? parseFloat(matched.currentBalance) : 0;
+                      const partyAddrs = normalizePartyAddresses(matched);
                       return (
-                        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                            <span>
-                              <strong>Linked to Ledger:</strong> {matched.name} ({matched.partyType === 'customer' ? 'Customer / Debtor' : 'Vendor / Creditor'})
-                              <span className="ml-1.5 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 font-mono font-semibold">
-                                Current Bal: ₹{curBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {(matched.currentBalanceType || 'dr').toUpperCase()}
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>
+                                <strong>Linked to Ledger:</strong> {matched.name} ({matched.partyType === 'customer' ? 'Customer / Debtor' : 'Vendor / Creditor'})
+                                <span className="ml-1.5 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 font-mono font-semibold">
+                                  Current Bal: ₹{curBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {(matched.currentBalanceType || 'dr').toUpperCase()}
+                                </span>
                               </span>
+                              {partyAddrs.length > 1 && (
+                                <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[10px] font-semibold flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-cyan-400" />
+                                  {partyAddrs.length} Saved Addresses (Tally Multi-Address)
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-emerald-400/80 font-medium">
+                              ⚡ Ledger balances & statements auto-update on save
                             </span>
                           </div>
-                          <span className="text-[11px] text-emerald-400/80 font-medium">
-                            ⚡ Ledger balances & statements auto-update on save
-                          </span>
+
+                          {/* Quick Tally Address Type Selector Strip when party has saved addresses */}
+                          {partyAddrs.length > 1 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-2.5 rounded-xl bg-slate-900/90 border border-cyan-500/30">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 shrink-0 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {voucherType === 'purchase' ? 'Supplier Bill-From:' : 'Buyer (Bill-To):'}
+                                </span>
+                                <select
+                                  value={billingAddressId || partyAddrs[0].id}
+                                  onChange={(e) => handleSelectBillingAddressSlot(matched, e.target.value)}
+                                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+                                >
+                                  {partyAddrs.map((addr) => (
+                                    <option key={addr.id} value={addr.id}>
+                                      [{addr.addressType}] {addr.mailingName} — {addr.stateName} ({addr.stateCode}) {addr.gstin ? `• ${addr.gstin}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 shrink-0 flex items-center gap-1">
+                                  <Truck className="w-3 h-3" />
+                                  Consignee (Ship-To):
+                                </span>
+                                <select
+                                  value={isSameAsBillingAddress ? (billingAddressId || partyAddrs[0].id) : (shippingAddressId || partyAddrs[0].id)}
+                                  onChange={(e) => handleSelectShippingAddressSlot(matched, e.target.value)}
+                                  className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                >
+                                  {partyAddrs.map((addr) => (
+                                    <option key={addr.id} value={addr.id}>
+                                      [{addr.addressType}] {addr.mailingName} — {addr.address ? addr.address.slice(0, 32) : addr.stateName}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     } else if (partyName.trim()) {
@@ -1458,70 +1692,341 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                   })()}
                 </div>
 
-                {/* Optional Contact & Address Details (Auto-Synced to Party Ledger Master) */}
+                {/* Tally-Style Buyer (Bill-To) & Consignee (Ship-To) Multiple Address & Contact Details */}
                 <div className="sm:col-span-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowPartyContactDetails(!showPartyContactDetails)}
-                    className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition cursor-pointer font-medium"
-                  >
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{showPartyContactDetails ? 'Hide' : 'Add / View'} Party Contact & Address Details (Auto-Synced to Ledger Master)</span>
-                  </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPartyContactDetails(!showPartyContactDetails)}
+                      className="text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer font-medium"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>
+                        {showPartyContactDetails ? 'Hide' : 'Configure'} Buyer (Bill-To) & Consignee (Ship-To) Mailing Details
+                      </span>
+                      {!isSameAsBillingAddress && (
+                        <span className="px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-[10px] font-semibold">
+                          Separate Consignee / Ship-To Active
+                        </span>
+                      )}
+                    </button>
+
+                    <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!isSameAsBillingAddress}
+                        onChange={(e) => {
+                          const separate = e.target.checked;
+                          setIsSameAsBillingAddress(!separate);
+                          if (separate) {
+                            setShowPartyContactDetails(true);
+                            if (!consigneeName) setConsigneeName(billingMailingName || partyName);
+                            if (!shippingAddress) setShippingAddress(partyAddress);
+                            if (!consigneeGstin) setConsigneeGstin(partyGstin);
+                            if (!consigneeStateCode) setConsigneeStateCode(placeOfSupply);
+                          }
+                        }}
+                        className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0 cursor-pointer"
+                      />
+                      <Truck className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Ship to a different Consignee / Branch / Delivery Address</span>
+                    </label>
+                  </div>
 
                   {showPartyContactDetails && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-slate-800/60">
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-slate-500" /> Phone Number
-                        </label>
-                        <input
-                          type="text"
-                          value={partyPhone}
-                          onChange={(e) => setPartyPhone(e.target.value)}
-                          placeholder="+91 98765 43210"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center gap-1">
-                          <Mail className="w-3 h-3 text-slate-500" /> Email Address
-                        </label>
-                        <input
-                          type="email"
-                          value={partyEmail}
-                          onChange={(e) => setPartyEmail(e.target.value)}
-                          placeholder="accounts@company.com"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-slate-500" /> Billing / Shipping Address
-                        </label>
-                        <input
-                          type="text"
-                          value={partyAddress}
-                          onChange={(e) => setPartyAddress(e.target.value)}
-                          placeholder="Plot 42, MIDC Industrial Area"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                        />
+                    <div className="mt-3 pt-3 border-t border-slate-800/60 space-y-3">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        {/* LEFT CARD: BUYER (BILL-TO) DETAILS */}
+                        <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5">
+                          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5" />
+                              {voucherType === 'purchase' ? 'Supplier (Bill-From) Address' : 'Buyer (Bill-To) Mailing Details'}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                              {billingAddressType || 'Primary'}
+                            </span>
+                          </div>
+
+                          {(() => {
+                            const matched = parties.find(
+                              (p) =>
+                                (partyId && String(p.id) === partyId) ||
+                                (partyName.trim() && p.name.trim().toLowerCase() === partyName.trim().toLowerCase())
+                            );
+                            const savedAddrs = matched ? normalizePartyAddresses(matched) : [];
+                            if (matched && savedAddrs.length > 0) {
+                              return (
+                                <div>
+                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                    Select Saved Address Type from Party Master
+                                  </label>
+                                  <select
+                                    value={billingAddressId || savedAddrs[0].id}
+                                    onChange={(e) => handleSelectBillingAddressSlot(matched, e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                                  >
+                                    {savedAddrs.map((a) => (
+                                      <option key={a.id} value={a.id}>
+                                        {a.addressType} — {a.mailingName} ({a.stateName}) {a.address ? `• ${a.address.slice(0, 35)}` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                Buyer Mailing / Trade Name
+                              </label>
+                              <input
+                                type="text"
+                                value={billingMailingName || partyName}
+                                onChange={(e) => setBillingMailingName(e.target.value)}
+                                placeholder={partyName || 'Legal / Trade Name on Bill'}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                Address Label / Type
+                              </label>
+                              <input
+                                type="text"
+                                value={billingAddressType}
+                                onChange={(e) => setBillingAddressType(e.target.value)}
+                                placeholder="Primary / Head Office"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                Billing Street Address, Building, Area, City
+                              </label>
+                              <input
+                                type="text"
+                                value={partyAddress}
+                                onChange={(e) => {
+                                  setPartyAddress(e.target.value);
+                                  if (isSameAsBillingAddress) {
+                                    setShippingAddress(e.target.value);
+                                  }
+                                }}
+                                placeholder="Plot 42, MIDC Industrial Area, Mumbai"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-slate-400 mb-1 flex items-center gap-1">
+                                <Phone className="w-3 h-3 text-slate-500" /> Phone Number
+                              </label>
+                              <input
+                                type="text"
+                                value={partyPhone}
+                                onChange={(e) => setPartyPhone(e.target.value)}
+                                placeholder="+91 98765 43210"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-slate-400 mb-1 flex items-center gap-1">
+                                <Mail className="w-3 h-3 text-slate-500" /> Email Address
+                              </label>
+                              <input
+                                type="email"
+                                value={partyEmail}
+                                onChange={(e) => setPartyEmail(e.target.value)}
+                                placeholder="accounts@company.com"
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* RIGHT CARD: CONSIGNEE (SHIP-TO / DELIVERY) DETAILS */}
+                        <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2.5">
+                          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                              <Truck className="w-3.5 h-3.5" />
+                              Consignee (Ship-To / Delivery) Details
+                            </span>
+                            <label className="flex items-center gap-1.5 text-[10px] text-slate-300 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isSameAsBillingAddress}
+                                onChange={(e) => {
+                                  const same = e.target.checked;
+                                  setIsSameAsBillingAddress(same);
+                                  if (same) {
+                                    setConsigneeName(billingMailingName || partyName);
+                                    setShippingAddress(partyAddress);
+                                    setConsigneeGstin(partyGstin);
+                                    setConsigneeStateCode(placeOfSupply);
+                                  }
+                                }}
+                                className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-0 cursor-pointer"
+                              />
+                              <span>Same as Buyer (Bill-To)</span>
+                            </label>
+                          </div>
+
+                          {isSameAsBillingAddress ? (
+                            <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800/80 text-xs text-slate-400 space-y-1">
+                              <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Consignee (Ship-To) is identical to Buyer (Bill-To)</span>
+                              </div>
+                              <p className="text-[11px] text-slate-400">
+                                {billingMailingName || partyName || 'Selected Party'} •{' '}
+                                {partyAddress || 'Principal Place of Business'} ({getStateNameByCode(placeOfSupply)} - {placeOfSupply})
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsSameAsBillingAddress(false);
+                                  if (!consigneeName) setConsigneeName(billingMailingName || partyName);
+                                  if (!shippingAddress) setShippingAddress(partyAddress);
+                                  if (!consigneeGstin) setConsigneeGstin(partyGstin);
+                                  if (!consigneeStateCode) setConsigneeStateCode(placeOfSupply);
+                                }}
+                                className="mt-1.5 text-[11px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                              >
+                                + Specify a different Consignee / Warehouse / Site Delivery Address
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5">
+                              {(() => {
+                                const matched = parties.find(
+                                  (p) =>
+                                    (partyId && String(p.id) === partyId) ||
+                                    (partyName.trim() && p.name.trim().toLowerCase() === partyName.trim().toLowerCase())
+                                );
+                                const savedAddrs = matched ? normalizePartyAddresses(matched) : [];
+                                if (matched && savedAddrs.length > 0) {
+                                  return (
+                                    <div>
+                                      <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                        Pick Consignee / Delivery Address from Party Master
+                                      </label>
+                                      <select
+                                        value={shippingAddressId}
+                                        onChange={(e) => handleSelectShippingAddressSlot(matched, e.target.value)}
+                                        className="w-full bg-slate-950 border border-cyan-500/40 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                      >
+                                        <option value="">-- Custom / Manual Consignee Address --</option>
+                                        {savedAddrs.map((a) => (
+                                          <option key={a.id} value={a.id}>
+                                            [{a.addressType}] {a.mailingName} — {a.address || a.stateName} ({a.stateCode})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div>
+                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                    Consignee Name (Shipped To)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={consigneeName}
+                                    onChange={(e) => setConsigneeName(e.target.value)}
+                                    placeholder={partyName || 'Site / Consignee Name'}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                    Consignee GSTIN (Optional)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    maxLength={15}
+                                    value={consigneeGstin}
+                                    onChange={(e) => {
+                                      const val = e.target.value.toUpperCase();
+                                      setConsigneeGstin(val);
+                                      const det = extractStateFromGstin(val);
+                                      if (det) setConsigneeStateCode(det.stateCode);
+                                    }}
+                                    placeholder={partyGstin || '15-digit Branch GSTIN'}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono uppercase focus:outline-none focus:border-cyan-500"
+                                  />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                    Shipping / Delivery Address (Warehouse, Site, Branch)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={shippingAddress}
+                                    onChange={(e) => setShippingAddress(e.target.value)}
+                                    placeholder="Warehouse Gate 4, Chakan Industrial Area, Pune - 410501"
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                    Destination State
+                                  </label>
+                                  <select
+                                    value={consigneeStateCode}
+                                    onChange={(e) => setConsigneeStateCode(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                  >
+                                    {INDIAN_STATES.map((st) => (
+                                      <option key={st.code} value={st.code}>
+                                        {st.code} - {st.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-medium text-slate-400 mb-1">
+                                    Site Contact / Phone
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={consigneeContact}
+                                    onChange={(e) => setConsigneeContact(e.target.value)}
+                                    placeholder="Site Incharge • +91 98765 43210"
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
 
                 <div className="sm:col-span-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs font-medium text-slate-400">Place of Supply (State Code):</label>
-                    <input
-                      type="text"
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="text-xs font-medium text-slate-400">Place of Supply (State):</label>
+                    <select
                       value={placeOfSupply}
                       onChange={(e) => setPlaceOfSupply(e.target.value)}
-                      className="w-16 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white font-mono text-center"
-                    />
+                      className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      {INDIAN_STATES.map((st) => (
+                        <option key={st.code} value={st.code}>
+                          {st.code} - {st.name}
+                        </option>
+                      ))}
+                    </select>
                     <span className="text-[11px] text-slate-500">
-                      Company State: <strong className="text-slate-300">{companyState}</strong>
+                      Company State: <strong className="text-slate-300">{getStateNameByCode(companyState)} ({companyState})</strong>
                     </span>
                   </div>
 
@@ -1830,16 +2335,9 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({
                               Pick Warranty:
                             </span>
                             {[
+                              '6 Months Warranty',
                               '1 Year Warranty',
                               '2 Years Warranty',
-                              '3 Years Warranty',
-                              '6 Months Warranty',
-                              '3 Months Warranty',
-                              '18 Months Warranty',
-                              '5 Years Warranty',
-                              '1 Year On-site',
-                              'Lifetime Warranty',
-                              'No Warranty',
                             ].map((wPreset) => {
                               const isSelected = it.warranty === wPreset;
                               return (

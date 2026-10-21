@@ -259,18 +259,52 @@ export interface CompanyProfile {
   financialYearStart?: string;
 }
 
+export type TallyAddressType =
+  | 'Primary / Billing'
+  | 'Delivery / Ship-To'
+  | 'Registered Office'
+  | 'Branch Office'
+  | 'Factory / Works'
+  | 'Godown / Warehouse'
+  | 'Site / Project Location'
+  | string;
+
+export interface PartyAddress {
+  id: string;
+  addressType: TallyAddressType;
+  mailingName?: string;
+  address: string;
+  city?: string;
+  pincode?: string;
+  stateCode: string;
+  stateName: string;
+  country?: string;
+  gstRegistrationType?: 'Regular' | 'Composition' | 'Unregistered' | 'SEZ';
+  gstin?: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  isDefaultBilling?: boolean;
+  isDefaultShipping?: boolean;
+}
+
 export interface Party {
   id: number;
   userId: number;
   workspaceId?: string;
   partyType: 'customer' | 'vendor';
   name: string;
+  mailingName?: string;
+  gstRegistrationType?: 'Regular' | 'Composition' | 'Unregistered' | 'SEZ';
   gstin?: string;
   stateCode?: string;
   stateName?: string;
   phone?: string;
   email?: string;
   address?: string;
+  city?: string;
+  pincode?: string;
+  addresses?: PartyAddress[];
   openingBalance: string;
   balanceType: 'dr' | 'cr';
   totalInvoiced?: string;
@@ -355,6 +389,30 @@ export interface Invoice {
   dueDate?: string;
   partyName: string;
   partyGstin?: string;
+  partyAddress?: string;
+  partyPhone?: string;
+  partyEmail?: string;
+  partyStateCode?: string;
+  partyStateName?: string;
+  // Tally-style Multiple Address (Buyer / Bill-To & Consignee / Ship-To) fields
+  billingAddressId?: string;
+  billingAddressType?: string;
+  billingMailingName?: string;
+  billingAddress?: string;
+  billingStateCode?: string;
+  billingStateName?: string;
+  billingPincode?: string;
+  billingGstin?: string;
+  shippingAddressId?: string;
+  shippingAddressType?: string;
+  consigneeName?: string;
+  shippingAddress?: string;
+  consigneeStateCode?: string;
+  consigneeStateName?: string;
+  consigneePincode?: string;
+  consigneeGstin?: string;
+  consigneeContact?: string;
+  isSameAsBillingAddress?: boolean;
   placeOfSupply: string;
   isInterstate: boolean;
   subtotal: string;

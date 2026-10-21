@@ -255,6 +255,26 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
     '1. Goods once sold will not be taken back.\n2. Interest @ 18% p.a. will be levied on overdue payments.\n3. Subject to local state jurisdiction.';
   const defaultNotes = merged.defaultNotes || 'Thank you for your business!';
 
+  // Normalized Buyer (Bill-To) & Consignee (Ship-To) fields (Tally Multiple Addresses)
+  const buyerName = invoice.billingMailingName || invoice.partyName || 'Cash Customer';
+  const buyerAddress = invoice.billingAddress || invoice.partyAddress || '';
+  const buyerGstin = invoice.billingGstin || invoice.partyGstin || '';
+  const buyerStateCode = invoice.billingStateCode || invoice.partyStateCode || invoice.placeOfSupply || stateCode;
+  const buyerStateName = invoice.billingStateName || invoice.partyStateName || stateName;
+
+  const consigneeDisplayName = invoice.consigneeName || buyerName;
+  const consigneeDisplayAddress = invoice.shippingAddress || buyerAddress;
+  const consigneeDisplayGstin = invoice.consigneeGstin || buyerGstin;
+  const consigneeDisplayStateCode = invoice.consigneeStateCode || buyerStateCode;
+  const consigneeDisplayStateName = invoice.consigneeStateName || buyerStateName;
+  const consigneeDisplayContact = invoice.consigneeContact || invoice.partyPhone || '';
+  const hasSeparateConsignee =
+    invoice.isSameAsBillingAddress === false ||
+    Boolean(
+      (invoice.shippingAddress && invoice.shippingAddress !== buyerAddress) ||
+      (invoice.consigneeName && invoice.consigneeName !== buyerName)
+    );
+
   // Calculate UPI QR URL for instant scan
   const upiQrString = encodeURIComponent(
     `upi://pay?pa=${upiId}&pn=${encodeURIComponent(businessName)}&am=${parseFloat(invoice.grandTotal || '0').toFixed(2)}&cu=INR&tn=Invoice_${invoice.invoiceNumber}`
@@ -440,19 +460,29 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
             </div>
           </div>
 
-          {/* Bill To & Dispatch Details Box */}
+          {/* Bill To & Consignee (Ship To) Box */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-slate-50/90 border border-slate-200 rounded-xl">
             <div>
-              <span
-                className="text-[10px] font-bold uppercase tracking-wider"
-                style={{ color: color.hex }}
-              >
-                {invoice.voucherType === 'purchase' ? 'Supplier (Vendor)' : 'Billed To (Customer)'}
-              </span>
-              <div className="font-bold text-sm text-slate-900 mt-1">{invoice.partyName}</div>
-              {invoice.partyGstin ? (
+              <div className="flex items-center gap-2">
+                <span
+                  className="text-[10px] font-bold uppercase tracking-wider"
+                  style={{ color: color.hex }}
+                >
+                  {invoice.voucherType === 'purchase' ? 'Supplier (Vendor)' : 'Buyer (Billed To)'}
+                </span>
+                {invoice.billingAddressType && (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200/80 text-slate-700 font-semibold">
+                    {invoice.billingAddressType}
+                  </span>
+                )}
+              </div>
+              <div className="font-bold text-sm text-slate-900 mt-1">{buyerName}</div>
+              {buyerAddress && (
+                <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">{buyerAddress}</div>
+              )}
+              {buyerGstin ? (
                 <div className="font-mono text-slate-700 text-[11px] mt-0.5">
-                  GSTIN: <strong className="text-slate-900">{invoice.partyGstin}</strong>
+                  GSTIN: <strong className="text-slate-900">{buyerGstin}</strong>
                 </div>
               ) : (
                 <div className="text-[11px] text-slate-500 italic mt-0.5">
@@ -461,20 +491,43 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               )}
             </div>
 
-            <div className="sm:text-right font-mono text-[11px] space-y-1 self-center">
-              <div>
-                <span className="text-slate-500">Supply Type: </span>
-                <strong className="text-slate-900">
-                  {invoice.isInterstate ? 'Interstate (IGST)' : 'Intra-State (CGST + SGST)'}
-                </strong>
+            {hasSeparateConsignee ? (
+              <div className="border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                    Consignee (Shipped To)
+                  </span>
+                  {invoice.shippingAddressType && (
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200/80 text-slate-700 font-semibold">
+                      {invoice.shippingAddressType}
+                    </span>
+                  )}
+                </div>
+                <div className="font-bold text-xs text-slate-900 mt-1">{consigneeDisplayName}</div>
+                {consigneeDisplayAddress && (
+                  <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">{consigneeDisplayAddress}</div>
+                )}
+                <div className="font-mono text-[10px] text-slate-700 mt-0.5">
+                  State: <strong>{consigneeDisplayStateName} ({consigneeDisplayStateCode})</strong>
+                  {consigneeDisplayGstin && ` • GSTIN: ${consigneeDisplayGstin}`}
+                </div>
               </div>
-              <div>
-                <span className="text-slate-500">Reverse Charge (RCM): </span>
-                <strong className="text-slate-900">
-                  {invoice.saleType === 'rcm' || invoice.saleType === 'unregistered_rcm' ? 'YES' : 'NO'}
-                </strong>
+            ) : (
+              <div className="sm:text-right font-mono text-[11px] space-y-1 self-center">
+                <div>
+                  <span className="text-slate-500">Supply Type: </span>
+                  <strong className="text-slate-900">
+                    {invoice.isInterstate ? 'Interstate (IGST)' : 'Intra-State (CGST + SGST)'}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500">Reverse Charge (RCM): </span>
+                  <strong className="text-slate-900">
+                    {invoice.saleType === 'rcm' || invoice.saleType === 'unregistered_rcm' ? 'YES' : 'NO'}
+                  </strong>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Line Items Table */}
@@ -874,20 +927,25 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 border-b-2 border-slate-900 divide-y sm:divide-y-0 sm:divide-x-2 divide-slate-900 bg-white">
               {/* Receiver (Billed To) */}
               <div className="p-2.5 space-y-0.5">
-                <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">
-                  {invoice.voucherType === 'purchase' ? 'Details of Vendor / Creditor:' : 'Details of Receiver / Billed To:'}
+                <div className="flex items-center justify-between text-[9px] font-extrabold uppercase tracking-wider text-slate-500">
+                  <span>{invoice.voucherType === 'purchase' ? 'Details of Vendor / Creditor:' : 'Details of Buyer / Billed To:'}</span>
+                  {invoice.billingAddressType && (
+                    <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono">
+                      [{invoice.billingAddressType}]
+                    </span>
+                  )}
                 </div>
-                <div className="font-bold text-xs text-slate-950">{invoice.partyName}</div>
-                {invoice.partyAddress && (
-                  <div className="text-[10px] text-slate-700 leading-snug">{invoice.partyAddress}</div>
+                <div className="font-bold text-xs text-slate-950">{buyerName}</div>
+                {buyerAddress && (
+                  <div className="text-[10px] text-slate-700 leading-snug">{buyerAddress}</div>
                 )}
                 <div className="font-mono text-[10px] text-slate-800 space-y-0.5 pt-0.5">
                   <div className="flex justify-between">
-                    <span>GSTIN / UIN: <strong>{invoice.partyGstin || 'Unregistered / Consumer'}</strong></span>
+                    <span>GSTIN / UIN: <strong>{buyerGstin || 'Unregistered / Consumer'}</strong></span>
                     {buyerPan !== '—' && <span>PAN: <strong>{buyerPan}</strong></span>}
                   </div>
                   <div className="flex justify-between">
-                    <span>Place of Supply: <strong>State {invoice.placeOfSupply}</strong></span>
+                    <span>State: <strong>{buyerStateName} ({buyerStateCode})</strong></span>
                     {invoice.partyPhone && <span>Ph: {invoice.partyPhone}</span>}
                   </div>
                 </div>
@@ -895,15 +953,26 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
 
               {/* Consignee (Shipped To) */}
               <div className="p-2.5 space-y-0.5 bg-slate-50/40">
-                <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">
-                  Details of Consignee / Shipped To:
+                <div className="flex items-center justify-between text-[9px] font-extrabold uppercase tracking-wider text-slate-500">
+                  <span>Details of Consignee / Shipped To:</span>
+                  {invoice.shippingAddressType && (
+                    <span className="px-1.5 py-0.2 rounded bg-slate-200/70 text-slate-700 font-mono">
+                      [{invoice.shippingAddressType}]
+                    </span>
+                  )}
                 </div>
-                <div className="font-bold text-xs text-slate-950">{invoice.partyName}</div>
-                <div className="text-[10px] text-slate-600">
-                  {invoice.partyAddress || 'Same as Billing Address (Principal Place of Business)'}
+                <div className="font-bold text-xs text-slate-950">{consigneeDisplayName}</div>
+                <div className="text-[10px] text-slate-600 leading-snug">
+                  {consigneeDisplayAddress || 'Same as Billing Address (Principal Place of Business)'}
                 </div>
-                <div className="font-mono text-[10px] text-slate-700 pt-0.5">
-                  <div>Destination State: <strong>State Code {invoice.placeOfSupply}</strong></div>
+                <div className="font-mono text-[10px] text-slate-700 pt-0.5 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>GSTIN: <strong>{consigneeDisplayGstin || 'Unregistered'}</strong></span>
+                    <span>State: <strong>{consigneeDisplayStateName} ({consigneeDisplayStateCode})</strong></span>
+                  </div>
+                  {consigneeDisplayContact && (
+                    <div>Contact: {consigneeDisplayContact}</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1205,15 +1274,22 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
             </div>
           </div>
 
-          <div className="border-b pb-2 flex justify-between">
+          <div className="border-b pb-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
-              <span className="text-[9px] uppercase font-bold text-slate-500">Party / Buyer:</span>
-              <div className="font-bold text-slate-900">{invoice.partyName}</div>
-              <div className="text-[10px]">GSTIN: {invoice.partyGstin || 'Unregistered'}</div>
+              <span className="text-[9px] uppercase font-bold text-slate-500">
+                Buyer (Bill To){invoice.billingAddressType ? ` [${invoice.billingAddressType}]` : ''}:
+              </span>
+              <div className="font-bold text-slate-900">{buyerName}</div>
+              {buyerAddress && <div className="text-[10px] text-slate-600">{buyerAddress}</div>}
+              <div className="text-[10px]">GSTIN: {buyerGstin || 'Unregistered'} | POS: {buyerStateName} ({invoice.placeOfSupply})</div>
             </div>
-            <div className="text-right text-[10px]">
-              <div>POS: State {invoice.placeOfSupply}</div>
-              <div>Reverse Charge: {invoice.saleType === 'rcm' ? 'YES' : 'NO'}</div>
+            <div className="sm:text-right text-[10px]">
+              <span className="text-[9px] uppercase font-bold text-slate-500">
+                Consignee (Ship To){invoice.shippingAddressType ? ` [${invoice.shippingAddressType}]` : ''}:
+              </span>
+              <div className="font-bold text-slate-900">{consigneeDisplayName}</div>
+              {consigneeDisplayAddress && <div className="text-slate-600">{consigneeDisplayAddress}</div>}
+              <div>State: {consigneeDisplayStateName} ({consigneeDisplayStateCode}) | RCM: {invoice.saleType === 'rcm' ? 'YES' : 'NO'}</div>
             </div>
           </div>
 
@@ -1455,20 +1531,31 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
                 </div>
               </div>
 
-              {/* Consignee / Buyer Box */}
+              {/* Buyer & Consignee Box */}
               <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pb-1 border-b border-slate-200 flex items-center justify-between">
-                  <span>Billed To (Consignee / Buyer)</span>
+                  <span>Billed To (Buyer){invoice.billingAddressType ? ` • ${invoice.billingAddressType}` : ''}</span>
                   {invoice.dueDate && <span className="text-amber-700 font-semibold">Due: {invoice.dueDate}</span>}
                 </div>
-                <div className="text-xs font-bold text-slate-900">{invoice.partyName || 'Cash Customer'}</div>
+                <div className="text-xs font-bold text-slate-900">{buyerName}</div>
                 <div className="text-slate-600 text-[11px] leading-relaxed">
-                  {invoice.partyAddress || 'Local State Address'}
+                  {buyerAddress || 'Local State Address'}
                 </div>
                 <div className="text-[11px] font-mono text-slate-700 pt-1 space-y-0.5">
-                  <div>GSTIN: <strong>{invoice.partyGstin || 'Unregistered Consumer (B2C)'}</strong></div>
-                  <div>State / POS: {invoice.partyStateName || stateName} (Code: {invoice.partyStateCode || stateCode})</div>
+                  <div>GSTIN: <strong>{buyerGstin || 'Unregistered Consumer (B2C)'}</strong></div>
+                  <div>State / POS: {buyerStateName} (Code: {buyerStateCode})</div>
                 </div>
+                {hasSeparateConsignee && (
+                  <div className="pt-2 mt-2 border-t border-slate-200 space-y-0.5">
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                      Shipped To (Consignee){invoice.shippingAddressType ? ` • ${invoice.shippingAddressType}` : ''}
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-800">{consigneeDisplayName}</div>
+                    {consigneeDisplayAddress && (
+                      <div className="text-[10px] text-slate-600">{consigneeDisplayAddress}</div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1787,15 +1874,29 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               </div>
             </div>
 
-            {/* Billed To Card */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                Customer / Bill To
-              </span>
-              <div className="text-sm font-bold text-slate-900">{invoice.partyName || 'Cash Sale / Walk-in Customer'}</div>
-              <div className="text-xs text-slate-600 leading-relaxed">{invoice.partyAddress || 'State jurisdiction'}</div>
-              <div className="text-[11px] font-mono text-slate-700 pt-1">
-                GSTIN: <strong>{invoice.partyGstin || 'Unregistered'}</strong>
+            {/* Billed To & Shipped To Card */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Buyer (Bill To){invoice.billingAddressType ? ` • ${invoice.billingAddressType}` : ''}
+                </span>
+                <div className="text-sm font-bold text-slate-900">{buyerName}</div>
+                <div className="text-xs text-slate-600 leading-relaxed">{buyerAddress || 'State jurisdiction'}</div>
+                <div className="text-[11px] font-mono text-slate-700 pt-1">
+                  GSTIN: <strong>{buyerGstin || 'Unregistered'}</strong>
+                </div>
+              </div>
+              <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Consignee (Ship To){invoice.shippingAddressType ? ` • ${invoice.shippingAddressType}` : ''}
+                </span>
+                <div className="text-sm font-bold text-slate-900">{consigneeDisplayName}</div>
+                <div className="text-xs text-slate-600 leading-relaxed">
+                  {consigneeDisplayAddress || buyerAddress || 'Same as Billing Address'}
+                </div>
+                <div className="text-[11px] font-mono text-slate-700 pt-1">
+                  State: <strong>{consigneeDisplayStateName} ({consigneeDisplayStateCode})</strong>
+                </div>
               </div>
             </div>
 
@@ -2080,16 +2181,22 @@ export const InvoiceTemplateRenderer: React.FC<InvoiceTemplateProps> = ({
               <div className="font-mono text-[11px] pt-1">GSTIN: {gstin}</div>
             </div>
             <div className="p-3 space-y-1 bg-white">
-              <div className="text-[10px] font-bold uppercase text-slate-500">2. Details of Receiver (Bill To)</div>
-              <div className="font-bold text-slate-900">{invoice.partyName || 'Cash Customer'}</div>
-              <div className="text-slate-600 text-[11px]">{invoice.partyAddress || 'State address'}</div>
-              <div className="font-mono text-[11px] pt-1">GSTIN: {invoice.partyGstin || 'Unregistered'}</div>
+              <div className="text-[10px] font-bold uppercase text-slate-500">
+                2. Details of Receiver (Bill To){invoice.billingAddressType ? ` [${invoice.billingAddressType}]` : ''}
+              </div>
+              <div className="font-bold text-slate-900">{buyerName}</div>
+              <div className="text-slate-600 text-[11px]">{buyerAddress || 'State address'}</div>
+              <div className="font-mono text-[11px] pt-1">GSTIN: {buyerGstin || 'Unregistered'}</div>
             </div>
             <div className="p-3 space-y-1 bg-white">
-              <div className="text-[10px] font-bold uppercase text-slate-500">3. Details of Consignee (Ship To)</div>
-              <div className="font-bold text-slate-900">{invoice.partyName || 'Same as Buyer'}</div>
-              <div className="text-slate-600 text-[11px]">{invoice.partyAddress || 'Delivery at destination'}</div>
-              <div className="font-mono text-[11px] pt-1">State: {invoice.partyStateName || stateName}</div>
+              <div className="text-[10px] font-bold uppercase text-slate-500">
+                3. Details of Consignee (Ship To){invoice.shippingAddressType ? ` [${invoice.shippingAddressType}]` : ''}
+              </div>
+              <div className="font-bold text-slate-900">{consigneeDisplayName}</div>
+              <div className="text-slate-600 text-[11px]">{consigneeDisplayAddress || 'Delivery at destination'}</div>
+              <div className="font-mono text-[11px] pt-1">
+                State: {consigneeDisplayStateName} ({consigneeDisplayStateCode})
+              </div>
             </div>
           </div>
 
